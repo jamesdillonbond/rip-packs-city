@@ -16,6 +16,10 @@ const st = vi.hoisted(() => ({
   // to a bare { error: null } and nothing looked at it).
   fmvInsert: { data: [{ id: "f1" }] as { id: string }[] | null, error: null as any },
   packUpsert: { data: [{ id: "p1" }] as { id: string }[] | null, error: null as any },
+  // pack-state reads (the id map) are served separately from the upsert's returned rows.
+  packStateRead: null as { data: any[] | null; error: any } | null,
+  packDeletes: [] as string[][],
+  packDeleteResult: null as { data: any[] | null; error: any } | null,
   // Sale writes are UPDATEs, not upserts — keyed by the sku each call filtered on, so a test can
   // say "this sku matched a row, that one did not" (the sales_missed signal).
   saleUpdate: {} as Record<string, { data: { id: string }[] | null; error: any }>,
@@ -75,12 +79,14 @@ vi.mock("@/lib/supabase", () => ({
       let isInsert = false
       let isDelete = false
       let isUpsert = false
+      let isPackDelete = false
+      let packDeleteIds: string[] = []
       let rec: (typeof st.updates)[number] | null = null
       const b: any = {
         upsert: (rows: any, opts: any) => { isUpsert = true; if (table === "panini_products" || table === "panini_pack_pages" || table === "panini_pack_state" || table === "panini_pack_drops") st.registryUpserts.push({ table, rows, opts }); return b },
         insert: (rows: any) => { isInsert = true; if (table === "panini_fmv_snapshots") { st.fmvOps.push("insert"); st.fmvInserted.push(rows) } return b },
-        delete: () => { if (table === "panini_fmv_snapshots") { st.fmvOps.push("delete"); isDelete = true } return b },
-        in: () => b, gte: () => b,
+        delete: () => { if (table === "panini_fmv_snapshots") { st.fmvOps.push("delete"); isDelete = true } if (table === "panini_pack_state") isPackDelete = true; return b },
+        in: (_c: string, v: any) => { if (isPackDelete) packDeleteIds = v; return b }, gte: () => b,
         lt: (c: string) => { if (isDelete && table === "panini_fmv_snapshots") st.fmvOps.push(`lt:${c}`); return isDelete ? Promise.resolve(st.fmvDelete) : b },
         update: (patch: any) => { isUpdate = true; rec = { table, patch, sku: null, or: null }; st.updates.push(rec); return b },
         eq: (_c: string, v: any) => { if (rec) rec.sku = v; return b },
@@ -92,6 +98,8 @@ vi.mock("@/lib/supabase", () => ({
           if (table === "panini_products" || table === "panini_pack_pages") return { data: [{ id: "r" }], error: null }
           if (isUpdate) return (rec?.sku != null && st.saleUpdate[rec.sku]) || st.saleUpdateDefault
           if (isInsert && table === "panini_fmv_snapshots") return st.fmvInsert
+          if (table === "panini_pack_state" && isPackDelete) { st.packDeletes.push(packDeleteIds); return st.packDeleteResult ?? { data: packDeleteIds.map((id) => ({ id })), error: null } }
+          if (table === "panini_pack_state" && !isUpsert && st.packStateRead) return st.packStateRead
           if (table === "panini_pack_state") return st.packUpsert
           return table === "panini_editions" ? st.edUpsert : st.serUpsert
         },
@@ -148,6 +156,7 @@ beforeEach(() => {
   st.serUpsert = { data: [{ id: "s1" }], error: null }
   st.fmvInsert = { data: [{ id: "f1" }], error: null }
   st.packUpsert = { data: [{ id: "p1" }], error: null }
+  st.packStateRead = null; st.packDeletes = []; st.packDeleteResult = null
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false; st.isFilters = []
   st.recent = { data: [], error: null }; st.recentCalls = []; st.recentV2Calls = []
@@ -884,6 +893,39 @@ describe("panini-ingest — one pack product, one row", () => {
     await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "850176BC-NWSL-PZM-BLK-1", collection_name: "x" }] } }))
     if (st.captured) await st.captured()
     expect(st.registryUpserts.find((u) => u.table === "panini_pack_state")!.rows.map((r: any) => r.id)).toEqual(["1065"])
+  })
+  const nwslSku = { id: "850176BC-NWSL-PZM-BLK-1", pack_sku: "850176BC-NWSL-PZM-BLK-1", pack_id: "1065" }
+  it("retires the stale sku-keyed row once the numeric-id row is WRITTEN, and counts rows deleted", async () => {
+    st.packStateRead = { data: [nwslSku, { id: "1038", pack_sku: "X", pack_id: "1038" }], error: null }
+    st.packUpsert = { data: [{ id: "1065" }], error: null }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "850176BC-NWSL-PZM-BLK-1", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    expect(st.packDeletes).toEqual([["850176BC-NWSL-PZM-BLK-1"]])
+    expect(st.runs.at(-1).p_extra).toMatchObject({ packs_retired: 1, packs_retire_error: null })
+  })
+  it("never retires anything when the pack upsert FAILED — the old row is then the only copy", async () => {
+    st.packStateRead = { data: [nwslSku], error: null }
+    st.packUpsert = { data: null, error: { message: "pack err" } }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "850176BC-NWSL-PZM-BLK-1", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    expect(st.packDeletes).toEqual([])
+    expect(st.runs.at(-1).p_extra.packs_retired).toBe(0)
+  })
+  it("does not retire a sku row whose numeric pack was NOT written this batch", async () => {
+    st.packStateRead = { data: [nwslSku], error: null }
+    st.packUpsert = { data: [{ id: "1038" }], error: null }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1038", pack_sku: "Y", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    expect(st.packDeletes).toEqual([])
+  })
+  it("a failed retire FAILS the run and reports its error; the count stays 0", async () => {
+    st.packStateRead = { data: [nwslSku], error: null }
+    st.packUpsert = { data: [{ id: "1065" }], error: null }
+    st.packDeleteResult = { data: null, error: { message: "del err" } }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "850176BC-NWSL-PZM-BLK-1", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    expect(st.runs.at(-1).p_extra).toMatchObject({ packs_retired: 0, packs_retire_error: "del err" })
+    expect(st.runs.at(-1).p_ok).toBe(false)
   })
 })
 

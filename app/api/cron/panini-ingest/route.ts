@@ -444,6 +444,9 @@ export async function POST(req: NextRequest) {
     let packsError: string | null = null;
     let productsError: string | null = null;
     let packIdMapError: string | null = null;
+    // Sku-keyed rows superseded by a row under Panini's numeric pack id (see ONE PRODUCT, ONE ROW).
+    let packsRetired = 0;
+    let packsRetireError: string | null = null;
     try {
       const nowIso = new Date().toISOString();
       // PRODUCT GATE (see MULTI-PRODUCT above). Resolve which setIds may be written, and the
@@ -489,10 +492,16 @@ export async function POST(req: NextRequest) {
         // (no numeric id -> pack_sku). Without this a second row would appear on the Packs tab for
         // the same product. An existing row with the same raw.pack_sku keeps its id.
         const idBySku = new Map<string, string>();
+        // Non-numeric (sku-keyed) rows whose raw carries Panini's numeric pack id: pack id -> row ids.
+        const skuRowsByPackId = new Map<string, string[]>();
         {
-          const { data: ex, error: exErr } = await (supabaseAdmin as any).from("panini_pack_state").select("id,pack_sku:raw->>pack_sku");
+          const { data: ex, error: exErr } = await (supabaseAdmin as any).from("panini_pack_state").select("id,pack_sku:raw->>pack_sku,pack_id:raw->>pack_id");
           if (exErr) { packIdMapError = exErr.message; console.log(`[${PIPELINE}] pack id map read: ${exErr.message}`); }
-          for (const e of (ex ?? []) as { id: string; pack_sku: string | null }[]) if (e.pack_sku) idBySku.set(String(e.pack_sku), String(e.id));
+          for (const e of (ex ?? []) as { id: string; pack_sku: string | null; pack_id?: string | null }[]) {
+            if (e.pack_sku) idBySku.set(String(e.pack_sku), String(e.id));
+            const pid = e.pack_id == null ? "" : String(e.pack_id);
+            if (/^[0-9]+$/.test(pid) && !/^[0-9]+$/.test(String(e.id))) skuRowsByPackId.set(pid, [...(skuRowsByPackId.get(pid) ?? []), String(e.id)]);
+          }
         }
         const packRowsAll = packs.map((p) => {
           const name = typeof p?.collection_name === "string" ? p.collection_name.trim().toLowerCase() : "";
@@ -509,6 +518,16 @@ export async function POST(req: NextRequest) {
         const packRows = mergePackRowsById(packRowsAll);
         const { data, error } = await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" }).select("id");
         if (error) { packsError = error.message; console.log(`[${PIPELINE}] pack state upsert: ${error.message}`); } else packsWritten += data?.length ?? 0;
+        // Retire a sku-keyed row ONLY once its pack's numeric-id row has just been WRITTEN this batch
+        // (2026-11-22, NWSL #1065: '850176BC-NWSL-PZM-BLK-1' beside '1065'). Never on a failed or
+        // partial upsert — the old row is then the only copy. The count is rows actually DELETED.
+        const writtenIds = new Set(((data ?? []) as { id: unknown }[]).map((r) => String(r.id)));
+        const stale = error ? [] : [...writtenIds].flatMap((id) => skuRowsByPackId.get(id) ?? []).filter((id) => !writtenIds.has(id));
+        if (stale.length) {
+          const del = await (supabaseAdmin as any).from("panini_pack_state").delete().in("id", stale).select("id");
+          if (del.error) { packsRetireError = del.error.message; console.log(`[${PIPELINE}] retire sku-keyed pack rows: ${del.error.message}`); }
+          else packsRetired = del.data?.length ?? 0;
+        }
       }
       // serials -> panini_card_serials (dedup by sku within the batch; upsert on sku)
       let serialsWritten = 0;
@@ -692,6 +711,7 @@ export async function POST(req: NextRequest) {
         fmvSpreadError ? `fmv_spread: ${fmvSpreadError}` : null,
         fmvPriorError ? `fmv_prior: ${fmvPriorError}` : null,
         packsError ? `packs: ${packsError}` : null,
+        packsRetireError ? `packs_retire: ${packsRetireError}` : null,
         packIdMapError ? `pack id map (a pack seen under a new page may have written a duplicate row): ${packIdMapError}` : null,
         productsError ? `products (gate fell back to ${PANINI_LEGACY_SET_ID} only): ${productsError}` : null,
         salesError ? `sales: ${salesError}` : null,
@@ -709,6 +729,7 @@ export async function POST(req: NextRequest) {
         // Rows held back by the product gate, by setId: a non-empty map is a product the grid is
         // serving whose cards are not admitted yet (walk_cards=false), never a failure.
         packs_id_map_error: packIdMapError,
+        packs_retired: packsRetired, packs_retire_error: packsRetireError,
         products_error: productsError, admitted_set_ids: [...admitted], skipped_by_set: skippedBySet,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
