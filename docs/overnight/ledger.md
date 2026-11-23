@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:45 PM PT · 🔧 SHIPPED (tooling) — the pre-push preflight runs the migration guards when a migration changed (Claude Code cloud, evening autonomous pass)
+- `--quick` (the pre-push hook) skipped every tree-walking guard, and the migration guards are tree-walkers, so a migration push was checked locally by the parse step only. That is how `4582e1cfa` reached `main` with a stale pin (`db-pin-points-at-the-newest-defining-migration`). Now `migrationWalkers()` selects the ~50 tests that read `supabase/migrations` (12 s), and quick mode runs them whenever a migration changed. Unit tests added (selection, plus the real pin-pointer and drift guards being picked); a dry run on a probe migration shows the new step.
+- **Revert:** `git revert` the commit titled "preflight: quick mode runs the migration guards".
+
 ### 2026-11-22 ~9:20 PM PT · 🛡 SHIPPED (guard) — a new migration may not match a wallet through a bare `lower(p_wallet)` (Claude Code cloud, evening autonomous pass)
 - `__tests__/new-migrations-do-not-lowercase-a-solana-wallet.test.ts`: forward-only after `20261123051216`, hex-guarded `CASE WHEN p_wallet ~* '^0x' …` passes, inline escape `-- solana-lower: flow-only (<why>)`. Proved by a planted migration (red), the same plant with the marker (green), and the previous breakdown body failing the detector. Recorded in `chain-strategy.md`.
 - **Revert:** `git revert` the commit titled "guard: a new migration may not match a wallet through a bare lower(p_wallet)".
