@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~9:12 PM PT · ✅ APPLIED — Panini ESPN crosswalk now links Jr./Sr. players (trailing-dash group keys) — migration `20261123050843` (Cowork cloud; Trevor: "Do what you think is best and use chrome if you need for sql")
+- Ran the parked fix (`6c06f46`'s `docs/audits/2026-11-22-panini-crosswalk-trailing-dash-keys.sql`) through the Supabase SQL editor in Trevor's Chrome. The buffer was fetched from GitHub at that sha and SHA-256 checked in-page, and the history row was recorded in the same run. Both live md5s were re-read immediately before (unchanged).
+- Verified by MCP read: both function bodies carry the fix. `select refresh_panini_espn_crosswalk()` moved matched from 3,309 to **3,366**. That is 54 trailing-dash keys linked plus 10 `family_ambiguous` (exactly the dry run), with every non-dash link kept (3,312).
+- Positive control: `get_player_recent_games('panini_blockchain', ['bobby-witt-jr-'])` linked=1, and Jaren Jackson Jr. shows 8 games this season.
+- The file moved from `docs/audits/` to `supabase/migrations/20261123050843_…` (migration parity).
+- **Revert:** re-apply the pre-change bodies, i.e. `20261108183002_audit_20261108_espn_soccer_leagues.sql` (refresh) + `20261108221124_audit_20261108_espn_search_person_collections.sql` (population) CREATE OR REPLACE bodies (or the pre-change bodies recoverable from this file by reverting the 3 lines marked audit_20261122), then re-run `refresh_panini_espn_crosswalk()`.
+
 ### 2026-11-22 ~9:45 PM PT · 🔧 SHIPPED (tooling) — the pre-push preflight runs the migration guards when a migration changed (Claude Code cloud, evening autonomous pass)
 - `--quick` (the pre-push hook) skipped every tree-walking guard, and the migration guards are tree-walkers, so a migration push was checked locally by the parse step only. That is how `4582e1cfa` reached `main` with a stale pin (`db-pin-points-at-the-newest-defining-migration`). Now `migrationWalkers()` selects the ~50 tests that read `supabase/migrations` (12 s), and quick mode runs them whenever a migration changed. Unit tests added (selection, plus the real pin-pointer and drift guards being picked); a dry run on a probe migration shows the new step.
 - **Revert:** `git revert` the commit titled "preflight: quick mode runs the migration guards".
