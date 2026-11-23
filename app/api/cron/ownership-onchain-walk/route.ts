@@ -253,7 +253,6 @@ async function run(req: NextRequest) {
           return;
         }
         walletsWalked++;
-        walkedOk.push(wallet);
         if (idFloor != null) {
           for (const id of heldIds) {
             const n = Number(id);
@@ -291,7 +290,7 @@ async function run(req: NextRequest) {
               .limit(PAGE);
             if (cursor) q = q.gt("nft_id", cursor);
             const { data, error } = await q;
-            if (error) { readErr = error.message ?? String(error); break; }
+            if (error) { readErr = error.message || String(error) || "ownership read failed"; break; }
             const pageRows = (data ?? []) as typeof rows;
             rows.push(...pageRows);
             if (pageRows.length < PAGE) break;
@@ -305,6 +304,10 @@ async function run(req: NextRequest) {
             return;
           }
         }
+        // 2026-11-22: stamped as walked only once BOTH reads succeeded. p_walked now also ranks the scheduler
+        // (topshot_ownership_owner_walks, 20261123000937): a wallet whose ownership read failed must stay at the
+        // head and be retried next run, not rotate to the back for ~3 days.
+        walkedOk.push(wallet);
         // An empty ID set cannot be told apart from a missing collection capability.
         const canFlag = heldIds.size > 0;
         for (const r of rows as Array<{

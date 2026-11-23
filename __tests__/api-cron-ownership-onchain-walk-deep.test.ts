@@ -180,6 +180,12 @@ describe("ownership-onchain-walk — verification walk", () => {
     expect((log?.p_extra as Record<string, unknown>).wallet_error_samples).toEqual([
       { wallet: W, stage: "ownership-read", error: "select denied" },
     ])
+    // 2026-11-22 (20261123000937): p_walked ranks the scheduler, so a wallet whose ownership read failed is
+    // NOT stamped as walked — it stays at the head and is retried next run.
+    const stamped = spy.rpcCalls
+      .filter((c) => c.name === "topshot_index_walk_holdings")
+      .flatMap((c) => ((c.args as { p_walked?: string[] } | undefined)?.p_walked ?? []))
+    expect(stamped).not.toContain(W)
   })
 
   it("an upsert error flips ok=false with an 'upsert:' error", async () => {
