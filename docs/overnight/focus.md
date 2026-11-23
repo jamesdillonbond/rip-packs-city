@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-22 ~6:00 PM PT (Claude Code cloud, same thread, Trevor: "proceed with all of those") — what changed after 5 PM
+
+- **New public tables get RLS at CREATE** (`20261123012802`, event trigger `rpc_public_table_rls_on_create`). A `rls_off_base_table` smoke row now means someone DISABLED RLS after creating the table, or the trigger warned (read the Postgres log for `rpc_public_table_rls_on_create: could not enable RLS`). Do not re-add a DROP of it to a forward migration (the connector holds DROP EVENT TRIGGER for confirmation).
+- **Stale suppression still to delete:** `pipeline_alert_suppression` row `ingest-topshot-challenges` ("Redundant, not broken", expires 12-04) is FALSE. The lane wrote 1,029 rows / 7 d via jobs 771/772. The delete migration was held by the connector's confirmation prompt twice; it needs an attended session. The SQL is in the handoff (queue item 10).
+- **Observability Plus is ~33 % of the Vercel bill** (~$55–76/mo). No sampling knob exists (no tracer); only turning it off cuts it, which costs the 7-day log/error queries. Trevor's call, not a night-pass action.
+
 ## STEER — added 2026-11-22 ~4:00 PM PT (Claude Code cloud, daytime autonomous pass, late items) — three dated reads
 
 - **fmv-recalc :08 runs (from ~11-23):** `extra.historical_fallback_error` rate on runs starting at minute 8 falls from 21 % (16/77) toward the :28/:48 rate (~1 %) after job 704 moved off minute 9 (`20261122235804`). Still ≥ 10 % after a day → the collision is not job 704 alone; read the handoff's levers (1)/(2). **Estate-wide baseline (72 h to 11-22 ~4:05 PM PT): statement timeouts by start minute: :08 = 19 across 4 pipelines (fmv-recalc, lock-check-batch, refresh_wmc_fmv_changed, sentinel); no other minute > 4.** Re-run the same by-minute count on 11-24. Job 704 was ~31 of minute 9's 153 s/h; if :08 stays high, the next candidates are the other minute-9 jobs (`rpc-populate-pinnacle-wmc-fmv` hourly, `rpc-refresh-allday-market-index-daily` every 2 h, `rpc-thp-leg-panini` every 6 h).
@@ -19,7 +25,7 @@ Full detail: [handoff-2026-11-22-daytime-autonomous-pass.md](../handoff-2026-11-
 - **Mon 11-23 8:33 AM PT weekly email:** the sealed-packs block shows only members whose packs have a live ask; no "$0.00" line anywhere (5 members on 11-22 hold only unlisted packs, so they get no block). Logo/CTA now use the email red. It also carries a repricing line for members hit by the 11-17 FMV restatements ("Includes about −$X from our price corrections…"; subject without the % when repricing dominates); `skipped_incomplete` should stay ~0.
 - **~11-29:** relallvisible/relpages > 95 % on `sales_2023`–`sales_2025` (insert-autovacuum trigger `20261122212737`), and Vercel `get_set_activity failed` well under the 6/day of 11-22.
 - **~11-29: All Day weekly PAIRED backtest** (nfl-all-day.md "Read 11-22"): the R125 rule fired on LOW two weeks running, but the 8-week series does not support a lever. Measure it PAIRED (the unpaired function row is not the rule's instrument); a third week below → split plain LOW by sales count and price band.
-- ⚠ **Lane budget:** 320 active pg_cron jobs vs the 318 baseline. Job 915 `panini-pack-ev-tier-shadow` (added 11:49 AM PT) has no paired retirement in its ledger entry. That is the Panini thread's call; flagged, not touched.
+- ✅ **Lane budget (closed ~5:32 PM PT, `20261123013202`):** job 915 folded into job 914 (`CALL public.run_panini_hourly_lanes()` at :49); 319 active; job 901 retires 11-25 (scheduled task) → 318. **Read 11-23:** `panini-edition-supply-obs` and `panini-pack-ev-tier-shadow` each log one run per hour from job 914.
 
 ## STEER — added 2026-11-22 ~11:30 AM PT (Cowork, sealed-pack thread closed) — two dated reads
 

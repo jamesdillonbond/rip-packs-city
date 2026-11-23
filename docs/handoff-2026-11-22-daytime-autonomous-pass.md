@@ -98,6 +98,22 @@ Golazos Flowty lane (retired 10-30), concierge #8, wallet #114, Pinnacle thp `ro
 
 9. ✅ **SHIPPED ~4:09 PM PT (`20261123000937`, item 20).** Was: **[P3, Claude Code, 0 nights] ownership-onchain-walk: 77 of 790 head wallets can never refresh.** The selector (`get_stale_ownership_wallets`, oldest `max(observed_at)` first) ranks a wallet whose every row is `walk_missed_at` by an `observed_at` the walk never advances. Those 77 (oldest 07-06) are walked every run, ~10 % of 800 slots. The walk still progresses: the newest wallet in the head was last seen 11-19. The fix is a design call: stamp a per-owner `last_walked_at` and order by it, or drop all-missed owners from the selector once confirmed sold. Same class as CLAUDE.md's "a leg's ORDER BY decides whether it progresses". ⚠ A selector-only rank on `walk_missed_at` does not work: `mark_topshot_ownership_walk_missed` sets it only `WHERE walk_missed_at IS NULL` (first-missed time), so it never advances either. The fix needs a per-owner walked stamp, or re-stamping on re-confirmation, which changes that column's meaning.
 
+10. **[P3, Trevor-attended, 0 nights] Delete the stale `ingest-topshot-challenges` alert suppression.** Its reason (09-05: "Redundant, not broken … 3 runs / 0 rows") is false now: the lane wrote 1,029 rows in 7 days via pg_cron 771/772, and the suppression silences its failure alerts until 12-04. The Supabase connector holds the DELETE for the operator's confirmation, which timed out twice (~5:35 PM PT; nothing applied, verified). Apply it as migration `audit_20261122_drop_stale_ingest_topshot_challenges_suppression` in an attended session (approve the prompt), then commit the file under the version it records:
+   ```sql
+   DO $guard$ BEGIN
+     IF (SELECT count(*) FROM public.pipeline_alert_suppression
+          WHERE pipeline = 'ingest-topshot-challenges' AND reason LIKE 'Redundant, not broken%') <> 1 THEN
+       RAISE EXCEPTION 'expected exactly one stale ingest-topshot-challenges suppression row'; END IF; END $guard$;
+   CREATE TABLE IF NOT EXISTS public.audit_20261122_ingest_topshot_challenges_suppression_backup AS
+     SELECT * FROM public.pipeline_alert_suppression WHERE pipeline = 'ingest-topshot-challenges';
+   ALTER TABLE public.audit_20261122_ingest_topshot_challenges_suppression_backup ENABLE ROW LEVEL SECURITY;
+   REVOKE ALL ON public.audit_20261122_ingest_topshot_challenges_suppression_backup FROM PUBLIC, anon, authenticated;
+   DELETE FROM public.pipeline_alert_suppression
+    WHERE pipeline = 'ingest-topshot-challenges' AND reason LIKE 'Redundant, not broken%';
+   ```
+
+11. **[decided, no change] `sentinel_pack_sales_feeds()` still names the Studio walkers retired 11-18** and reads `walker: null`. With a null walker, `feedFor()` returns null and the arms keep the strict verdict from the unlatch lane's chain reading. That verdict is what reads ok today. The upstream-behind fallback the walker fed existed only for the retired Studio mirror. Repointing it at `atlas-pack-sales-ingest` would change nothing (that lane carries no `partial` key), so it was left as is.
+
 ## Dated reads (also in focus.md, STEER 11-22 ~2:20 PM PT)
 
 - Next `apply-fmv-haircut` run: `rows_written` ~25–40, not ~190.
