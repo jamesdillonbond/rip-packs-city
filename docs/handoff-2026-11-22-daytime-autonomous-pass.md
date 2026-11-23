@@ -1,6 +1,6 @@
 # Daytime autonomous pass — 2026-11-22 (1:22 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN. 18 shipped (8 migrations, 1 one-off maintenance, 12 code changes, 1 artifact refresh), 0 reverted** (final ~4:15 PM PT; items 16–19 are the late ones). One live exposure was found and closed: a scratch table readable by anyone for ~17 min (item 16). Nothing routed 3+ nights; the oldest queued item is 0 nights old. Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
+**Verdict: GREEN. 19 shipped items (9 migrations, 1 one-off maintenance, 13 code commits, 1 artifact refresh), 0 reverted** (final ~4:25 PM PT, DB clock; items 16–20 are the late ones; an earlier stamp here said ~4:15, which was ahead of the clock). One live exposure was found and closed: a scratch table readable by anyone for ~17 min (item 16). Nothing routed 3+ nights; the oldest queued item is 0 nights old. Trevor: "work autonomously for the next 4 hours … fix any issues you encounter." Push worked directly to `main` from this session (dry-run first). A concurrent Panini/Candy thread was active all afternoon; I stayed out of its lane except for one Panini data-loss fix it could not be reached for (`ListAgents`: no reachable session).
 
 ## Shipped (newest first; each has a ledger entry with its revert path)
 
