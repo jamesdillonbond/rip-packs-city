@@ -181,6 +181,12 @@ const PINS = [
     migration: "supabase/migrations/20261012054000_audit_20261011_user_profiles_welcome_email_claim_is_idempotent.sql",
   },
   {
+    // Added 2026-11-22. The fmv-recalc hot lane compares a snapshot to when the newest sale was INGESTED, not only sold.
+    fn: "fmv_recalc_hot_editions",
+    test: "supabase/tests/fmv_recalc_hot_editions.sql",
+    migration: "supabase/migrations/20261123041110_audit_20261122_fmv_hot_lane_compares_snapshot_to_sale_ingest_time.sql",
+  },
+  {
     // Added 2026-10-11. The rip re-key lane also moves the rip's topshot_pack_rip_attribution copy (realized EV reads it alone).
     fn: "rekey_pack_rips_to_chain_identity",
     test: "supabase/tests/rekey_pack_rips_to_chain_identity.sql",
