@@ -34,6 +34,10 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Review of 4 recent commits** (`e90a0f2a6`, `5d8337121`, `07c53a4d0`, `d182d2ba2`): no high-confidence bugs. Two medium findings are not live today:
   - (a) panini-ingest's sku→id map read has no `.order()`. It only matters if two rows share a sku; today `1065` carries no `pack_sku`.
   - (b) `lib/candy/sale-buyer-paid.ts` `fetchTx` turned "publicnode errored, mainnet-beta returned null" into an `rpc_errors` count. ✅ Fixed anyway (`516d53b5f`). The lane was 288/288 ok in 24 h.
+- **Edition-key joins without a collection scope** (CLAUDE.md #142 class): a sweep of live functions joining `editions.external_id = <x>.edition_key` found every one scoped except `check_set_completion`. It has zero callers (code, SQL, cron, pg_stat_statements), so it is a drop candidate for an attended session; a DROP is held by the connector.
+- **Other wallet functions:** `get_wallet_moments_with_fmv` is already `force_custom_plan` and Solana-aware. `get_top_movers` takes 3.1 s / 78k buffers on the 47k-moment wallet after its 11-20 rework, inside its 24 s budget. `get_fmv_for_editions` averages 690 ms on 500-id chunks. No change to any of them.
+- **`/api/analytics/sales/leaderboard`:** 5 statement timeouts in 4 days; 1.4 s mean, ~30 s tail on long windows. It shows an honest error; the lever is a precompute, not tonight.
+- **Pinnacle sniper feed** (errored 11-18/19 on 16–31 h old listings): healthy, refreshed 4.3 h ago against a 13 h limit.
 - **Live-page sweep** (335 URLs, sitemap 0 + 150 random): 0 NaN/undefined/[object Object]. The only failures were 3 profile collection-breakdown timeouts under my 6-way concurrency.
 - **Top Shot sales ingest lag:** on-chain p50 15.7 min, p90 53 min. Driven by cron-job.org every 20 min (:03/:23/:43) plus the :50 GHA backstop.
 
