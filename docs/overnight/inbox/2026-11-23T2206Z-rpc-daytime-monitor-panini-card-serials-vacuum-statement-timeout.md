@@ -14,3 +14,11 @@ LOW. Single isolated timeout, self-recovering on cadence; not a logic error; not
 ## Suggested action (night pass / Trevor — NOT taken by this read-only monitor)
 A scheduled maintenance `VACUUM` should not sit under a short `statement_timeout`. Consider wrapping the job command so the VACUUM runs with `statement_timeout = 0` (or a generous value), e.g. `SET statement_timeout=0; VACUUM (ANALYZE) public.panini_card_serials;` via `cron.alter_job(678, command := ...)` — same statement-timeout-fit class as the prior offers-backstop / serial-FMV job fits. Alternatively confirm autovacuum/analyze cadence is sufficient and retire or thin job 678. Reversible: `cron.alter_job(678, command := 'VACUUM (ANALYZE) public.panini_card_serials')`.
 - Re-measure: if the next 1–2 scheduled runs (11-24 11:04Z / 19:04Z) also time out, the margin has closed for good and this escalates from a one-off to a standing fit.
+
+---
+
+## 🔧 FIX APPLIED 2026-11-23 ~3:19 PM PT (Claude Code cloud) — `20261123231928`; verify 11-24 3:04 AM PT
+
+- ⛔ **The suggested `SET statement_timeout=0; VACUUM …` would have failed outright:** a multi-statement pg_cron command runs in a transaction block, and `VACUUM cannot run inside a transaction block` (database.md, R108 — the same class as CIC).
+- **Applied instead:** job 383's recipe for `sales_2026`. `GRANT MAINTAIN ON panini_card_serials TO cron_heavy`, and the job was re-created under `SET LOCAL ROLE cron_heavy`. Same name and schedule, now **jobid 919**, with a 600 s role default and no `SET` prefix. A post-condition asserts MAINTAIN, because without it VACUUM warns-and-skips and still reads `succeeded`.
+- **Verify (focus.md):** the 11-24 11:04Z run of 919 `succeeded`, AND `last_vacuum` for `panini_card_serials` moved to that run. Then mark this RESOLVED.
