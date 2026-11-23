@@ -1974,11 +1974,6 @@ const PINS = [
     migration: "supabase/migrations/20260802191500_audit_20260802_snapshot_resolve_golazos_listing_edition_ids.sql",
   },
   {
-    fn: "check_set_completion",
-    test: "supabase/tests/check_set_completion.sql",
-    migration: "supabase/migrations/20260802192000_audit_20260802_snapshot_check_set_completion.sql",
-  },
-  {
     fn: "stub_editions_from_wmc",
     test: "supabase/tests/stub_editions_from_wmc.sql",
     migration: "supabase/migrations/20260802192500_audit_20260802_snapshot_stub_editions_from_wmc.sql",

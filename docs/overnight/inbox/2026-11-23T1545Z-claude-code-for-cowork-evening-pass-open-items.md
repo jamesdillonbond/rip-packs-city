@@ -88,3 +88,16 @@ Steps are in **item 1** of the same filing.
 - Weekly email data pre-send: 39 blocks, 19 correctly omitted, 0 NULL.
 - `wallet_held_pack_value`: 0 errors in 48 h (the overnight carry was stale; marked resolved).
 - CI green; prod READY `245f4cb1`.
+
+
+---
+
+## ✅ RESOLVED 2026-11-23 ~8:15 AM PT (Cowork cloud, attended; Trevor: "Can you work through this? Use chrome if you need")
+
+1. ✅ Cadence bridges retired — `20261123154756` (before the 4 PM PT lapse).
+2. ✅ Stale suppression dropped — `20261123154821`.
+3. ✅ #235 read: `Entity page sweep` was **rate-limiting (→ Challenge), not logging**, during the sweep; config unchanged since 11-08. 249 hits in 7 d, 0 in the last 3 d. Minute-level timing not readable from the dashboard. Recorded in known-issues #235. No Log → Rate Limit decision needed.
+4. ✅ `check_set_completion(text)` dropped — `20261123154924`; pin + drift-guard entry removed.
+5. ✅ Trevor said yes to both: sales indexer every 5 min (`3,8,…,58`), historical buyer backfill paused.
+6. Dated reads unchanged — still owed (5:10 PM PT today, 11-24, 11-30).
+Ledger 2026-11-23 ~7:48–8:15 AM PT.

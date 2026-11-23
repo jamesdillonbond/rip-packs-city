@@ -102,3 +102,13 @@ the finding"). The review is done: each row's own condition, "lapses when the ba
    in `degraded`/`stopped`.
 4. Record as in item 1 step 4. **If done after 4 PM PT 11-23** the sentinel will already have read WARN for the
    lapse; the same delete clears it.
+
+
+---
+
+## ✅ RESOLVED 2026-11-23 ~7:48 AM PT (Cowork cloud, attended; Trevor: "work through this")
+
+Both items applied via `apply_migration` from an attended session (the confirm hold did not occur).
+- **Item 1** → `20261123154821`: premise 1 row / 1,101 rows written in 7 d; after: 0 suppression rows, backup holds 1, `check_public_security_invariants()` 0 rows.
+- **Item 2** → `20261123154756`: premise ratios 0.996 / 1.000; after: 0 bridge rows, backup holds 2, `expired_exemptions` = []. Done before the 4 PM PT lapse.
+Migration files committed; ledger 2026-11-23 ~7:48 AM PT.
