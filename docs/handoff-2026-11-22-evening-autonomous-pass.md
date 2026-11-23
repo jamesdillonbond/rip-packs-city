@@ -88,6 +88,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Shipped ~11 AM PT — `20261123185838`:** jobs 476/474 (Top Shot unmapped-sale resolve + promote) hourly → every 10 min.
   - Why: the 5-min indexer cut lag p50 15.0 → 3.7 min, but p90 stayed ~47 min because every late sale landed at `:54` via the hourly drain.
   - ⚠ **Correction 11:15 AM PT:** `promote_unmapped_sales` enforces a **20-min minimum gap** per collection (`c_min_gap`, 08-30, sized for All Day's 104k backlog), so on the 10-min schedule every other 474 run logs `skipped_recent_run` (rows NULL, honest). Effective drain = **every 20 min** (first real one 11:19 AM PT). Expect p90 ~20–30 min, not ~15. A Top Shot-only gap (its drain is 1–2 s) would be a pinned-function change — not done.
+  - ✅ **Positive control 11:21 AM PT:** the first real drain on the new schedule ran at **11:19 AM PT and promoted 20 of 20** eligible parked sales.
   - **Read on 11-24:** Top Shot on-chain p90 ingest lag over a full day should fall toward ~20–30 min. Query in cron-and-schedulers.md, "Split a lag distribution by INGEST MINUTE".
 - **Still open, owned elsewhere:**
   - #249 (ISR caches a degraded render): needs a preview-verified segment change.
