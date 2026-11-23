@@ -3215,3 +3215,7 @@ select * from _w order by ts;
 ### ⚠ Pausing a lane is TWO edits: the scheduler AND its `pipeline_cadence_watchlist` row (2026-11-23)
 
 A lane paused on cron-job.org (or `cron.alter_job(active := false)`) keeps its active watchlist row, so `detect_stalled_pipelines()` — and the GHA watchdog, Sentinel cadence arm and dead-lane backstop that read it — report the deliberate pause as a stall. Set the row `is_active = false` with the reason in `notes` in the same turn (`20261123220749` did this for `topshot-buyer-backfill-historical`), and re-activate it when the lane is un-paused.
+
+### ⛔ A rate gate EQUAL to its schedule period skips about half the ticks (2026-11-23)
+
+`promote_unmapped_sales` skips a scope whose `last_run_at > started_at − gap`. With the gap set to 5 min on a 5-min pg_cron schedule (`20261123210830`), pg_cron's start jitter (each run starts ~0.2–0.3 s past the minute, varying) put the next tick a fraction of a second UNDER 5 min after the recorded start: **14 of 33 ticks skipped**, so every parked sale waited two ticks. Fixed with a 4-min gap (`20261123235536`). **Set a gate strictly below the period, by more than any start jitter, and pin the boundary in the test** (a run `period − 0.3 s` after the last must pass). The tell in `pipeline_runs`: `skipped_recent_run` rows whose `last_run_at` is exactly one period earlier. ⚠ It was found by splitting the lag by PATH (direct vs promoted); the pooled p90 had improved and looked like success.
