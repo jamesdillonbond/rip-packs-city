@@ -6,6 +6,7 @@
 
 ## STEER — added 2026-11-23 ~7:45 AM PT (Claude Code cloud, end of the evening pass; Trevor: "Hand it off to cowork")
 
+- **NEW for Cowork (11-23 ~1:45 PM PT):** inbox `2026-11-23T2145Z`, one held DELETE. It merges two players split across a Jr./no-Jr. spelling (Candy Luis Robert, Panini Andre Jackson); the SQL is staged and self-checking. SQL editor or an attended `apply_migration`.
 - **DECIDED 11-23 ~12:05 PM PT — Top Shot promote gap, gated on the 11-24 read.** Top Shot on-chain sale-ingest p90 over the full day 11-24 (split by ingest minute, cron-and-schedulers.md). **If p90 > 20 min**, ship a Top Shot-scoped `c_min_gap` (5 min) in `promote_unmapped_sales`: its drain is 1–2 s, and the 20-min gap was sized 08-30 for All Day's 104k backlog. That is a pinned-function `CREATE OR REPLACE`: re-read `prosrc` first, update the pin + drift-guard entry, keep All Day/Golazos at 20 min. **If p90 ≤ 20 min, close it**: the 20-min drain is enough.
 - **#235 residual (closed 11-23 ~12 PM PT):** after 10:14 PM PT 11-23, read `vercel.function_invocation.count` 5-min buckets EXCLUDING cle1/iad1/pdx1/sfo1 for 11-23 07:00Z → 11-24 06:15Z. Any bucket ≥ ~1,000 (or a minute > 400 through ≥ 10 regions) → reopen #235.
 - **#249 closed 11-23** (0 whole-page failures / 48 h). Reopen trigger is in known-issues #249: a whole-page `*Unavailable` group in a 7-day read, or one panel > ~5 failures/day.
