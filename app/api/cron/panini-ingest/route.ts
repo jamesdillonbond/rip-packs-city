@@ -113,6 +113,17 @@ const PANINI_BOOTSTRAP_HOURS = 12;
 // and the editions about to cross the 7-day line are refreshed first. Measured that evening: two
 // bootstrap runs in one afternoon while > 6 d rose 690 -> 846 with the oldest edition 6.1 days old.
 const PANINI_BOOTSTRAP_YIELD_DAYS = 6.5;
+// FOCUS SCAN (2026-11-22, Trevor: "an additional scan to just pick these up without sacrificing the
+// rest"). An admitted product admitted < PANINI_FOCUS_DAYS ago whose catalogue holds fewer editions
+// than PANINI_FOCUS_SHARE of its last grid listing count is named in `focus_set_ids`; the scheduled
+// runner then starts a SECOND process (scripts/panini-focus-child.mjs) that asks `?focus=1` and walks
+// ONLY those products, in parallel, so nothing comes out of the scheduled walk. Unlike the bootstrap
+// it does not yield to the aged list — it costs that list nothing. It ends by itself once the
+// catalogue reaches the share. 0.35: measured on NWSL 11-22, 1,025 distinct editions behind 2,370
+// grid listings (~0.43), so focus stops when most of a product is catalogued and the normal
+// interleave takes the tail.
+const PANINI_FOCUS_DAYS = 7;
+const PANINI_FOCUS_SHARE = 0.35;
 // AGED PRIORITY (2026-10-03): catalogue editions not walked for this long are served in
 // `priority_pskus` (stalest first, at most PANINI_AGED_PRIORITY_CAP per run). See the GET below.
 const PANINI_AGED_PRIORITY_DAYS = 5;
@@ -883,7 +894,18 @@ export async function GET(req: NextRequest) {
     })
     .map((r) => Number(r.set_id)).sort((a, b) => a - b);
   const bootstrapIds = bootstrapYields ? [] : bootstrapCandidates;
-  const walkSetIds = bootstrapIds.length ? bootstrapIds : admittedIds;
+  const focusIds = prod.error || paged.truncated ? [] : prod.rows
+    .filter((r) => {
+      const items = Number(r.last_grid_items ?? 0);
+      if (!r.walk_cards || !(items > 0)) return false;
+      if ((catCount.get(Number(r.set_id)) ?? 0) >= PANINI_FOCUS_SHARE * items) return false;
+      const since = r.walk_cards_since ? Date.parse(r.walk_cards_since) : NaN;
+      return Number.isFinite(since) && nowMs - since < PANINI_FOCUS_DAYS * 86_400_000;
+    })
+    .map((r) => Number(r.set_id)).sort((a, b) => a - b);
+  // `?focus=1` is the focus child's read: its whole scope is the focus products (empty = it exits).
+  const focusMode = sp.get("focus") === "1";
+  const walkSetIds = focusMode ? focusIds : bootstrapIds.length ? bootstrapIds : admittedIds;
   const walkSet = new Set(walkSetIds);
   // A catalogue row of a product that has since been switched off leaves the walk list; the row
   // itself stays (its history is real).
@@ -980,6 +1002,7 @@ export async function GET(req: NextRequest) {
     if (i < heldNew.length) priority.push(heldNew[i]);
   }
 
+  const focusSports = [...new Set(prod.rows.filter((r) => focusIds.includes(Number(r.set_id)) && r.last_grid_sport).map((r) => String(r.last_grid_sport)))];
   const rows = trim ? inScope.slice(0, trim) : inScope;
   const pskus = trim ? [...heldNew, ...rows.map((r) => r.external_id)].slice(0, trim) : [...heldNew, ...rows.map((r) => r.external_id)];
   return NextResponse.json({
@@ -992,15 +1015,19 @@ export async function GET(req: NextRequest) {
     // "full" | "walk" (2026-10-03, lib/chains/panini/run-mode.ts). A bootstrap run is always full: it
     // exists to DISCOVER a just-admitted product's cards, which only the grids can do. A runner older
     // than this field ignores it and does a full run, as before.
-    run_mode: bootstrapIds.length ? "full" : paniniRunMode(new Date()),
-    discovery_sports: discoverySports(),
+    run_mode: focusMode ? "focus" : bootstrapIds.length ? "full" : paniniRunMode(new Date()),
+    // Products that get a parallel focus scan this run (above); every response carries it, and the
+    // scheduled runner decides from it whether to start the child.
+    focus_set_ids: focusIds,
+    discovery_sports: focusMode ? focusSports : discoverySports(),
     // Sports whose grid gets the FULL enumeration budget (discovery of walked products' new
     // editions); every other sport gets a short discovery pass that only has to see its setIds.
     // Soccer always (the WC walk predates the registry); plus the sport each walked product was
     // last sighted in.
-    full_enum_sports: [...new Set(["Soccer", ...(prod.error ? [] : prod.rows.filter((r) => r.walk_cards && r.last_grid_sport).map((r) => String(r.last_grid_sport)))])],
-    // null (not []) when the read failed: the runner then keeps its built-in pack list.
-    pack_urls: pagesRes.urls,
+    full_enum_sports: focusMode ? focusSports : [...new Set(["Soccer", ...(prod.error ? [] : prod.rows.filter((r) => r.walk_cards && r.last_grid_sport).map((r) => String(r.last_grid_sport)))])],
+    // null (not []) when the read failed: the runner then keeps its built-in pack list. A focus
+    // child opens no pack pages — those are the scheduled run's.
+    pack_urls: focusMode ? [] : pagesRes.urls,
     pack_urls_error: pagesRes.error,
     as_of: new Date().toISOString(),
     order: "last_seen_at_asc",

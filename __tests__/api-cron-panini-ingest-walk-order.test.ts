@@ -244,6 +244,68 @@ describe("GET /api/cron/panini-ingest — multi-product walk scope", () => {
     expect(j.bootstrap_yielded_set_ids).toEqual([])
   })
 
+  // FOCUS SCAN (2026-11-22): a parallel runner process for a product whose catalogue lags its grid.
+  it("names a FOCUS product whose catalogue is under 35% of its grid listings, even while the bootstrap yields", async () => {
+    // NWSL shape on 11-22: 2478 had a few catalogue rows (held cards) and 2,068 grid listings; the
+    // oldest edition was 8.6 days old, so the bootstrap yielded — focus must not.
+    st.total = 6
+    st.setIdAt = (i: number) => (i < 2 ? 2478 : 2332)
+    st.baseMs = Date.now() - 8.6 * 86_400_000
+    st.products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true },
+      { set_id: 2478, name: "NWSL", walk_cards: true, last_grid_items: 2068, last_grid_sport: "Womens Soccer", walk_cards_since: hoursAgo(8) },
+    ], error: null }
+    const j = await (await GET(req())).json()
+    expect(j.focus_set_ids).toEqual([2478])
+    // the scheduled run itself is NOT narrowed — focus costs it nothing
+    expect(j.walk_set_ids).toEqual([2332, 2478])
+    expect(j.run_mode).not.toBe("focus")
+  })
+
+  it("?focus=1 serves ONLY the focus products: their cards, their sport's grid, no pack pages", async () => {
+    st.total = 6
+    st.setIdAt = (i: number) => (i < 2 ? 2478 : 2332)
+    st.products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true, last_grid_sport: "Soccer" },
+      { set_id: 2478, name: "NWSL", walk_cards: true, last_grid_items: 2068, last_grid_sport: "Womens Soccer", walk_cards_since: hoursAgo(8) },
+    ], error: null }
+    const j = await (await GET(req("?focus=1"))).json()
+    expect(j.run_mode).toBe("focus")
+    expect(j.walk_set_ids).toEqual([2478])
+    expect(j.focus_set_ids).toEqual([2478])
+    expect(j.discovery_sports).toEqual(["Womens Soccer"])
+    expect(j.full_enum_sports).toEqual(["Womens Soccer"])
+    expect(j.pack_urls).toEqual([])
+    expect(j.pskus.every((p: string) => p.startsWith("packcard-2478_"))).toBe(true)
+    expect(j.pskus.length).toBe(2)
+  })
+
+  it("no focus once the catalogue reaches 35% of the grid, off the grid, or after 7 days — and ?focus=1 then names nothing", async () => {
+    for (const [p2478, setIdAt] of [
+      [{ last_grid_items: 5, walk_cards_since: hoursAgo(8) }, (i: number) => (i < 2 ? 2478 : 2332)],   // 2 rows >= 0.35 x 5
+      [{ last_grid_items: 0, walk_cards_since: hoursAgo(8) }, () => 2332],                              // not on the grid
+      [{ last_grid_items: 2068, walk_cards_since: hoursAgo(24 * 8) }, () => 2332],                      // admitted > 7 days ago
+      [{ last_grid_items: 2068, walk_cards_since: null }, () => 2332],                                  // no admission stamp
+    ] as const) {
+      st.total = 6
+      st.setIdAt = setIdAt
+      st.products = { data: [{ set_id: 2332, name: "WC", walk_cards: true }, { set_id: 2478, name: "NWSL", walk_cards: true, last_grid_sport: "Womens Soccer", ...p2478 }], error: null }
+      expect((await (await GET(req())).json()).focus_set_ids).toEqual([])
+      const f = await (await GET(req("?focus=1"))).json()
+      expect(f.focus_set_ids).toEqual([])
+      expect(f.walk_set_ids).toEqual([])
+    }
+  })
+
+  it("a product that is not admitted never gets a focus scan", async () => {
+    st.total = 4
+    st.products = { data: [
+      { set_id: 2332, name: "WC", walk_cards: true },
+      { set_id: 1875, name: "WWE", walk_cards: false, last_grid_items: 1362, last_grid_sport: "WWE", walk_cards_since: null },
+    ], error: null }
+    expect((await (await GET(req())).json()).focus_set_ids).toEqual([])
+  })
+
   it("never bootstraps off a TRUNCATED catalogue — it cannot prove a count of zero", async () => {
     st.total = 105_000 // past the route's 100-page ceiling
     st.products = { data: [

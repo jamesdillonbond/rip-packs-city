@@ -63,6 +63,9 @@ import { buildWalkOrder } from "./panini-walk-order.mjs";
 import { selectPackPages } from "./panini-pack-pages.mjs";
 import { appliedSportOf, sameSport, sportParamOf, PANINI_FILTER_CACHE, clearFilterCacheInPage } from "./panini-grid-sport.mjs";
 import { createStallWatchdog } from "./panini-stall-watchdog.mjs";
+import { focusChildPlan, waitForChild } from "./panini-focus-child.mjs";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { isPackishEvidence, subpackUrlsFromHtml, packGridCandidates } from "./panini-pack-grid.mjs";
 
 const RUN_STARTED_AT = Date.now();
@@ -72,6 +75,14 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
+// FOCUS CHILD (2026-11-22) — see scripts/panini-focus-child.mjs. A second runner process, started
+// by a scheduled run, that walks ONLY the products the route names in focus_set_ids. Its log lines
+// carry a "[focus]" prefix so the shared panini-run.log stays readable.
+const FOCUS = process.env.PANINI_FOCUS === "1";
+if (FOCUS) {
+  for (const k of ["log", "error"]) { const f = console[k].bind(console); console[k] = (...a) => f("[focus]", ...a); }
+}
+let FOCUS_SET_IDS = [];
 const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN;
 const BASE = "https://nft.paniniamerica.net";
 
@@ -186,7 +197,8 @@ async function fetchWalkOrder() {
     // recently-walked edition look like a brand-new discovery to the classifier below, and
     // brand-new discoveries are walked FIRST. `complete` is the route's own statement that
     // nothing was paged off or trimmed; without it the classifier must not run.
-    const r = await fetch(INGEST_URL, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
+    const getUrl = FOCUS ? `${INGEST_URL}${INGEST_URL.includes("?") ? "&" : "?"}focus=1` : INGEST_URL;
+    const r = await fetch(getUrl, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
     if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return { list: [], complete: false, priority: [] }; }
     const j = await r.json();
     // Walk scope first: the route says which products' cards to walk. Absent (an older deploy) or
@@ -196,6 +208,8 @@ async function fetchWalkOrder() {
     if (Array.isArray(j?.discovery_sports) && j.discovery_sports.length) DISCOVERY_SPORTS = j.discovery_sports.filter((x) => typeof x === "string" && x);
     if (Array.isArray(j?.full_enum_sports) && j.full_enum_sports.length) FULL_ENUM_SPORTS = new Set(j.full_enum_sports.filter((x) => typeof x === "string"));
     if (j?.run_mode === "walk") RUN_MODE = "walk";
+    if (j?.run_mode === "focus") RUN_MODE = "focus";
+    FOCUS_SET_IDS = Array.isArray(j?.focus_set_ids) ? j.focus_set_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
     if (Array.isArray(j?.pack_urls)) SERVED_PACK_URLS = j.pack_urls.filter((x) => typeof x === "string" && x.startsWith(BASE + "/"));
     const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && isWalked(x)) : [];
     const complete = j?.complete === true;
@@ -262,7 +276,8 @@ async function main() {
   // is slow". The run now opens its own tab, records its CDP target id, and closes it at the end; a
   // tab a crashed run left behind is closed BY TARGET ID at the next start — never by evaluating in
   // other tabs (a second client's evaluate in a busy tab hung a run on 11-03).
-  const RUNNER_TAB_FILE = path.join(os.homedir(), ".panini-runner-tab.json");
+  // Overridable (2026-11-22) so a focus child never reads — and closes — the scheduled run's tab.
+  const RUNNER_TAB_FILE = process.env.PANINI_RUNNER_TAB_FILE || path.join(os.homedir(), ".panini-runner-tab.json");
   async function targetIdOf(pg) {
     try { const s = await ctx.newCDPSession(pg); const { targetInfo } = await s.send("Target.getTargetInfo"); await s.detach().catch(() => {}); return targetInfo?.targetId ?? null; } catch { return null; }
   }
@@ -809,6 +824,15 @@ async function main() {
 
   const { list: known, complete: knownComplete, priority: priorityPskus } = await fetchWalkOrder();
   watchdog.mark("walk-order");
+  // A focus child with nothing to focus on (or an older route that does not know ?focus=1, which
+  // answers with its normal full scope) must not walk anything: it would duplicate the scheduled run.
+  if (FOCUS && (RUN_MODE !== "focus" || !FOCUS_SET_IDS.length)) {
+    console.log(`[panini-runner] focus child: nothing to focus on (run_mode=${RUN_MODE}, focus_set_ids=[${FOCUS_SET_IDS.join(",")}]) - exiting`);
+    clearInterval(watchTimer);
+    await closeRunnerPage();
+    if (CDP) { await browser.close().catch(() => {}); } else { await ctx.close().catch(() => {}); }
+    return;
+  }
 
   // Home page first: a cheap pass for pack links (new drops are linked from it), nothing else.
   await ensurePage("home");
@@ -1034,9 +1058,26 @@ async function main() {
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
 
+  // FOCUS CHILD — started here, after this run's grid phase, so the two never enumerate at once.
+  let focusChild = null;
+  {
+    const plan = focusChildPlan({
+      focusSetIds: FOCUS_SET_IDS, isFocus: FOCUS,
+      mainDeadlineMs: RUN_STARTED_AT + Number(process.env.PANINI_RUN_BUDGET_MIN || 110) * 60000,
+      nowMs: Date.now(), env: process.env, home: os.homedir(),
+    });
+    console.log(`[panini-runner] focus child: ${plan.spawn ? "starting" : "not started"} - ${plan.reason}`);
+    if (plan.spawn) {
+      try {
+        focusChild = spawn(process.execPath, [fileURLToPath(import.meta.url)], { env: plan.env, stdio: "inherit", windowsHide: true });
+        focusChild.on("error", (e) => console.log(`[panini-runner] focus child error: ${e.message}`));
+      } catch (e) { console.log(`[panini-runner] focus child spawn failed: ${e.message}`); focusChild = null; }
+    }
+  }
+
   // --- 1b. PACK DROPS --- Panini's NFT store: what is on sale now and every pack's release date.
   //     Two page loads; the SPA's own signed queries fire on load and onResponse keeps their data.
-  for (const url of [`${BASE}/nft-store/nft-pack.html?sport=All`, `${BASE}/nft-store/pack-timeline.html`]) {
+  for (const url of RUN_MODE === "focus" ? [] : [`${BASE}/nft-store/nft-pack.html?sport=All`, `${BASE}/nft-store/pack-timeline.html`]) {
     watchdog.mark("pack-drops", url.slice(-60));
     await ensurePage("pack drops");
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
@@ -1060,7 +1101,7 @@ async function main() {
   // subpack pages forever. See scripts/panini-pack-pages.mjs.
   const PACK_PAGES_MAX = Number(process.env.PANINI_PACK_PAGES_MAX || 60);
   const packVisits = [];
-  for (const url of RUN_MODE === "walk" ? [] : selectPackPages(SERVED_PACK_URLS ?? PACK_URLS, [...harvestedPackUrls], PACK_PAGES_MAX)) {
+  for (const url of RUN_MODE === "walk" || RUN_MODE === "focus" ? [] : selectPackPages(SERVED_PACK_URLS ?? PACK_URLS, [...harvestedPackUrls], PACK_PAGES_MAX)) {
     currentPackId = (url.match(/subpack-\d+-(\d+)\.html$/) || [])[1] || null;
     currentPackUrl = url;
     watchdog.mark("packs", url.slice(-80));
@@ -1149,6 +1190,11 @@ async function main() {
   console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_empty=${salesTabEmpty} tab_missed=${salesTabMissed} top_answered=${topAnswered} top_unanswered=${topUnanswered} responses=${salesResponses} late_responses=${lateSalesResponses} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
   clearInterval(watchTimer);
+  if (focusChild) {
+    // Its budget ends before this run's deadline; 10 min is slack for its last batch post.
+    const how = await waitForChild(focusChild, 10 * 60000);
+    console.log(`[panini-runner] focus child ${how}${focusChild.exitCode !== null ? ` (rc=${focusChild.exitCode})` : ""}`);
+  }
   await closeRunnerPage(); // this run's own tab (a fresh one per run — see openRunnerPage)
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
   else { await ctx.close(); }
