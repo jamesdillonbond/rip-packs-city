@@ -345,3 +345,29 @@ describe("every pack-EV writer persists typical_ev (Typical Pull EV)", () => {
     })
   }
 })
+
+// v12 (2026-11-23): Atlas omits `price` on ~1,600 older All Day distributions; the
+// retail price this lane recorded before the Studio → Atlas move is carried forward.
+describe("latestRecordedPrices / resolvePackPrice", () => {
+  it("takes the first valid price per distribution from newest-first rows", async () => {
+    const { latestRecordedPrices } = await import("@/supabase/functions/_shared/pack-ev-supply-weighted")
+    const m = latestRecordedPrices([
+      { dist_id: "4884", pack_price: "999.00" },
+      { dist_id: "4884", pack_price: "1" }, // older row: never wins
+      { dist_id: 4915, pack_price: 0 }, // a reward pack's recorded $0 is a real price
+      { dist_id: "77", pack_price: null },
+      { dist_id: "78", pack_price: "abc" },
+    ])
+    expect([...m.entries()]).toEqual([["4884", 999], ["4915", 0]])
+  })
+
+  it("Atlas price wins, a carried one fills a gap, and nothing is invented", async () => {
+    const { resolvePackPrice } = await import("@/supabase/functions/_shared/pack-ev-supply-weighted")
+    expect(resolvePackPrice(4.99, 4, 999)).toEqual({ ok: true, price: 4.99, slots: 4, carried: false })
+    expect(resolvePackPrice(null, 2, 999)).toEqual({ ok: true, price: 999, slots: 2, carried: true })
+    expect(resolvePackPrice(null, 0, 5)).toEqual({ ok: true, price: 5, slots: 1, carried: true })
+    expect(resolvePackPrice(null, 2, undefined)).toEqual({ ok: false, reason: "price_unknown" })
+    // A carried price never stands in for an unknown slot count.
+    expect(resolvePackPrice(4.99, null, 999)).toEqual({ ok: false, reason: "slots_unknown" })
+  })
+})

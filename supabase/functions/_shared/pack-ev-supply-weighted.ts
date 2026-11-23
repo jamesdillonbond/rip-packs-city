@@ -229,3 +229,47 @@ export function nextCursorFromRun(explicit: string | null, lastRun: LastRunRow |
   if (lastRun.extra?.has_next_page !== true) return null
   return lastRun.cursor_after ?? null
 }
+
+export interface RecordedPriceRow {
+  dist_id: string | number
+  pack_price: string | number | null
+}
+
+/**
+ * A distribution's RETAIL price is fixed when it is released. Atlas omits `price`
+ * (and `type`) on older All Day distributions — measured 2026-11-23 from the page at
+ * offset 1600: every one of its 40 rows carried `numberOfPackSlots` and no `price`,
+ * while a current reward pack sends `price: 0` explicitly. Since the 11-18 move from
+ * Studio, ~1,600 of 3,211 distributions were therefore skipped every walk and their
+ * 11-16/17 EV froze as "latest".
+ *
+ * This lane recorded each of those prices itself before the move (pack_ev_history:
+ * 1,721 of 1,887 frozen distributions in 30 days, 0 of them ever changed). So the
+ * newest recorded price is CARRIED FORWARD, exactly like the Panini primary-price
+ * carry of 2026-11-22. Rows must be ordered newest first within a distribution; the
+ * first valid price per distribution wins. A distribution with none stays unknown
+ * (skipped and counted) — never priced at $0.
+ */
+export function latestRecordedPrices(rows: RecordedPriceRow[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const r of rows) {
+    const id = String(r.dist_id)
+    if (out.has(id) || r.pack_price == null) continue
+    const p = Number(r.pack_price)
+    if (Number.isFinite(p) && p >= 0) out.set(id, p)
+  }
+  return out
+}
+
+export type PackPriceVerdict =
+  | { ok: true; price: number; slots: number; carried: boolean }
+  | { ok: false; reason: "slots_unknown" | "price_unknown" }
+
+/** Atlas price wins; else a carried price; slots must come from Atlas. */
+export function resolvePackPrice(atlasPrice: number | null, atlasSlots: number | null, carried: number | undefined): PackPriceVerdict {
+  if (atlasSlots == null) return { ok: false, reason: "slots_unknown" }
+  const slots = Math.max(1, atlasSlots)
+  if (atlasPrice != null) return { ok: true, price: atlasPrice, slots, carried: false }
+  if (carried != null) return { ok: true, price: carried, slots, carried: true }
+  return { ok: false, reason: "price_unknown" }
+}

@@ -46,6 +46,13 @@
 //   · a missing supply count is unknown → total_unopened/depletion_pct NULL (was
 //     `?? 0` = "100 % sold"); a missing price or slot count skips the EV row
 //     (counted) instead of pricing the pack at $0 / 1 slot.
+//
+// v12 (2026-11-23 PT) — Atlas sends no `price` on ~1,600 older distributions
+// (slots are sent). v11 skipped them all, so their 11-16/17 EV froze as latest
+// (pack-EV stale-3d 184 → 1,887). The newest price this lane recorded for the
+// distribution is now carried forward (a retail price is fixed at release); with
+// none recorded the row is still skipped. Counters split: nodes_price_unknown /
+// nodes_slots_unknown / nodes_price_carried. Revert: restore v11 (git history).
 // pool_source stays 'gql': it is the LANE label readers key on (refresh_atlas_pack_ev
 // / refresh_container_pack_ev select pool_source='atlas' rows and must NOT start
 // pricing All Day pools), not the host the pool was read from.
@@ -61,7 +68,7 @@
 //   7. Collect evRows, bulk insert to pack_ev_history
 
 import { createClient } from "@supabase/supabase-js"
-import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
+import { supplyWeightPool, computeDepletionPct, latestRecordedPrices, resolvePackPrice } from "../_shared/pack-ev-supply-weighted.ts"
 import {
   type AtlasDist,
   defaultAtlasDeps,
@@ -80,7 +87,7 @@ const ATLAS_PRODUCT = "nfl" as const
 // at least one GetDistributionEditions call, and Atlas's Cloudflare is burst-
 // sensitive — keep the per-run request count where the Studio lane had it.
 const PAGE_LIMIT = 40
-const FUNCTION_VERSION = 11
+const FUNCTION_VERSION = 12
 const EXTERNAL_ID_CHUNK = 500
 const FMV_ID_CHUNK = 500 // get_fmv_for_editions: one row per id, so 500 ids can never reach PostgREST max-rows (1000)
 
@@ -240,6 +247,8 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       pool_rows_written: 0, pool_write_errors: 0, ev_rows_written: 0, single_edition_packs: 0,
       rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
       nodes_pool_read_failed: poolReadErrors.length, nodes_price_or_slots_unknown: 0, nodes_supply_unknown: 0,
+      // v12: the combined counter above is kept for its readers; these split it.
+      nodes_price_unknown: 0, nodes_slots_unknown: 0, nodes_price_carried: 0, price_carry_read_failed: 0,
       malformed_distributions: page.malformed,
     }
     // One stamp for every pool row this run writes — the prune in Phase 3 keys on it.
@@ -324,15 +333,48 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     }
     counters.pool_write_errors = poolWriteErrors.length
 
+    // === Phase 3b (v12): carry forward the retail price Atlas omits ===
+    // Atlas sends no `price` on older distributions (~1,600 of 3,211; measured
+    // 2026-11-23). This lane recorded each one before the 11-18 Studio → Atlas move,
+    // and a released pack's retail price never changes, so the newest recorded price
+    // is carried (latestRecordedPrices). 40 distributions × ≤ 15 rows in 30 days stays
+    // under the 1,000-row cap; ordered dist_id then newest first, so a truncated read
+    // can only drop a distribution (it stays unknown), never hand it an older price.
+    const priceMissing = Object.entries(distMeta)
+      .filter(([, m]) => m.node.price == null && m.node.numberOfPackSlots != null)
+      .map(([id]) => id)
+    let carriedPrices = new Map<string, number>()
+    if (priceMissing.length > 0) {
+      const { data: priced, error: pe } = await supabase.from("pack_ev_history")
+        .select("dist_id, pack_price")
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .in("dist_id", priceMissing)
+        .not("pack_price", "is", null)
+        .gte("snapshotted_at", new Date(Date.now() - 30 * 86_400_000).toISOString())
+        .order("dist_id", { ascending: true })
+        .order("snapshotted_at", { ascending: false })
+        .limit(1000)
+      if (pe) counters.price_carry_read_failed = 1 // prices stay unknown: those rows are skipped and counted
+      else carriedPrices = latestRecordedPrices((priced ?? []) as { dist_id: string; pack_price: string | number | null }[])
+    }
+
     // === Phase 4: compute supply-weighted EV per distribution via RPC ===
     const evRows: Array<Record<string, unknown>> = []
     for (const [distId, meta] of Object.entries(distMeta)) {
       const { node } = meta
-      // Atlas omits a field it does not know. An unknown price or slot count is
-      // not $0 / 1 slot — the EV row would be a fabrication, so it is skipped.
-      if (node.price == null || node.numberOfPackSlots == null) { counters.nodes_price_or_slots_unknown++; continue }
-      const slots = Math.max(1, node.numberOfPackSlots)
-      const packPrice = node.price
+      // Atlas omits a field it does not know. An unknown slot count, or a price that is
+      // neither sent nor recorded, is not $0 / 1 slot — the EV row would be a
+      // fabrication, so it is skipped and counted.
+      const verdict = resolvePackPrice(node.price, node.numberOfPackSlots, carriedPrices.get(distId))
+      if (!verdict.ok) {
+        counters.nodes_price_or_slots_unknown++
+        if (verdict.reason === "slots_unknown") counters.nodes_slots_unknown++
+        else counters.nodes_price_unknown++
+        continue
+      }
+      if (verdict.carried) counters.nodes_price_carried++
+      const slots = verdict.slots
+      const packPrice = verdict.price
 
       const { data: rpcResult, error: rpcErr } = await supabase.rpc("compute_pack_ev_per_edition_weighted", {
         p_collection_id: ALLDAY_COLLECTION_ID,
