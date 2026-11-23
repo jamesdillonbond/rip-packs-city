@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~4:20 PM PT · 🔧 SHIPPED (code) — the share card's social image (`/api/og/share`) shows the same single figure as the share page: every collection's FMV (UFC included) + sealed packs, and "N assets" (Claude Code cloud; Trevor: "Keep going")
+
+- The OG card still printed FMV minus stale-priced plus a "+ $X across N stale-priced" caption and "N moments" — the image a collector posts disagreed with the page it links to. New pure `shareWalletTotalUsd()` in `lib/dashboard/held-packs.ts` is used by both the page and the card. The card reads `/api/public/wallet-packs` like the page; a failed pack read prints "Sealed packs couldn't load — not included" on the card. Tests: two re-pins ("N moments" → "N assets") and two new cases (UFC + packs summed; failed pack read said).
+- Not changed: the weekly email's "Estimated value" (moments) with its separate "Sealed packs · not in the value above" block — Trevor's 11-22 "Both" design; asked rather than changed.
+- **Revert:** `git revert` the code commit titled "feat(og): share card image shows the single portfolio figure".
+
 ### 2026-11-22 ~4:10 PM PT · ✅ DONE — sealed-pack value backfill complete; job 918 unscheduled, scratch table dropped (Claude Code cloud; same thread)
 
 - Job 918: run 1 (3:49 PM PT) 20 owners / 505 s, run 2 (3:59 PM PT) the rest / 152 s. Result over the last 30 nights: **1,309 rows backfilled, 0 `backfill_failed`, 0 still NULL, 58 owners.** `public.scratch_backfill_pk_trevor` (control rows) dropped.
