@@ -7,7 +7,7 @@
 ## STEER — added 2026-11-22 ~6:00 PM PT (Claude Code cloud, same thread, Trevor: "proceed with all of those") — what changed after 5 PM
 
 - **New public tables get RLS at CREATE** (`20261123012802`, event trigger `rpc_public_table_rls_on_create`). A `rls_off_base_table` smoke row now means someone DISABLED RLS after creating the table, or the trigger warned (read the Postgres log for `rpc_public_table_rls_on_create: could not enable RLS`). Do not re-add a DROP of it to a forward migration (the connector holds DROP EVENT TRIGGER for confirmation).
-- **Stale suppression still to delete:** `pipeline_alert_suppression` row `ingest-topshot-challenges` ("Redundant, not broken", expires 12-04) is FALSE. The lane wrote 1,029 rows / 7 d via jobs 771/772. The delete migration was held by the connector's confirmation prompt twice; it needs an attended session. The SQL is in the handoff (queue item 10).
+- **Stale suppression still to delete:** `pipeline_alert_suppression` row `ingest-topshot-challenges` ("Redundant, not broken", expires 12-04) is FALSE. The lane wrote 1,029 rows / 7 d via jobs 771/772. The delete migration was held by the connector's confirmation prompt twice; it needs an attended session. ↪ **Handed to Cowork:** `docs/overnight/inbox/2026-11-23T0200Z-claude-code-for-cowork-held-delete-stale-challenges-suppression.md` (SQL editor in Trevor's Chrome; steps, verify and revert are in the filing).
 - **Observability Plus is ~33 % of the Vercel bill** (~$55–76/mo). No sampling knob exists (no tracer); only turning it off cuts it, which costs the 7-day log/error queries. Trevor's call, not a night-pass action.
 
 ## STEER — added 2026-11-22 ~4:00 PM PT (Claude Code cloud, daytime autonomous pass, late items) — three dated reads
