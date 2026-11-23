@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~5:45 PM PT · 🔧 SHIPPED (code) — the concierge can explain the new tiles: dictionary entries for Portfolio FMV (one number), Total Assets and the stacked Value / 30D chart ("est." nights); the weekly-email entry says its value now includes packs (Claude Code cloud; same thread)
+
+- `lib/concierge/ui-field-dictionary.ts`: `dashboard.portfolio-fmv`, `dashboard.total-assets`, `dashboard.value-30d` added; `email.weekly-portfolio-email` updated. Two lookup tests added. Onboarding tour comment renamed to Total Assets (no copy change).
+- **Revert:** `git revert` the code commit titled "concierge: explain Portfolio FMV, Total Assets and the stacked chart".
+
 ### 2026-11-22 ~5:35 PM PT · 🔧 SHIPPED (code) — the weekly portfolio email's "Estimated value" is the ONE number too: moments + sealed packs; the pack box becomes "Sealed packs · included above" (Claude Code cloud; Trevor: "Yes proceed")
 
 - New pure `weeklyHeadline(m, packWeek)` in `lib/emails/weekly-packs.ts`. With a like-for-like, live-measured pack prior (packWeekFrom's existing rules — same held/listed counts, neither night backfilled) the change and the subject % cover moments + packs; otherwise the value is the total but the change is the moments' and the line says "this week on your moments", and the subject drops the % (same as when repricing dominates). The pack block no longer prints its own weekly change.
