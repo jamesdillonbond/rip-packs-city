@@ -2629,3 +2629,7 @@ from net._http_response where id between <first id> and <last id>;
   - A non-200 body is plain JSON, not base64. Read `status_code` before decoding, or the decode errors out.
   - In Cadence 1.0, `PlayData.metadata` comes back as a REFERENCE: `return …metadata` fails "expected `{String: String}`, got `&{String: String}`". Copy it key by key.
 - **First use:** known-issues/deep-audit R8, 36 All Day "NFL Draft" editions. The chain answered "no player": they are redeemable draft-pick vouchers.
+
+### ⚠ A scheduled task created from a cloud session carries NO connectors here (2026-11-23)
+
+`create_trigger` refuses the `connectors` parameter for this org ("not available for this organization"), and without it the task stores none, so a fired session has no Supabase / Vercel / Resend tools and a DB read scheduled that way runs blind. The result says so in a trailing `warning:` line; read it. Put such a read in `docs/overnight/focus.md` for the nightly pass or Cowork, or have Trevor create the task from the claude.ai routines UI (the existing dated-read tasks carry connectors because they were made that way).

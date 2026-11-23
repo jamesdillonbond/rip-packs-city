@@ -113,3 +113,13 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **#249: CLOSED** by its own exit (0 whole-page failures / 48 h; the burst source is rate-limited). Reopen trigger is in the register.
 - **#235: CLOSED** (rule enforcing, Cowork 11-23; no ≥ 10-region sweep since 11-16). The last ~10 h of the week is a focus.md dated read.
 - **Top Shot promote gap: decided on a threshold.** The 11-24 p90 read decides (> 20 min → a Top Shot-scoped 5-min gap; else close). focus.md.
+
+## Closed out before archive (11-23 12:16 → 1:15 PM PT; Trevor: "leaving nothing unresolved from this thread")
+
+- **Edition titles: shipped `6c34b6b66`.** A no-player edition whose name IS its set ("NFL Draft — NFL Draft", "Ghost in the Machine — Ghost in the Machine") showed the set twice in title, description and JSON-LD; 356 pages. Live-verified; test `edition-title-does-not-repeat-a-set-subject`.
+- **R8: closed.** The 36 All Day editions are draft-pick vouchers (chain read via pg_net → Flow REST, recipe in tooling-gotchas.md). Descriptions written: `20261123202750`.
+- **#261: 12,976 pack pulls dated** from `pack_open_pulls` → `pack_rips` (`20261123195151`); 25 left undated. The Dune part stays dated to 12-13.
+- **Top Shot promote gap: SHIPPED `20261123210830`** (1:08 PM PT), on the early read (p90 24.8 > 20). Gap per scope (Top Shot 5 min, others 20); jobs 476 `1-59/5`, 474 `3-59/5`. Pin +3 assertions, planted defect caught. **Verify on 11-24:** focus.md steer (expect p90 ≤ ~10). A scheduled task for it could not carry the Supabase connector, so it lives in focus.md for the nightly pass / Cowork.
+- **Split-player merge: with Cowork** (inbox `2026-11-23T2145Z`; staged SQL in `docs/proposals/`). Nothing owed here.
+- **Nothing else open from this thread.** The register's OPEN rows (R136, R73, E5, R59, R65) and known-issues' 3 open / 1 partial each carry their own gate or date; the dated reads are scheduled tasks (Panini WARN 5:23 PM PT today, fmv-recalc 11-25, gate week 3 11-30, FMV week-2 11-30, Dune items 12-14) plus the 11-24 Top Shot lag in focus.md.
+
