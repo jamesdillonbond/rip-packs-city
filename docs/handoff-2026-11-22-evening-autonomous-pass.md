@@ -1,6 +1,6 @@
 # Evening autonomous pass — 2026-11-22 (~7:40 PM PT →, Claude Code cloud)
 
-**Verdict: GREEN · 5 DB changes + 1 code fix + copy shipped and verified on production runs · 0 reverted · oldest routed: Top Shot gate week-2 read (overnight item 4), 1 night.**
+**Verdict: GREEN · 6 DB changes + 1 code fix + copy shipped and verified on production runs · 0 reverted · oldest routed: Top Shot gate week-2 read (overnight item 4), 1 night.**
 
 Trevor: "work autonomously for the next 12 hours … find things to work on. Fix any issues you encounter." Push worked from this cloud session (dry-run exit 0); everything below is on `main`, and each item has a ledger entry with its revert path.
 
@@ -14,6 +14,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - Top Shot gate (`fmv_accuracy_weekly`, HIGH / MEDIUM within ±25 %): wk 10-26 74.3 / 69.1 · 11-02 75.5 / 69.7 · **11-09 80.1 / 74.1**. That is 1 qualifying week so far; the 11-16 row lands Monday.
 
 ## Shipped (newest first)
+-5. **Pack-rip backfill queue refresh (job 850) writes only changed rows** (`20261123060419`, pin E1–E3). It rewrote all ~38.8k rows every 2 h to record ~30 changes (876k buffers/call). Verified on its first run at 10:14 PM PT: 26.6 s (avg 37 s), 733 rows written. `rows_written` now means rows written.
 -4. **Tooling:** the pre-push preflight (`--quick`) now runs the ~50 migration guards whenever a migration changed (`36c64056e`). Before, a migration push was only parsed locally, which is how the next item reached `main` with a stale pin.
 -3. **Guard:** a new migration may not match a wallet through a bare `lower(p_wallet)` (`e24de4758`, forward-only, inline escape `-- solana-lower: flow-only`). ⚠ **`main` CI was red ~9:15 → ~9:25 PM PT** (`4582e1cfa`…`5b9a8dfe1`): `export_wallet_csv` was pinned in `acquisition_reads_are_collection_scoped.sql` and I had not re-pinned it. Fixed in `9bee6e27c` (green), with a Solana assertion the old body fails.
 -2. **Profile collection breakdown + account CSV export read Solana (Candy) wallets** (`20261123051216`). Both lowercased the wallet, so a base58 Candy wallet read as holding nothing. Verified on the live route: the one saved Candy wallet now shows 575 moments / $474.49. The breakdown is also planned per wallet (3.1 s → 0.22 s, 405k → 40.6k buffers on a 47k-moment wallet), and the export reads `edition_fmv_current` instead of scanning all ~3.2M snapshots. Both were proved equivalent on Flow wallets first.
@@ -48,6 +49,7 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 4. **[P4, Claude Code, 0 nights] #235 per-minute peak:** one read of the max requests/minute over a week; close #235 if no minute exceeds 400.
 
 ## Dated reads
+- **11-23:** job 850 `pack-rip-backfill-eligible-refresh` day average vs 37 s; `rows_found` ≈ 38.8k (the set); `rows_written` tens to hundreds.
 - **11-23 daytime:** job 704 `pack-rips-chain-rekey` average duration over a full day vs 28.5 s (expect roughly 40 % lower); `extra.window_clamped` false.
 - **11-23:** `fmv_recalc_hot_editions` stranded count (snapshot newer than sold_at but older than ingested_at, not HIGH/MEDIUM) stays ~0 between runs.
 - **~5:10 PM PT 11-23:** the Sentinel "Panini Ingest" WARN clears once the 82 drops from 11-22 5:09 PM PT leave its 24 h window. Earlier proof: any `panini_sales` row with `source = 'nft_sales_data'` and `edition_external_id` under `packcard-850147_111938_` other than `…_2-6_*`. A new unrecognised shape in the Sentinel sample is a fourth shape: same recipe, measure first.
