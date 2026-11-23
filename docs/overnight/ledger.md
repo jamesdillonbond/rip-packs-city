@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~8:27 AM PT · 📄 SHIPPED (docs) — reference: a cursored sweep can be dead on half its pages with every instrument green; `snapshot-pack-asks` checked and cleared (Cowork cloud; Trevor: "Keep going")
+- `docs/reference/cron-and-schedulers.md` (end): the positional tell (zero-write band by cursor offset), snapshot vs delta lanes, and reading a combined counter's parts — from this morning's All Day pack-EV v12 find.
+- Screened the estate for it (72 h, lanes with found-but-zero runs). The snapshot-shaped candidate, `snapshot-pack-asks` (All Day `total_listed` 953 with 0 new / 0 dropped for 4 days), matches Atlas's own census exactly (953 of 3,211 distributions with `packNumListed > 0`, read via Trevor's Chrome). No change.
+- Docs only. **Revert:** `git revert` this commit.
+
 ### 2026-11-23 ~7:48–8:15 AM PT · ✅ SHIPPED — evening-pass hand-off worked through: two held DELETEs, DROP `check_set_completion(text)`, #235 firewall read, two cron-job.org changes (Cowork cloud, attended; Trevor: "Can you work through this? Use chrome if you need")
 - **Cadence bridges retired** (`20261123154756`): premise re-read at apply — `pack-pulls-chain-history` 120/day vs median 120.5 (0.996), `pinnacle-pack-openers` 144 vs 144 (1.000). After: 0 rows, backup 2, `check_pipeline_cadence_collapse()->'expired_exemptions'` = []. Landed before the 4 PM PT lapse. **Revert:** `INSERT INTO public.cadence_exempt_lanes SELECT * FROM public.audit_20261122_cadence_bridges_retired_backup;`
 - **Stale `ingest-topshot-challenges` suppression dropped** (`20261123154821`): premise 1 row; lane wrote 1,101 rows / 7 d. After: 0 rows, backup 1, `check_public_security_invariants()` 0. **Revert:** `INSERT INTO public.pipeline_alert_suppression SELECT * FROM public.audit_20261122_ingest_topshot_challenges_suppression_backup;`
