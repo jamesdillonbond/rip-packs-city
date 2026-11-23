@@ -66,6 +66,8 @@ export default defineConfig({
         "components/sniper/**/*.tsx",
         // 2026-09-28: shared pieces of the /sniper and /market hubs.
         "components/hub/**/*.tsx",
+        // 2026-11-22: physical-cards prototype (PaperCardListings) ships with tests.
+        "components/physical/**/*.tsx",
         "components/collection/**/*.tsx",
         "components/pinnacle/**/*.tsx",
         "components/alerts/**/*.tsx",
