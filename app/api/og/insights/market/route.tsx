@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
   try {
     if (!known) throw new Error("unknown collection")
     const origin = new URL(req.url).origin
-    const leg = collection === "nfl-all-day" ? "&collection=nfl-all-day" : ""
+    const leg = collection === "nba-top-shot" ? "" : `&collection=${collection}`
     const r = await ogFetch(`${origin}/api/public/insights/market?days=120${leg}`, { cache: "no-store" })
     if (r.ok) {
       fetched = true
@@ -156,7 +156,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1040,
           }}
         >
-          One blended {collection === "nfl-all-day" ? "price" : "floor"} hides everything. We segment {cfg.label} by tier — here&apos;s what each is actually doing.
+          One blended {collection === "nba-top-shot" ? "floor" : "price"} hides everything. We segment {cfg.label} by tier — here&apos;s what each is actually doing.
         </div>
 
         <div style={{ marginTop: 34, display: "flex", gap: 14 }}>

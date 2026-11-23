@@ -267,7 +267,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 100 → 101 on 2026-10-31: /insights/trade-in (Top Shot This trade-in finder).
     // 101 → 102 on 2026-11-08: /insights/drops (pack drops this week).
     // 102 → 103 on 2026-11-23: /insights/pinnacle-pack-reality (Disney Pinnacle Pack Reality).
-    expect(s).toHaveLength(103)
+    // 103 → 106 the same afternoon: /insights/pinnacle-market, -serial-premiums, -squeeze (parity pass 3).
+    expect(s).toHaveLength(106)
+    expect(s.find((x) => x.url === `${BASE}/insights/pinnacle-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/pinnacle-pack-reality`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/trade-in`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/allday-serial-premiums`)).toBeTruthy()

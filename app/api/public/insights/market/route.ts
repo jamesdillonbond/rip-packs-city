@@ -21,7 +21,7 @@
 // ULTIMATE | UNKNOWN), sales, volume_usd, median_px, avg_px, max_px.
 //
 // Query params:
-//   collection=nba-top-shot|nfl-all-day              default (ABSENT) nba-top-shot; ⛔ any other value is a 400
+//   collection=nba-top-shot|nfl-all-day|disney-pinnacle default (ABSENT) nba-top-shot; ⛔ any other value is a 400
 //                                                    with no rows — never Top Shot's market under another name.
 //                                                    NFL All Day (2026-10-28) reads allday_market_index_daily and
 //                                                    has UNCOMMON, no FANDOM. Its board is /insights/allday-market.
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
   const rawCollection = sp.get("collection");
   if (rawCollection != null && !isMarketIndexCollection(rawCollection)) {
-    return NextResponse.json({ error: "collection must be nba-top-shot or nfl-all-day" }, { status: 400 });
+    return NextResponse.json({ error: "collection must be nba-top-shot, nfl-all-day or disney-pinnacle" }, { status: 400 });
   }
   const collection: MarketIndexCollection = rawCollection ?? "nba-top-shot";
   const cfg = marketIndexConfig(collection);

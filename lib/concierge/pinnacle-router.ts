@@ -672,3 +672,73 @@ export async function readPinnacleHotFloorsForConcierge(
     return failed(err instanceof Error ? err.message : String(err))
   }
 }
+
+// ── Checklists (get_team_checklist on Disney Pinnacle, 2026-11-23) ──────────
+// The franchise / character checklist the pages render (get_pinnacle_checklist, 20261123214500): every pin of the
+// subject, owned vs missing for a wallet, cost to complete split by price source. Replaces "Disney Pinnacle has no
+// teams" — its FRANCHISES are its teams (the team pages are franchise pages). Three honest states: read failed
+// (error, never "you own none"), wallet not indexed (ownership unknown), subject has no pins (no_results).
+export async function readPinnacleChecklistForConcierge(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  base: string,
+  opts: { kind: "franchise" | "character"; name: string; wallet: string | null; missingLimit: number },
+): Promise<string> {
+  const failed = (why: string) =>
+    JSON.stringify({ status: "error", collection: PINNACLE_COLLECTION_ID, message: `Disney Pinnacle ${opts.kind} checklist read failed: ${why} Ownership and cost are unknown — never say the collector owns none.` })
+  const missingLimit = Math.min(Math.max(Math.trunc(opts.missingLimit) || 15, 1), 40)
+  try {
+    const { data, error } = await db.rpc("get_pinnacle_checklist", { p_kind: opts.kind, p_name: opts.name, p_wallet: opts.wallet })
+    if (error) return failed(error.message ?? "unknown error.")
+    const slugPart = encodeURIComponent(
+      opts.name.replace(/[™®©]/g, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""),
+    )
+    const pageUrl = `${base}/${PINNACLE_COLLECTION_ID}/${opts.kind === "franchise" ? "team" : "character"}/${slugPart}`
+    if (data == null) {
+      return JSON.stringify({ status: "no_results", collection: PINNACLE_COLLECTION_ID, kind: opts.kind, name: opts.name, message: `No Disney Pinnacle pins match the ${opts.kind} "${opts.name}". Ask for the exact ${opts.kind} name as Disney Pinnacle spells it.` })
+    }
+    if (!Array.isArray(data.pins)) return failed("unexpected shape.")
+    const walletUnindexed = opts.wallet != null && data.wallet_cached === false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const missing = (data.pins as any[])
+      .filter((p) => opts.wallet != null && !walletUnindexed && Number(p.owned_count) === 0)
+      .sort((a, b) => (num(b.cost_usd) ?? -1) - (num(a.cost_usd) ?? -1))
+      .slice(0, missingLimit)
+      .map((p) => ({
+        pin: p.name,
+        variant: p.variant,
+        edition_type: p.edition_type,
+        set: p.set_name,
+        cost_usd: num(p.cost_usd),
+        cost_source: p.cost_source ?? null,
+        pin_url: `${base}/pinnacle/moment/${encodeURIComponent(String(p.render_id))}`,
+      }))
+    return JSON.stringify({
+      status: "ok",
+      collection: PINNACLE_COLLECTION_ID,
+      kind: opts.kind,
+      name: opts.name,
+      total_pins: num(data.total),
+      wallet: opts.wallet,
+      wallet_indexed: opts.wallet == null ? null : !walletUnindexed,
+      owned: walletUnindexed ? null : num(data.owned),
+      missing: walletUnindexed ? null : num(data.missing),
+      cost: {
+        at_live_asks_usd: num(data.cost_at_ask_usd),
+        pins_at_live_asks: num(data.priced_at_ask),
+        at_fmv_usd: num(data.cost_at_fmv_usd),
+        pins_at_fmv: num(data.priced_at_fmv),
+        never_sold_listed_usd: num(data.cost_ask_no_fmv_usd),
+        never_sold_listed_pins: num(data.priced_ask_no_fmv),
+        unpriced_pins: num(data.unpriced),
+      },
+      most_valuable_missing: missing,
+      page_url: pageUrl,
+      how_to_read:
+        "Without a wallet the cost is the whole set at today's prices; with one, only the missing pins. The headline cost = at_live_asks_usd + at_fmv_usd (a live ask is used only within 3x the pin's FMV, else the FMV). never_sold_listed_usd is asks on pins that have never sold (often 1-of-1 grails) — quote it SEPARATELY, never inside the headline; unpriced pins are not counted, so the headline is a lower bound when unpriced_pins > 0. If wallet_indexed is false, RPC has not loaded that wallet's Pinnacle pins — say ownership is unknown and link the Collection tab; never say they own none.",
+      note: "RPC is read-only — link the page; never offer to buy.",
+    })
+  } catch (err) {
+    return failed(err instanceof Error ? err.message : String(err))
+  }
+}

@@ -17,11 +17,11 @@
 // Every All Day number in the copy is computed from the rows, never typed in.
 
 import { accentText } from "@/lib/accent-text"
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { usdSignFirst } from "@/lib/usd-format"
-import { marketIndexConfig, type MarketIndexCollection } from "@/lib/insights/market-index-collections"
+import { marketIndexConfig, otherMarketIndexes, type MarketIndexCollection } from "@/lib/insights/market-index-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -97,14 +97,14 @@ type Built = {
 }
 
 /** Share of the window's sales that were Commons — computed, so the copy never quotes a stale typed-in ratio. */
-function commonShare(rows: Row[]): number | null {
+function commonShare(rows: Row[], tier = "COMMON"): number | null {
   let all = 0
   let common = 0
   for (const r of rows) {
     const n = num(r.sales) ?? 0
     const t = (r.tier ?? "").toUpperCase()
     if (t === "ALL") all += n
-    else if (t === "COMMON") common += n
+    else if (t === tier) common += n
   }
   return all > 0 ? common / all : null
 }
@@ -356,6 +356,7 @@ type Props = {
 export default function MarketIndexClient({ initialRows, initialFetchedAt, loadError = null, collection = "nba-top-shot" }: Props) {
   const cfg = marketIndexConfig(collection)
   const isAllDay = collection === "nfl-all-day"
+  const isPinnacle = collection === "disney-pinnacle"
   const PLOT_TIERS = cfg.plotTiers
   const TIER_HEX = cfg.tierHex
   // The server provides the full trailing-120-day window; there are no
@@ -366,6 +367,11 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
   const [hidden, setHidden] = useState<Set<PlotTier>>(new Set())
 
   const built = useMemo(() => buildSeries(rows, marketIndexConfig(collection).plotTiers), [rows, collection])
+  // Disney Pinnacle (2026-11-23): the dominant tier is OPEN (Open / Open Event / Starter editions).
+  const openPct = useMemo(() => {
+    const share = commonShare(rows, "OPEN")
+    return share == null ? null : Math.round(share * 100)
+  }, [rows])
   const commonPct = useMemo(() => {
     const share = commonShare(rows)
     return share == null ? null : Math.round(share * 100)
@@ -387,12 +393,14 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
   }
 
   const tweetIntent = useMemo(() => {
-    const text = isAllDay
+    const text = isPinnacle
+      ? `Disney Pinnacle's blended price is dominated by Open Edition pins.\n\nThe RPC Index segments it by edition type — what Limited and Open pins are actually doing:`
+      : isAllDay
       ? `NFL All Day's blended market price is dominated by commons.\n\nThe RPC Index segments it by tier — what Legendary, Rare, and Uncommon moments are actually doing:`
       : `Top Shot's "floor price" is a sub-$1 number dominated by commons.\n\nThe RPC Index segments the market by tier — what Legendary, Rare, and Fandom moments are actually doing:`
     const url = `${SITE_URL}${marketIndexConfig(collection).path}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [isAllDay, collection])
+  }, [isAllDay, isPinnacle, collection])
 
   // Cards in descending typical-value order, skipping tiers with no data.
   const cardTiers = PLOT_TIERS.filter((t) => built.headline[t]?.latestMedian != null)
@@ -403,8 +411,15 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
 
       <section className="rpc-mk-hero">
         <div className="rpc-mk-eyebrow">RPC Insights · Public</div>
-        <h1 className="rpc-mk-h1">{isAllDay ? "The RPC Index · NFL All Day" : "The RPC Index"}</h1>
-        {isAllDay ? (
+        <h1 className="rpc-mk-h1">{isPinnacle ? "The RPC Index · Disney Pinnacle" : isAllDay ? "The RPC Index · NFL All Day" : "The RPC Index"}</h1>
+        {isPinnacle ? (
+          <p className="rpc-mk-lede">
+            Disney Pinnacle&apos;s blended price is set by <strong>Open Edition pins, which dominate by volume</strong>
+            {openPct != null ? <> — {openPct}% of the sales in this window</> : null}. One blended price hides what
+            the rarer pins are doing. So we <strong>segment by edition type</strong> and index each one to 100 at the
+            start of the window: a normalized read of what Limited and Open pins are <em>actually</em> doing.
+          </p>
+        ) : isAllDay ? (
           <p className="rpc-mk-lede">
             NFL All Day&apos;s blended market price is set by{" "}
             <strong>commons, which dominate by volume</strong>
@@ -433,9 +448,14 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
           <span className="rpc-mk-meta">No signup</span>
           <span className="rpc-mk-meta-sep">·</span>
           {/* Each collection's index is its own page; this links the other one. */}
-          <Link href={isAllDay ? "/insights/market" : "/insights/allday-market"} className="rpc-mk-meta" data-testid="mk-other-index">
-            {isAllDay ? "Top Shot index →" : "NFL All Day index →"}
-          </Link>
+          {otherMarketIndexes(collection).map((o, i) => (
+            <Fragment key={o.path}>
+              {i > 0 ? <span className="rpc-mk-meta-sep">·</span> : null}
+              <Link href={o.path} className="rpc-mk-meta" data-testid={i === 0 ? "mk-other-index" : `mk-other-index-${i}`}>
+                {o.label} index →
+              </Link>
+            </Fragment>
+          ))}
         </div>
       </section>
 
@@ -514,7 +534,23 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
             Legendary can share one chart and you read <em>momentum</em>, not
             dollars.
           </p>
-          {isAllDay ? (
+          {isPinnacle ? (
+            <>
+              <p>
+                Built from <strong>real secondary-market sales only</strong> (price &gt; $0), rolled up daily and priced
+                per pin. Disney Pinnacle has no rarity tier, so its <strong>edition type</strong> is the tier: Limited
+                (Limited and Limited Event editions) and Open (Open, Open Event and Starter editions). We never
+                zero-fill a day with no sales. <strong>Legendary is not shown:</strong>{" "}
+                {loadError
+                  ? "its 1-of-1 to 25-copy grails trade too rarely for an index."
+                  : <>it traded {fmtInt(tierSales(rows, "LEGENDARY"))} {tierSales(rows, "LEGENDARY") === 1 ? "time" : "times"} in this window, mostly different 1-of-1 to 25-copy pins, so a day&apos;s median would be which grail sold, not a price level.</>}
+              </p>
+              <p>
+                <strong>Why no single &ldquo;Pinnacle price&rdquo;:</strong> Open Edition pins swamp the count, so a
+                blended median says little about the Limited pins collectors chase. Edition types are the honest unit.
+              </p>
+            </>
+          ) : isAllDay ? (
             <>
               <p>
                 Built from <strong>real secondary-market sales only</strong>{" "}

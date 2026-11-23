@@ -199,6 +199,7 @@ export const COLLECTIONS: Collection[] = [
     // 2026-10-26: dated RPC changes, each in the ledger (the 09-29 rule above stands — no coverage
     // stats dressed as news). Keep them true, not promotional.
     news: [
+      { title: "Three new Pinnacle boards: index, serial premiums, squeeze", date: "2026-11-23", summary: "The RPC Index now tracks Disney Pinnacle by edition type; a serial board shows what #1 and perfect serials really sell for; and a squeeze board ranks pins by how few collectors are listing them.", url: "/insights/pinnacle-market" },
       { title: "Did the packs pay? Pinnacle Pack Reality", date: "2026-11-23", summary: "A new board puts every Pinnacle drop since September side by side: the price, what the opened packs' pins were worth when opened, what they're worth today, and how many packs beat their price.", url: "/insights/pinnacle-pack-reality" },
       { title: "Character and franchise checklists", date: "2026-11-23", summary: "Every character and franchise page now lists all of its pins. Track a Dapper wallet to see which you own, which you're missing, and what the rest would cost at today's live listings.", url: "/disney-pinnacle/character/mickey-mouse" },
       { title: "Lowest-ask history on pin pages", date: "2026-11-23", summary: "Each pin's price chart now shows its lowest Disney Pinnacle listing over time beside its FMV, from the marketplace sweeps RPC has kept since Oct 19.", url: "/disney-pinnacle/market" },

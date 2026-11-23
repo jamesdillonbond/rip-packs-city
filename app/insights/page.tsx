@@ -235,6 +235,33 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/pinnacle-market",
+    eyebrow: "Live",
+    title: "The RPC Index · Disney Pinnacle",
+    blurb:
+      "Disney Pinnacle's blended price is set by Open Edition pins. The index splits Limited from Open and normalizes each to 100 — what each is actually doing.",
+    cta: "Open Pinnacle index",
+    available: true,
+  },
+  {
+    slug: "/insights/pinnacle-serial-premiums",
+    eyebrow: "Live",
+    title: "Disney Pinnacle Serial Premiums",
+    blurb:
+      "What a #1 or a perfect serial is really worth on Disney Pinnacle — every such sale on record against the same pin's other serials.",
+    cta: "Open serial premiums",
+    available: true,
+  },
+  {
+    slug: "/insights/pinnacle-squeeze",
+    eyebrow: "Live",
+    title: "Disney Pinnacle Squeeze Board",
+    blurb:
+      "Which pins are collectors not selling? Pins ranked by the share of collector-held copies listed right now.",
+    cta: "Open Pinnacle squeeze",
+    available: true,
+  },
+  {
     slug: "/insights/pinnacle-pack-reality",
     eyebrow: "Live",
     title: "Disney Pinnacle Pack Reality",

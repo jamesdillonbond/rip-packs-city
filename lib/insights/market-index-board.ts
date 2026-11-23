@@ -58,7 +58,7 @@ export async function fetchMarketIndexRows(
  * board says it is broken, and the page stamps no freshness time.
  */
 export async function fetchMarketIndexPageRows(collection: MarketIndexCollection): Promise<{ rows: MarketIndexRow[]; loadError: string | null }> {
-  const { rows, error } = await fetchMarketIndexRows(supabaseAdmin, { collection, label: `insights/${collection === "nfl-all-day" ? "allday-market" : "market"}` })
+  const { rows, error } = await fetchMarketIndexRows(supabaseAdmin, { collection, label: `insights/${marketIndexConfig(collection).path.replace("/insights/", "")}` })
   if (error) {
     console.error("[insights/market] initial fetch", collection, error)
     return { rows: [], loadError: String(error) || "market index unavailable" }

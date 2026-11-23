@@ -9,11 +9,12 @@
 // with its own metadata, canonical and OG card — never /insights/market?collection=…, which no crawler or link
 // unfurler can tell apart from Top Shot's.
 
-export const MARKET_INDEX_COLLECTIONS = ["nba-top-shot", "nfl-all-day"] as const
+// Disney Pinnacle joined 2026-11-23 (parity pass 3) at /insights/pinnacle-market; its tiers are edition types.
+export const MARKET_INDEX_COLLECTIONS = ["nba-top-shot", "nfl-all-day", "disney-pinnacle"] as const
 export type MarketIndexCollection = (typeof MARKET_INDEX_COLLECTIONS)[number]
 
 export function isMarketIndexCollection(v: string | null | undefined): v is MarketIndexCollection {
-  return v === "nba-top-shot" || v === "nfl-all-day"
+  return v === "nba-top-shot" || v === "nfl-all-day" || v === "disney-pinnacle"
 }
 
 export interface MarketIndexConfig {
@@ -36,6 +37,9 @@ const TIER_HEX = {
   FANDOM: "#34D399",
   UNCOMMON: "#14B8A6",
   COMMON: "#94A3B8",
+  // Disney Pinnacle's edition-type tiers (2026-11-23).
+  LIMITED: "#818CF8",
+  OPEN: "#94A3B8",
 } as const
 
 export const MARKET_INDEX_CONFIG: Record<MarketIndexCollection, MarketIndexConfig> = {
@@ -58,6 +62,23 @@ export const MARKET_INDEX_CONFIG: Record<MarketIndexCollection, MarketIndexConfi
     path: "/insights/allday-market",
     ogPath: "/api/og/insights/allday-market",
   },
+  "disney-pinnacle": {
+    label: "Disney Pinnacle",
+    view: "pinnacle_market_index_daily",
+    // LEGENDARY (Legendary + Genesis) is left out of the lines on purpose: 92 sales on 20 of 120 days, mostly
+    // DIFFERENT 1/1–25 pins, so a day's median is which grail sold, not a price level (measured 11-23; the page
+    // says so, as All Day's does for Ultimate).
+    plotTiers: ["LIMITED", "OPEN"],
+    validTiers: ["ALL", "LEGENDARY", "LIMITED", "OPEN", "UNKNOWN"],
+    tierHex: TIER_HEX,
+    path: "/insights/pinnacle-market",
+    ogPath: "/api/og/insights/pinnacle-market",
+  },
+}
+
+/** Every OTHER collection's index, for the cross-links on each board. */
+export function otherMarketIndexes(c: MarketIndexCollection): { collection: MarketIndexCollection; label: string; path: string }[] {
+  return MARKET_INDEX_COLLECTIONS.filter((x) => x !== c).map((x) => ({ collection: x, label: MARKET_INDEX_CONFIG[x].label, path: MARKET_INDEX_CONFIG[x].path }))
 }
 
 /** The config for a validated collection — the one place the map is indexed. */

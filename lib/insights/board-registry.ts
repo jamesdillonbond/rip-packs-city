@@ -265,6 +265,31 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "pinnacle-market",
+    kind: "dataset",
+    name: "The RPC Index · Disney Pinnacle",
+    description:
+      "An edition-type-segmented daily market index for Disney Pinnacle built from real secondary-market sales. Limited and Open pins are each normalized to 100 at the start of the window.",
+    // Its JSON is /api/public/insights/market?collection=disney-pinnacle — a required param, so no default DataDownload.
+    publicApi: false,
+  },
+  {
+    slug: "pinnacle-serial-premiums",
+    kind: "dataset",
+    name: "Disney Pinnacle Serial Premiums",
+    description:
+      "Every #1 and perfect-serial (#N of N) Disney Pinnacle sale on record, with the median price of the same pin's other serials sold around the same time and the premium.",
+    publicApi: true,
+  },
+  {
+    slug: "pinnacle-squeeze",
+    kind: "dataset",
+    name: "Disney Pinnacle Squeeze Board",
+    description:
+      "Disney Pinnacle pins ranked by the share of their collector-held copies listed for sale, from a complete sweep of the marketplace, with floor, FMV and 30-day sales.",
+    publicApi: true,
+  },
+  {
     slug: "pinnacle-pack-reality",
     kind: "dataset",
     name: "Disney Pinnacle Pack Reality",
