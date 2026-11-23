@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~11:05 PM PT · 🧪 SHIPPED (unwired) — Panini paper crosswalk: the 2021 NFL Prizm / Donruss Optic lines now carry their paper names (Cowork cloud; Trevor: "Keep going")
+- The draft view emitted "2021 Panini NFL Prizm" / "2021 Panini NFL Donruss Optic" (the NFT name minus " NFT "). `parsePhysicalProduct` cannot read either, so the matcher would have refused every feed candidate for 2,025 editions ($34.6k, 1,802 digital sales in 90 days — Brady #294 among the top rows) as "unparseable product". The view now emits "2021 Panini Prizm Football" / "2021 Panini Donruss Optic Football" (Brady #294 on paper confirmed via TCDb).
+- Control: all 54 distinct paper-product names the view now produces (read live, read-only) parse; the old spelling fails.
+- `__tests__/physical-panini-crosswalk.test.ts`: 2 new tests (paper names parse and the old one does not; Brady #294 Silver matches on the paper product and returns `none` under the old name). 18/18.
+- Nothing applied, nothing wired, nothing deploys. **Revert:** `git revert` this commit.
+
 ### 2026-11-22 ~11:05 PM PT · 🔧 SHIPPED (code, latent + CI) — physical routes/HCI client covered; `main` back over the statement-coverage ratchet; HCI non-JSON 200 no longer throws (Claude Code cloud, evening autonomous pass)
 
 CI on `4df3092c5` went red on the merged coverage gate only (all 26,697 tests passed): statements 91.79 vs the 91.8 floor; the physical prototype had left `app/api/physical/{cert,holdings}` at 58% and the total sat on the floor. Added `__tests__/physical-cert-route.test.ts`, `__tests__/physical-hci-client.test.ts` and holdings route cases (planted defects: GET `[]` on error and a skipped cap check both red). Fixed review finding 9 in `lib/physical/hci-client.ts` (a non-JSON 200 now returns `{ok:false, code:"BAD_JSON"}`; the test fails on the old body). Routes remain off (PHYSICAL_CARDS). **Revert:** `git revert` the commit titled "physical: cover the routes and HCI client".
