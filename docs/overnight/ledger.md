@@ -12,6 +12,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~7:20 AM PT · 📏 READ (docs) — evening pass wrap-up: rekey −50 %, hot lane 0 stranded, Panini 0 unrecognised, health clean (Claude Code cloud)
+
+Job 704: 23 runs, 14.3 s avg vs 28.5 s, 0 failed/clamped, cursor windows contiguous. fmv hot lane: 0 stranded after the 7:08 AM PT run. Panini: 0 unrecognised keys / 2,330 runs; no hyphen-shape sale since the fix (none sold since 11-19; control 217 rows / 30 d). Health: 0 medium+ alerts, stalled [], 0 cron failures / 2 h, prod READY `245f4cb1`. Still with Cowork: the two held DELETEs (inbox `2026-11-23T0200Z` items 1–2; item 2 due before 4 PM PT). **Revert:** docs only.
+
 ### 2026-11-23 ~3:55 AM PT · 📏 READ (docs) — Top Shot accuracy gate WEEK 2 MET: 11-16 HIGH 83.3 / MEDIUM 73.1 (Claude Code cloud, evening pass scheduled check-in)
 
 Job 828 ran 3:37 AM PT (succeeded, 66 s). `fmv_accuracy_weekly` Top Shot week_start 2026-11-16, rolled up `sum(within_25_pct*n)/sum(n)`: HIGH **83.3 %** (n 8,093), MEDIUM **73.1 %** (n 14,096); both ≥ 70, so week 2 of the 4 counts (11-09 was 80.1 / 74.1, reproduced on the same query). `go-live-2026-09.md` §6 item 5 updated from the 11-22 provisional 82.8 / 72.9. Health sweep: 0 medium+ alerts (8 info), `detect_stalled_pipelines()` [], 0 pg_cron failures in 2 h. **Revert:** docs only — `git revert` the commit titled "docs: Top Shot gate week 2 met".

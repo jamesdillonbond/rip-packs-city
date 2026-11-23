@@ -58,6 +58,11 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 4. ~~[P4] #235 per-minute peak~~ **READ ~11:30 PM PT — stays OPEN:** a 17-region sweep hit ~450–500+/min at 10:10–10:14 PM PT 11-16; every other minute > 400 was our own 1–3-region QA. Next is Trevor/Cowork: did the JA4 `Entity page sweep` rule log or limit it (firewall dashboard only)? Detail in known-issues #235.
 
 ## Dated reads
+- ✅ **Wrap-up reads 11-23 ~7:20 AM PT:**
+  - **Job 704** (`pack-rips-chain-rekey`): 23 runs since 9 PM PT, avg **14.3 s** (max 54 s) vs 28.5 s — **−50 %**; 0 failed, 0 `window_clamped`, every `window_lo` = previous `window_hi` − 5 min.
+  - **Hot lane:** **0 stranded** Top Shot editions right after the 7:08 AM PT fmv-recalc run (12 before the fix).
+  - **Panini:** `sales_history_unrecognised_keys` = 0 across 2,330 `panini-ingest` runs since 9 PM PT. No hyphen-shape `nft_sales_data` row since the fix because none sold: positive control = 217 such rows in 30 d, newest sold 11-19 1:39 PM PT.
+  - **Health:** 0 medium+ alerts (7 info), stalled [], 0 pg_cron failures in 2 h, security invariants clean; prod READY `245f4cb1`; CI green. The two Cowork DELETEs are still pending (2 bridge rows, 1 stale suppression).
 - ✅ **Pre-send read 11-23 ~4:15 AM PT (8:33 AM weekly email, first sealed-packs block):** today's `portfolio_snapshots` = 58 rows, 39 with `pack_low_ask_usd > 0` (block shown), 19 at 0 = 14 holding no packs + 5 holding only unlisted packs (no block — the 11-22 steer's 5), 0 NULL. `packWeekFrom` returns null at 0, so no `$0.00` line can render. Post-send check: Resend shows the send, no recipient with `pack_held_count = 0` got a block.
 - **11-23:** job 850 `pack-rip-backfill-eligible-refresh` day average vs 37 s; `rows_found` ≈ 38.8k (the set); `rows_written` tens to hundreds.
 - **11-23 daytime:** job 704 `pack-rips-chain-rekey` average duration over a full day vs 28.5 s (expect roughly 40 % lower); `extra.window_clamped` false. ↳ **Early read 11:14 PM PT: 6 runs since the cursor, avg 11.6 s (max 16 s), 0 failed — −59 %.**
