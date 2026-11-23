@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~3:34 PM PT · ✅ SHIPPED — Disney Pinnacle parity pass 4: pin-page insight chips + "Did this pack pay?" on pack pages (Claude Code cloud; Trevor: "Keep going")
+- **Pin pages:** a streamed "Featured in Insights" section (`lib/pinnacle/pin-insight-chips.ts`, pure; `lib/pinnacle/pin-insight-reads.ts`, three bounded reads) — scarcer than its variant family · ≤ 2 % of ≥ 25 collector-held copies listed · bought in bulk this week · a #1 / perfect serial sold · pulled from a drop on Pack Reality. Each chip only when its fact was READ and is true; renders nothing otherwise. Closes the last "partial" Pinnacle cell (insight chips).
+- **Pack pages:** `components/pinnacle/PinnacleDropReality.tsx` shows the drop's row from `get_pinnacle_pack_reality` — price vs pulls worth today, median, % of packs worth ≥ price; a "<X> Standard" sub-pool page shows the whole drop and says so; a failed read says so with no verdict; a drop not on the board renders nothing. No DB change.
+- **Revert:** `git revert` the code commit.
+
 ### 2026-11-23 ~3:19 PM PT · 🔧 SHIPPED (`20261123231928`) — the `panini_card_serials` VACUUM runs as `cron_heavy` (600 s), not under the 120 s default (Claude Code cloud; Trevor: "Keep going")
 - **Why:** inbox `2026-11-23T2206Z` (daytime monitor): pg_cron 678 `maint-vacuum-panini-card-serials` timed out at 11:04 AM PT after 156 s — it ran as `postgres` (no role timeout → 120 s cluster default); last 8 runs 17–106 s on a ~12.8 GB growing table.
 - **What:** `GRANT MAINTAIN ON panini_card_serials TO cron_heavy`; job unscheduled and re-created under `SET LOCAL ROLE cron_heavy` (same name and schedule, now **jobid 919**) — job 383's recipe for `sales_2026`. ⛔ NOT the monitor's suggested `SET statement_timeout=0; VACUUM …`: a multi-statement pg_cron command is a transaction block and VACUUM cannot run in one. Post-condition asserts MAINTAIN (without it VACUUM warns-and-skips as "succeeded"). No job added.
