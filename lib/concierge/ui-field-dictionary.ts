@@ -211,14 +211,43 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     source: "components/collection/PortfolioSummary.tsx + lib/portfolio-summary-compute.ts (computeCostBasisSummary) + get_wallet_summary (cost_basis, current_fmv, pnl, moments_with_cost)",
   },
   {
+    // 2026-11-22 (Trevor: "This portfolio fmv needs to just be one number that encompasses everything
+    // in the wallet. Keep it simple"): the tile's meaning changed the same day — answer from here.
+    id: "dashboard.portfolio-fmv",
+    surface: "dashboard Overview (/dashboard), public profile (/profile/<username>), share card (/share/<wallet>)",
+    field: "Portfolio FMV (\"Total Collection FMV\" on the share card)",
+    aliases: ["portfolio fmv", "portfolio value", "total value", "wallet value", "collection fmv", "total collection fmv", "what is my collection worth", "why did my value jump", "does it include packs"],
+    meaning:
+      "ONE number for everything in the collector's saved wallets: the FMV of every Moment and card in every collection — stale-priced ones included, and UFC Strike included even though its Flow market is closed — PLUS every sealed pack held, each at its lowest live ask capped at 3x the drop's best reference (last sale, rip EV or opened average; a listed pack with no reference adds nothing). There is no breakdown caption. While the pack read is still loading the tile says \"Adding sealed packs…\", and if it fails it says \"Sealed packs couldn't load — not included\" — the number is never silently missing the packs. The dashboard and profile read a cached figure and the share card a live one, so they can differ by small amounts. (Before 2026-11-22 the tile left stale-priced moments and packs out and listed them in a caption.) The concierge can read a wallet's value with its tools; this entry is what the tile means.",
+    source: "app/dashboard/DashboardClient.tsx (sumPortfolioFmv + walletTotalUsd/walletTotalCaption) + lib/dashboard/aggregate.ts + lib/dashboard/held-packs.ts (shareWalletTotalUsd for /share and /api/og/share) + app/profile/[username]/ProfileClient.tsx",
+  },
+  {
+    id: "dashboard.total-assets",
+    surface: "dashboard Overview (/dashboard), public profile, share card",
+    field: "Total Assets (was \"Total Moments\")",
+    aliases: ["total assets", "total moments", "how many assets", "asset count", "does it count packs", "number of moments"],
+    meaning:
+      "How many things the collector's saved wallets hold: every Moment and card (all collections, Panini cards included) plus every sealed pack. It was \"Total Moments\" (moments only) until 2026-11-22. A pack read that failed leaves the packs out of the count rather than guessing.",
+    source: "app/dashboard/DashboardClient.tsx (totalMoments + heldPacks.held) + app/profile/[username]/ProfileClient.tsx (totalAssets) + app/share/[wallet]/page.tsx",
+  },
+  {
+    id: "dashboard.value-30d",
+    surface: "dashboard Overview (/dashboard), \"Value / 30D · nightly snapshot\" chart",
+    field: "Value / 30D chart",
+    aliases: ["value 30d", "value / 30d", "value chart", "portfolio chart", "nightly snapshot", "stacked chart", "est.", "why does it say est", "sealed packs est"],
+    meaning:
+      "A stacked chart of the last 30 nightly snapshots: Moments (red, FMV including stale-priced) on the bottom and Sealed packs (orange) on top, so the top edge is the total. Hovering a night shows Total, Moments and Sealed packs. Pack values were first recorded live on 2026-11-22; the 30 nights before were reconstructed the same day from which packs were held that night and the asks on record, and those nights say \"Sealed packs (est.)\" — an estimate, not a measurement (before 2026-11-15 the earliest observed ask is carried back). The chart's last night can differ a little from the Portfolio FMV tile, which is read live from a cache rather than from last night's snapshot.",
+    source: "components/dashboard/ValueHistoryCard.tsx + app/api/profile/value-history/route.ts (packs_estimated from portfolio_snapshots.pack_value_basis) + supabase/migrations/20261122231506…233915 (backfill)",
+  },
+  {
     // 2026-11-09: the same probe asked when the weekly digest sends; the concierge had nothing.
     id: "email.weekly-portfolio-email",
     surface: "Email settings (/dashboard/notifications), \"Weekly digest\" switch",
     field: "Weekly digest (the weekly portfolio email)",
     aliases: ["digest email", "weekly email", "portfolio email", "email settings", "when does the digest", "monday email", "email me weekly", "unsubscribe"],
     meaning:
-      "One email on Monday morning (Pacific) saying how the value of the collector's saved wallets moved over the week. It goes only to a signed-in collector who has left the switch on, and only in a week the value moved by 5% or more — a quiet week sends nothing, which is not a failure. Every email has an unsubscribe link, and the switch on /dashboard/notifications turns it off. It is separate from listing alerts (the Alerts page), which have no digest mode. The concierge cannot see whether a particular collector is opted in or was sent one: point to the page.",
-    source: "app/dashboard/notifications/NotificationsClient.tsx + app/api/cron/weekly-digest/route.ts (DEFAULT_MIN_ABS_PCT 5; vercel.json Mondays 16:33 UTC)",
+      "One email on Monday morning (Pacific) saying how the value of the collector's saved wallets moved over the week. Since 2026-11-22 its \"Estimated value\" is the same one number as the dashboard's Portfolio FMV (moments + sealed packs), with a \"Sealed packs · included above\" breakdown; when last week's pack value cannot be compared like for like, the change line says it covers \"your moments\" and the subject carries no %. It goes only to a signed-in collector who has left the switch on, and only in a week the value moved by 5% or more — a quiet week sends nothing, which is not a failure. Every email has an unsubscribe link, and the switch on /dashboard/notifications turns it off. It is separate from listing alerts (the Alerts page), which have no digest mode. The concierge cannot see whether a particular collector is opted in or was sent one: point to the page.",
+    source: "app/dashboard/notifications/NotificationsClient.tsx + app/api/cron/weekly-digest/route.ts (DEFAULT_MIN_ABS_PCT 5; vercel.json Mondays 16:33 UTC) + lib/emails/weekly-packs.ts (weeklyHeadline)",
   },
 ];
 

@@ -56,7 +56,7 @@ const STEPS: TourStep[] = [
     // Derived from the registry (2026-11-06): this line named five collections
     // by hand while seven were published (Candy MLB and Panini were missing).
     body: `We cover ${listNames(publishedCollections().map((c) => c.label))}. Add a wallet once and every collection you hold Moments in rolls up here — one portfolio, one count.`,
-    // ⚠ Anchored to the portfolio stat tiles (Total Moments · Portfolio FMV ·
+    // ⚠ Anchored to the portfolio stat tiles (Total Assets · Portfolio FMV ·
     // Collections), not "collection-switcher": that element lives on
     // collection pages, and the tour runs on the dashboard, where the step was
     // centred over nothing (2026-09-02 QA). It was then re-anchored to the

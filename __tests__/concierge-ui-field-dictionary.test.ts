@@ -132,4 +132,16 @@ describe("ui field dictionary — boxes, cases and where the simulator lives (20
     expect(hit?.meaning).toMatch(/Simulate a rip/)
     expect(hit?.meaning).not.toMatch(/Simulate" button on (the|every) (row|table)/)
   })
+  // 2026-11-22: the dashboard's single Portfolio FMV / Total Assets / stacked chart.
+  it("answers 'does my portfolio value include packs' with the single-number entry", () => {
+    const hit = lookupUiField("does my portfolio fmv include packs", "dashboard")[0]
+    expect(hit?.id).toBe("dashboard.portfolio-fmv")
+    expect(hit?.meaning).toMatch(/ONE number/)
+    expect(hit?.meaning).toMatch(/stale-priced ones included/)
+  })
+  it("answers 'why does the chart say est.' with the stacked-chart entry", () => {
+    const hit = lookupUiField("why does the value chart say est.", "dashboard")[0]
+    expect(hit?.id).toBe("dashboard.value-30d")
+    expect(hit?.meaning).toMatch(/estimate, not a measurement/)
+  })
 })
