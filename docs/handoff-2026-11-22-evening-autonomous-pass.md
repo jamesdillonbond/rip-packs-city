@@ -70,3 +70,36 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Read 11:13 PM PT:** Panini per-run `extra.sales_history_unrecognised_keys` = 0 across 349 `panini-ingest` runs since 9 PM PT.
 - **~5:10 PM PT 11-23:** the Sentinel "Panini Ingest" WARN clears once the 82 drops from 11-22 5:09 PM PT leave its 24 h window. Earlier proof: any `panini_sales` row with `source = 'nft_sales_data'` and `edition_external_id` under `packcard-850147_111938_` other than `…_2-6_*`. A new unrecognised shape in the Sentinel sample is a fourth shape: same recipe, measure first.
 - **11-24 (from the earlier steer):** the fmv-recalc :08 historical-fallback timeout rate. ↳ **Early read 11-23 ~4:25 AM PT (12 h since job 704 moved):** `:08` 1/16 = **6.3 %** (was 21 %, 16/77), `:28` 0/15, `:48` 0/15 — under the steer's 10 % line; confirm on the full day.
+
+## Closed out 11-23 ~11:15 AM PT (thread archived after this)
+
+- **Handed to Cowork at 7:44 AM PT** (inbox `2026-11-23T1545Z`); **all of it was done by ~8:15 AM PT** (that filing's ✅ section):
+  - cadence bridges retired (`20261123154756`);
+  - stale challenges suppression dropped (`20261123154821`);
+  - #235: the JA4 rule was challenging, not logging (known-issues #235);
+  - `check_set_completion(text)` dropped (`20261123154924`);
+  - Trevor's two cron-job.org calls made (indexer every 5 min; historical buyer backfill paused).
+- **Re-verified live ~10:56 AM PT:**
+  - cadence arm `expired_exemptions` = [];
+  - `check_set_completion` gone;
+  - `topshot-sales-indexer` 12 runs / h on `:X3/:X8`;
+  - `topshot-buyer-backfill-historical` 0 runs / h;
+  - ownership walk counted the two mega-wallets as `too_large` (0 errors), and they stopped recurring.
+- **Shipped ~11 AM PT — `20261123185838`:** jobs 476/474 (Top Shot unmapped-sale resolve + promote) hourly → every 10 min.
+  - Why: the 5-min indexer cut lag p50 15.0 → 3.7 min, but p90 stayed ~47 min because every late sale landed at `:54` via the hourly drain.
+  - **Read on 11-24:** Top Shot on-chain p90 ingest lag over a full day should fall toward ~15 min. Query in cron-and-schedulers.md, "Split a lag distribution by INGEST MINUTE".
+- **Still open, owned elsewhere:**
+  - #249 (ISR caches a degraded render): needs a preview-verified segment change.
+  - Candy ask-age: a model decision for Trevor or the Candy thread.
+  - #235: its exit is now "no > 400/min through ≥ 10 regions for a week".
+- **Dated reads that outlive this thread:** in `focus.md` and inbox `2026-11-23T1545Z` §6.
+  - Panini Sentinel WARN clears ~5:10 PM PT 11-23.
+  - fmv-recalc `:08` full-day rate 11-24.
+  - Gate week 3 Mon 11-30.
+- **Docs updated at close:**
+  - this handoff;
+  - `docs/sessions/2026-11.md` (entry + lessons 7–11);
+  - `testing-and-ci.md` (coverage ratchet at its floor);
+  - `cron-and-schedulers.md` (lag split by ingest minute; lock-vs-IO sampling recipe);
+  - `roadmap-status.md` (gate week 2 + the `within_25_pct` unit trap);
+  - `strategy/collections/nba-top-shot.md`.

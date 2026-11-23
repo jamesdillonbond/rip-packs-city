@@ -3175,3 +3175,36 @@ The sealed-pack value backfill's first job (`CALL backfill_portfolio_snapshot_pa
 - **The tell is POSITIONAL:** group a cursored lane's runs by `extra->>'offset'` (or cursor) and look for a contiguous band of `rows_written = 0` that repeats every cycle. A whole-lane zero count averages it away.
 - **For a SNAPSHOT lane (it should write every node it reads), `found > 0, written = 0` is a defect signal; for a DELTA lane it is normal.** Screen 11-23 ~8:30 AM PT: of 40 lanes with ≥ 10 found-but-zero runs in 72 h, the snapshot-shaped one was `snapshot-pack-asks` — and it checked out: Atlas's own census (SearchDistributions, `packNumListed > 0`, all 3,211) said exactly **953** listed All Day distributions, the figure the lane had reported unchanged for 4 days. A static count is not a frozen source until an independent census disagrees.
 - **Read the counter's PARTS before believing its name:** `nodes_price_or_slots_unknown` hid which field was missing; v12 split it (`nodes_price_unknown` / `nodes_slots_unknown` / `nodes_price_carried`). Fix + verification: ledger 2026-11-23 ~8:00 AM PT.
+
+## ⚠ Split a lag distribution by INGEST MINUTE before crediting or blaming a cadence lever (2026-11-23, PT)
+
+Trevor moved the Top Shot sales indexer (cron-job.org) to every 5 min.
+- **Same-morning read:** Top Shot sale-ingest lag p50 **15.0 → 3.7 min**, but p90 only **53.8 → 46.6**.
+- **Bucketing late sales by `ingested_at` minute** showed every on-chain sale more than 20 min late landed at **`:54`**, about 28 % of them.
+- **Mechanism:** the indexer PARKS sales whose edition is not yet mapped (`extra.unmapped_parked`, 1–20 per run). They reach `sales` only via job 476 `topshot_resolve_unmapped_via_atlas` (was hourly `:50`) and job 474 `promote_unmapped_sales` (was hourly `:54`). The tuned lane was not the binding one.
+- **Fix `20261123185838`:** 476 `7-59/10`, 474 `9-59/10`. Cheap: 0.4 s and 2.1 s avg. Atlas probes stay capped (12/run, 14-day per-nft stamp).
+- **The general rule:** a lag tail that clusters on ONE minute-of-hour is a downstream hourly drain, not the upstream interval.
+
+## Lock or IO? Sample the job's backend through one slow tick (2026-11-22, PT)
+
+`atlas_listing_verify_tick` (job 466) ran ~2× slower on its `:X6` ticks: offers step 13.1 s vs 3.0 s at `:X1`. Its read parts EXPLAIN at ~0.6 s warm, and a writer of the same table (`close_sold_topshot_listings_and_floors`, `:X5`) suggested lock waits.
+
+The sample settled it. Over the 23:16 tick, **16 of 18 s were `IO/DataFileRead` and `pg_blocking_pids` was empty**: cache pressure from co-scheduled jobs (`sync_sales_from_atlas`, `rpc-wmc-fmv-reconcile-saved`, the hourly Panini rollup). No plan or lock change helps, and moving the tick only moves the collision, so nothing shipped. The recipe (one `execute_sql` call: it sleeps to the next `:X6`, ≤ 60 s total):
+
+```sql
+create temp table if not exists _w(ts timestamptz, wet text, we text, blocked_by int[], other text);
+do $$ declare t timestamptz := date_trunc('minute', now()) + interval '1 minute'; begin
+  while extract(minute from t)::int % 10 <> 6 loop t := t + interval '1 minute'; end loop;
+  if t - now() > interval '38 seconds' then raise exception 'too early: %', t - now(); end if;
+  perform pg_sleep(extract(epoch from t - now()) + 1);
+  for i in 1..18 loop
+    perform pg_stat_clear_snapshot();   -- pg_stat_activity is snapshotted per transaction without this
+    insert into _w select clock_timestamp(), a.wait_event_type, a.wait_event, pg_blocking_pids(a.pid),
+      (select string_agg(left(b.query,50),' | ') from pg_stat_activity b where b.pid = any(pg_blocking_pids(a.pid)))
+      from pg_stat_activity a where a.query ilike '%<job function>%' and a.pid <> pg_backend_pid() and a.state='active';
+    perform pg_sleep(1);
+  end loop; end $$;
+select * from _w order by ts;
+```
+
+⚠ The `pg_stat_statements` figure that flagged it (428k blocks/call) was a since-08-12 average (`pg_stat_statements_info.stats_reset`). Read `pipeline_runs` per-step `duration_ms` for today's cost first.

@@ -3827,3 +3827,19 @@ The brand-token guard checks source LITERALS, and the axe gate in `E2E DOM Smoke
 ## ⚠ vitest green is not tsc green for a hoisted test harness (2026-11-22, PT)
 
 `__tests__/api-cron-weekly-digest-deep.test.ts` builds its mock config inside `vi.hoisted(() => ({ cfg: { … } }))`, so the cfg has a FIXED inferred type. A new case wrote `h.cfg.packRows` — fine at runtime, all 26 tests passed — and `main`'s TypeScript job (and the build-render smoke) went red on da521e6 until 561c784 declared the field. A test-only change still needs `npx tsc --noEmit` before the push (or `npm run preflight`, which runs it).
+
+## ⚠ A coverage ratchet sitting AT its floor reds the NEXT commit, not the one that lowered it (2026-11-22, PT)
+
+The merged-coverage job (`Unit tests (vitest) — merge + coverage ratchet`) failed on `4df3092c5` with **all 26,697 tests passing**. Statements read **91.79** against the `vitest.config.ts` floor of **91.8**.
+- The commit that ate the headroom, the physical-cards prototype `4d3593864`, had passed at ~91.80; its two routes sat at 58 %.
+- A later 4-line, fully covered fix tipped the total under.
+
+How to recognise it:
+- The job log ends in the coverage table, then `##[error]Process completed with exit code 1`.
+- No `FAIL` line, and `Test Files N passed`.
+- Grep the log for `Test Files` and `% Stmts` before hunting a broken test.
+
+Fix:
+- **Cover the low files**, never lower the floor. The fix (`db3a68f04`) added route + client tests, checked with planted defects.
+- Confirm with one full local run before pushing: `NODE_OPTIONS=--max-old-space-size=6144 npx vitest run --coverage --coverage.reporter=text-summary`, ~15 min on 4 cores.
+- `--quick` preflight runs only `vitest related` and cannot see a global threshold.
