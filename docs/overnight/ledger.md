@@ -12,6 +12,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~5:32 PM PT · Lane budget: the two hourly Panini lanes share one pg_cron job (job 915 retired) — migration `20261123013202`
+- Job 915 `panini-pack-ev-tier-shadow` (added 11:49 AM PT) had no paired retirement (320 active vs the 318 baseline). Now job 914 runs `CALL public.run_panini_hourly_lanes()` at :49. The procedure COMMITs between `record_panini_edition_supply_obs()` and `refresh_panini_pack_ev_tier_shadow()`, and each sits in its own guarded block (query_canceled named), so neither can roll back or stop the other; each keeps its own logging. Supply obs moved :54 → :49. Job 915 unscheduled. Active 320 → **319**; job 901 retires 11-25 (scheduled task) → 318. Guarded on both jobs' exact commands; WHEN-OTHERS guard 0. Revert in the file header. **Watch 5:49 PM PT:** both pipelines log a run from job 914.
+
 ### 2026-11-22 ~6:00 PM PT · 🔧 SHIPPED (code) — the concierge's `get_collection_snapshot` answers with the same Portfolio FMV and Total Assets as the tiles; fixes a test type error from the 5:35 PM email commit (Claude Code cloud; same thread)
 
 - The tool said "N moments, total FMV $X" from the snapshot's `totalFmv` (closed markets out, no packs). It now reads `/api/public/wallet-packs` too and reports `shareWalletTotalUsd()` + assets; a failed pack read is stated in the summary (`sealed_packs: { failed: true }`), never folded in as $0. Test re-pinned + a failure case added.
