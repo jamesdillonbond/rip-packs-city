@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~5:25 PM PT · 🔧 SHIPPED (code) — one Panini pack, one row: a capture with no `__pack_id` now takes Panini's numeric `pack_id` before its `pack_sku`, captures of one pack MERGE per field (a null never overwrites), and a numeric-keyed row is never re-keyed onto a stale sku-keyed row (Claude Code cloud; Trevor: "Address what you need to")
+- Cause (NWSL #1065): the drop page yields a packDetails capture (id `1065`) AND a MarketPackStats capture with no `__pack_id`, which fell to its sku → second row `850176BC-NWSL-PZM-BLK-1`; the sku fold missed because the packDetails raw carries no `pack_sku`. In all 377 other rows `raw.pack_id = id`, so the fallback names the row every other capture already uses. "Latest capture wins" would also have erased the drop price ($10) or the market floor ($20) — now both land.
+- Files: `lib/chains/panini/ingest-normalize.ts` (`toPackRow` id order, new `mergePackRowsById`), `app/api/cron/panini-ingest/route.ts`; tests pinned and each proven by a planted defect.
+- Data step (after the deploy is READY, else the old code re-creates the row): fold the sku row's market fields into `1065` and delete the sku row — migration version recorded in the follow-up entry.
+- Revert: `git revert` this commit by message ("one Panini pack, one row").
+
 ### 2026-11-22 ~5:45 PM PT · 🔧 SHIPPED (code) — the concierge can explain the new tiles: dictionary entries for Portfolio FMV (one number), Total Assets and the stacked Value / 30D chart ("est." nights); the weekly-email entry says its value now includes packs (Claude Code cloud; same thread)
 
 - `lib/concierge/ui-field-dictionary.ts`: `dashboard.portfolio-fmv`, `dashboard.total-assets`, `dashboard.value-30d` added; `email.weekly-portfolio-email` updated. Two lookup tests added. Onboarding tour comment renamed to Total Assets (no copy change).
