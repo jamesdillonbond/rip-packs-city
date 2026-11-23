@@ -232,7 +232,9 @@ export const COLLECTIONS: Collection[] = [
     cadenceCollectionPath: "/public/GolazosNFTCollection",
     mediaCdnBase: "https://assets.laligagolazos.com",
     supabaseCollectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
-    pitch: "Wallet analytics and FMV intelligence for LaLiga Golazos on Flow — 581 editions tracked, dual-source listing sweep.",
+    // 2026-11-22: dropped "581 editions tracked, dual-source listing sweep" — the count was a
+    // dated sample (575 live) and the second listing source (Flowty) retired 10-30.
+    pitch: "Wallet analytics and FMV intelligence for LaLiga Golazos on Flow.",
     news: [
       // 2026-10-25: was a January item; dated RPC changes (ledger).
       { title: "Ask-based prices capped at recent sales", date: "2026-10-23", summary: "Where an edition has no recent sale to price from and RPC uses its lowest ask, the price no longer sits above what that edition has recently sold for.", url: "/laliga-golazos/market" },
