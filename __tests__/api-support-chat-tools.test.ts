@@ -302,14 +302,34 @@ describe("concierge tools — data reads", () => {
           { playerName: "Scoot", tier: "COMMON", fmv: 25 },
         ],
       }),
+      jsonRoute("/api/public/wallet-packs", { held: 2, listed: 2, low_ask_usd: 30 }),
     ])
     script("get_collection_snapshot", { walletAddress: "0xbd94cade097e50ac" })
     await POST(post("summarize my collection"))
 
     const r = toolResult()
     expect(r.status).toBe("ok")
-    expect(String(r.summary)).toContain("3 moments, total FMV $120.00")
+    // RE-PINNED 2026-11-22: the concierge gives the dashboard's ONE Portfolio FMV (moments + sealed
+    // packs) and Total Assets, not the snapshot's moments-only total.
+    expect(String(r.summary)).toContain("5 assets (3 moments and cards + 2 sealed packs)")
+    expect(String(r.summary)).toContain("Portfolio FMV $150.00")
+    expect(String(r.summary)).toContain("2 sealed packs worth $30.00")
     expect(String(r.summary)).toContain("Dame (RARE) — $80.00")
+    expect(r.portfolio_fmv_usd).toBe(150)
+  })
+
+  it("get_collection_snapshot says when sealed packs could not be read, never folds them in as $0", async () => {
+    stubFetch([
+      jsonRoute("/api/collection-snapshot", { totalMoments: 3, totalFmv: 120, topMoments: [] }),
+      jsonRoute("/api/public/wallet-packs", { error: "down" }, { status: 503 }),
+    ])
+    script("get_collection_snapshot", { walletAddress: "0xbd94cade097e50ac" })
+    await POST(post("what is my collection worth"))
+
+    const r = toolResult()
+    expect(String(r.summary)).toContain("Portfolio FMV $120.00")
+    expect(String(r.summary)).toContain("Sealed packs couldn't be read just now")
+    expect(r.sealed_packs).toEqual({ failed: true })
   })
 
   it("get_hot_floors shapes the sweep rows with computed avg_paid", async () => {

@@ -29,6 +29,8 @@ const h = vi.hoisted(() => ({
     claimRows: undefined as any,
     claimErr: null as any,
     markErr: null as any,
+    // 2026-11-22: portfolio_snapshots rows read by loadPackWeek (sealed packs in the Estimated value).
+    packRows: undefined as any,
   },
   ops: [] as string[],
   rpcCalls: [] as any[],
@@ -104,7 +106,7 @@ const digestLog = () => h.rpcCalls.find((c) => c.name === "log_pipeline_run")?.a
 
 let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
-  h.cfg = { movers: [], moversError: null, emailSubQueue: [], alertSentQueue: [], emailInsertErr: null, alertInsertErr: null, claimRows: undefined, claimErr: null, markErr: null }
+  h.cfg = { movers: [], moversError: null, emailSubQueue: [], alertSentQueue: [], emailInsertErr: null, alertInsertErr: null, claimRows: undefined, claimErr: null, markErr: null, packRows: undefined }
   h.ops = []
   h.rpcCalls = []
   h.afterFns = []

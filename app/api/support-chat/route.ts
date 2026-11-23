@@ -140,6 +140,7 @@ import { boundedRead } from "@/lib/api/bounded-read";
 import { TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections";
 import { REPLY_TO } from "@/lib/emails/sender-identity";
 import { ilikeLiteral } from "@/lib/db/ilike-literal";
+import { shareWalletTotalUsd, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -3615,9 +3616,36 @@ async function executeToolInner(
       const topList = (data.topMoments ?? [])
         .map((m: any) => `${m.playerName} (${m.tier}) — $${Number(m.fmv).toFixed(2)}`)
         .join(", ");
+      // 2026-11-22 (Trevor: one number for everything in the wallet): the same Portfolio FMV the
+      // dashboard / profile / share card show — every collection's FMV (UFC included; the snapshot's
+      // own totalFmv leaves closed markets out) + sealed packs at capped low ask — and Total Assets.
+      // A failed pack read is SAID, never folded in as $0.
+      let packs: HeldPacksTotal | null = null;
+      let packsFailed = false;
+      if (/^0x[0-9a-fA-F]{16}$/.test(String(toolInput.walletAddress).trim())) {
+        try {
+          const pr = await fetch(`${base}/api/public/wallet-packs?wallet=${encodeURIComponent(toolInput.walletAddress)}`, { signal: AbortSignal.timeout(10000) });
+          if (!pr.ok) throw new Error(String(pr.status));
+          const d = await pr.json();
+          packs = { held: Number(d?.held) || 0, listed: Number(d?.listed) || 0, lowAskUsd: Number(d?.low_ask_usd) || 0, unpriced: Number(d?.unpriced) || 0, walletsFailed: 0 };
+        } catch {
+          packsFailed = true;
+        }
+      }
+      const portfolioFmv = shareWalletTotalUsd(data.perCollection, data.totalFmv, packs, packsFailed);
+      const moments = Number(data.totalMoments) || 0;
+      const totalAssets = moments + (!packsFailed && packs ? packs.held : 0);
+      const packPart = packsFailed
+        ? " Sealed packs couldn't be read just now, so they are NOT in that figure — say so."
+        : packs && packs.held > 0
+          ? ` That includes ${packs.held} sealed pack${packs.held === 1 ? "" : "s"} worth $${packs.lowAskUsd.toFixed(2)} at the lowest live ask.`
+          : "";
       return JSON.stringify({
         status: "ok",
-        summary: `Your collection: ${data.totalMoments} moments, total FMV $${Number(data.totalFmv).toFixed(2)}. Top moments: ${topList}. Share your collection at ${siteUrl()}/share/${encodeURIComponent(toolInput.walletAddress)}`,
+        summary: `Your collection: ${totalAssets} assets (${moments} moments and cards${!packsFailed && packs && packs.held > 0 ? ` + ${packs.held} sealed packs` : ""}), Portfolio FMV $${portfolioFmv.toFixed(2)} — every collection, UFC included, plus sealed packs.${packPart} Top moments: ${topList}. Share your collection at ${siteUrl()}/share/${encodeURIComponent(toolInput.walletAddress)}`,
+        portfolio_fmv_usd: portfolioFmv,
+        total_assets: totalAssets,
+        sealed_packs: packsFailed ? { failed: true } : packs,
         raw: data,
       });
     } catch (err: any) {
