@@ -482,8 +482,9 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   300,000 ms wall (47 %) over 73 h — the tightest margin on the queue — and its output
 //   is member MAIL, so a kill sends nothing. No queued route took a Vercel wall kill in the
 //   7 d to 11-23 (the five that week all hit converted routes). Same edit reads the error
-//   its terminal log_pipeline_run returns (R123). Next by margin: wallet-backfill-pinnacle
-//   (209,391 / 600,000 = 35 %) and wallet-backfill-allday (192,242 / 600,000 = 32 %).
+//   its terminal log_pipeline_run returns (R123). ⛔ NOT next: wallet-backfill-pinnacle
+//   (209,391 / 600,000) and -allday (192,242) — both maxima are the SYNC path
+//   (multicollection calls ?sync=true, 270 s soft deadline), not after(). Check the PATH.
 const BUDGET = 25
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
