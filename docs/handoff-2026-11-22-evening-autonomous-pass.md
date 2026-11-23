@@ -64,4 +64,4 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **11-23:** `fmv_recalc_hot_editions` stranded count (snapshot newer than sold_at but older than ingested_at, not HIGH/MEDIUM) stays ~0 between runs.
 - **Read 11:13 PM PT:** Panini per-run `extra.sales_history_unrecognised_keys` = 0 across 349 `panini-ingest` runs since 9 PM PT.
 - **~5:10 PM PT 11-23:** the Sentinel "Panini Ingest" WARN clears once the 82 drops from 11-22 5:09 PM PT leave its 24 h window. Earlier proof: any `panini_sales` row with `source = 'nft_sales_data'` and `edition_external_id` under `packcard-850147_111938_` other than `…_2-6_*`. A new unrecognised shape in the Sentinel sample is a fourth shape: same recipe, measure first.
-- **11-24 (from the earlier steer):** the fmv-recalc :08 historical-fallback timeout rate.
+- **11-24 (from the earlier steer):** the fmv-recalc :08 historical-fallback timeout rate. ↳ **Early read 11-23 ~4:25 AM PT (12 h since job 704 moved):** `:08` 1/16 = **6.3 %** (was 21 %, 16/77), `:28` 0/15, `:48` 0/15 — under the steer's 10 % line; confirm on the full day.
