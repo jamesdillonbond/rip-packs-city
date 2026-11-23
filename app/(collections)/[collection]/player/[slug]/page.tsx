@@ -40,6 +40,7 @@ import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
 import OnTheBlockLink from "@/components/entity/OnTheBlockLink"
 import TeamChecklist from "@/components/entity/TeamChecklist"
+import PinnacleCharacterChecklist from "@/components/pinnacle/PinnacleCharacterChecklist"
 import { getCollection } from "@/lib/collections"
 import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
@@ -735,6 +736,17 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {!isCharacter && getCollection(collection)?.teamPages ? (
         <Section title={`${detail.name} Checklist`}>
           <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} entity="player" />
+        </Section>
+      ) : null}
+
+      {/* ── Disney Pinnacle Character Checklist (2026-11-23, Pinnacle roadmap pass) ──
+          The player checklist's job on the render grain: every pin of this character (the
+          `characters` trait), owned vs missing for a tracked Dapper wallet, cost to complete split by
+          price source. Its own route + RPC (get_pinnacle_character_checklist) because the shared
+          checklist reads `editions`, which holds no Pinnacle pins. Hides itself on a 404 (no pins). */}
+      {collection === "disney-pinnacle" && isCharacter ? (
+        <Section title={`${detail.name} Checklist`}>
+          <PinnacleCharacterChecklist character={detail.name} />
         </Section>
       ) : null}
 

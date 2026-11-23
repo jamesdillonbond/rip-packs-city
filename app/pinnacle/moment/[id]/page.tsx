@@ -180,7 +180,7 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
 
-  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder, listings, packPulls, topOwners } = data
+  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, askHistory, nameByAddr, serialLadder, listings, packPulls, topOwners } = data
   // The cheapest listing in the latest sweep, linked to Disney Pinnacle's own page for that pin.
   const cheapest = listings && listings.rows.length > 0 ? listings.rows[0] : null
   const cheapestUrl = cheapest ? marketplaceMomentUrl("disney-pinnacle", cheapest.nft_id) : null
@@ -540,8 +540,8 @@ export default async function PinnacleMomentPage({
 
       {fmvHistory.length > 2 ? (
         <section className="rpc-pm-detail">
-          <h2 className="rpc-pm-h2">FMV history</h2>
-          <PinnacleFmvChart points={fmvHistory} />
+          <h2 className="rpc-pm-h2">FMV &amp; lowest-ask history</h2>
+          <PinnacleFmvChart points={fmvHistory} asks={askHistory} />
         </section>
       ) : null}
 

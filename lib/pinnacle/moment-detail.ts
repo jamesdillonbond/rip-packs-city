@@ -20,6 +20,7 @@
 // `?? 0`-on-a-supabase-count shape as /api/rewards/summary.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { asksAscending, type PinnacleAskPoint } from "@/lib/pinnacle/ask-history"
 import {
   pinnacleSerialLadder,
   toMultiplierMap,
@@ -264,6 +265,11 @@ export type RenderData = {
   scarcity_pct: number | null
   siblings: SiblingRow[]
   fmvHistory: PinnacleFmvPoint[]
+  /**
+   * Lowest-ask changes for this pin (pinnacle_floor_ask_history, change-only, tracked since
+   * 2026-10-19), ascending. null = the read FAILED (the chart then says so); [] = none recorded.
+   */
+  askHistory: PinnacleAskPoint[] | null
   nameByAddr: Record<string, string>
   // P4: serial-premium value ladder — what different serial tiers of THIS render
   // are worth, from the render-keyed Pinnacle serial-FMV model (overlay on the
@@ -461,9 +467,9 @@ export async function load(
   // would each be measured from the moment this line runs, which is already
   // several reads deep — the chain above must count against them.
   let salesRes: Row, holdersRes: Row, boardRes: Row, siblingsRes: Row
-  let fmvHistRes: Row, serialMultRes: Row, listingsRes: Row, packPullsRes: Row, ownersRes: Row
+  let fmvHistRes: Row, serialMultRes: Row, listingsRes: Row, packPullsRes: Row, ownersRes: Row, askHistRes: Row
   try {
-    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes, listingsRes, packPullsRes, ownersRes] = await bounded<Row[]>(
+    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes, listingsRes, packPullsRes, ownersRes, askHistRes] = await bounded<Row[]>(
       Promise.all([
     supa
       .from("pinnacle_sales")
@@ -518,6 +524,14 @@ export async function load(
       .limit(12),
     // 2026-10-26 (pass 2): current owners of this pin (Top Shot's "Top Owners").
     supa.rpc("get_pinnacle_pin_top_owners", { p_render_id: renderId, p_limit: 10 }),
+    // 2026-11-23: the lowest-ask line on the price chart. Change-only log (max 23 rows per pin on
+    // 11-23), so the newest 400 is the whole history for a long time; PK (render_id, observed_at).
+    supa
+      .from("pinnacle_floor_ask_history")
+      .select("observed_at, floor_ask")
+      .eq("render_id", renderId)
+      .order("observed_at", { ascending: false })
+      .limit(400),
       ]),
       "detail-bundle",
       deadline,
@@ -660,6 +674,8 @@ export async function load(
       scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
       siblings,
       fmvHistory: newestHistoryAscending((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
+      // Branch on the error: a failed read is null ("unavailable"), never an empty history.
+      askHistory: !askHistRes || askHistRes.error ? null : asksAscending((askHistRes.data ?? []) as PinnacleAskPoint[]),
       nameByAddr,
       serialLadder,
       listings,
