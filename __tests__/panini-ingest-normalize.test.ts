@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, PANINI_ASK_ONLY_MULT, toPackRow, mergePackRowsById, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -409,6 +409,32 @@ describe("toPackRow product identity (multi-product, 2026-09-28)", () => {
     const r = toPackRow({ __pack_id: "WNBA-FOTL", __page_url: "https://nft.paniniamerica.net/pack-x.html", pack_name: "2026 Panini NFT Prizm WNBA FOTL Packs", collection_name: " 2026 Panini NFT Prizm WNBA ", sport: "BASKETBALL" }, NOW, null)
     expect(r).toMatchObject({ id: "WNBA-FOTL", product_name: "2026 Panini NFT Prizm WNBA", sport: "BASKETBALL", product_set_id: null, page_url: "https://nft.paniniamerica.net/pack-x.html", pack_type: "fotl" })
     expect(toPackRow({ __pack_id: "1038", collection_name: "WC" }, NOW, 2332).product_set_id).toBe(2332)
+  })
+})
+
+describe("one pack, one row (NWSL #1065, 2026-11-22)", () => {
+  // The two shapes captured from the NWSL drop page on 11-22: packDetails (with __pack_id) and the
+  // marketplace stats (no __pack_id, has pack_sku). Both carry Panini's numeric pack_id.
+  const details = { pack_id: 1065, __pack_id: "1065", __source: "packDetails", collection_name: "2026 Panini NFT Prizm Black NWSL Soccer", subpack_price: 10 }
+  const market = { pack_id: 1065, pack_sku: "850176BC-NWSL-PZM-BLK-1", collection_name: "2026 Panini NFT Prizm Black NWSL Soccer", total_pack_qty: 13000, market_stats: { floor_price: 20, unopen_pack_count: 4396 } }
+  it("a capture with no __pack_id takes Panini's numeric pack_id, not its pack_sku", () => {
+    expect(toPackRow(market, NOW).id).toBe("1065")
+    expect(toPackRow(details, NOW).id).toBe("1065")
+  })
+  it("still falls back to pack_sku when there is no numeric pack_id", () => {
+    expect(toPackRow({ pack_sku: "1038" }, NOW).id).toBe("1038")
+    expect(toPackRow({ pack_id: "not-a-number", pack_sku: "X-1" }, NOW).id).toBe("X-1")
+  })
+  it("merges the two captures per field: the primary price AND the market floor survive, either order", () => {
+    for (const order of [[details, market], [market, details]]) {
+      const rows = mergePackRowsById(order.map((p) => toPackRow(p, NOW)))
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ id: "1065", price_usd: 10, floor_usd: 20, packs_remaining: 4396, packs_total: 13000 })
+      expect((rows[0].raw as any).pack_sku).toBe("850176BC-NWSL-PZM-BLK-1")
+    }
+  })
+  it("leaves distinct ids alone", () => {
+    expect(mergePackRowsById([{ id: "1", a: 1 }, { id: "2", a: null }])).toEqual([{ id: "1", a: 1 }, { id: "2", a: null }])
   })
 })
 

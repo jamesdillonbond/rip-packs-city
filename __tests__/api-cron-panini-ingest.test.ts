@@ -101,7 +101,9 @@ vi.mock("@/lib/supabase", () => ({
     },
   },
 }))
-vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
+vi.mock("@/lib/chains/panini/ingest-normalize", async (importOriginal) => ({
+  // The real per-field merge (pure; unit-tested in panini-ingest-normalize.test.ts).
+  mergePackRowsById: ((await importOriginal()) as typeof import("@/lib/chains/panini/ingest-normalize")).mergePackRowsById,
   toEditionRow: (c: any) => { if (st.throwInWalk) throw new Error("normalize boom"); return { external_id: c.sku, collection_id: "p1" } },
   toFmvRow: (c: any) => (c.fmv ? { edition_id: c.sku, fmv_usd: c.fmv, algo_version: "panini-1.0.0" } : null),
   toFmvRowV11: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null) => (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? c.fmv, algo_version: "panini-1.1.0" } : null),
@@ -120,7 +122,7 @@ vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   // 1.4.2 (2026-11-09) is 1.4.0's rows with the HIGH depth rule; the rule is unit-tested for real.
   toFmvRowV142: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null, l?: { fmv_usd: number } | null, sp?: { n_sales: number } | null, pr?: { prior_median_usd: number } | null) =>
     (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? l?.fmv_usd ?? c.fmv, algo_version: "panini-1.4.2", spread_n: sp?.n_sales ?? null, prior_med: pr?.prior_median_usd ?? null } : null),
-  toPackRow: (p: any, _n: string, sid: number | null = null) => { st.packRowsArgs.push([p, sid]); return { id: p.pack_sku, product_set_id: sid } },
+  toPackRow: (p: any, _n: string, sid: number | null = null) => { st.packRowsArgs.push([p, sid]); return { id: p.rowId ?? p.pack_sku, product_set_id: sid, price_usd: p.price ?? null, floor_usd: p.floor ?? null } },
   // The real parser, except that the fixtures' short skus ("c1", "a") stand for WC cards — the
   // product the route has always written — so every pre-existing case keeps its meaning.
   pskuSetId: (k: unknown) => { const m = typeof k === "string" ? k.match(/^packcard-(\d+)_/) : null; return m ? Number(m[1]) : (typeof k === "string" && !k.startsWith("packcard-") ? 2332 : null) },
@@ -863,6 +865,25 @@ describe("panini-ingest — one pack product, one row", () => {
     if (st.captured) await st.captured()
     const up = st.registryUpserts.find((u) => u.table === "panini_pack_state")!
     expect(up.rows).toHaveLength(1)
+  })
+  it("MERGES the two captures per field — a drop page's price and the marketplace floor both survive (NWSL #1065)", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ pack_sku: "A", collection_name: "x", price: 10 }, { pack_sku: "A", collection_name: "x", floor: 20 }] } }))
+    if (st.captured) await st.captured()
+    const up = st.registryUpserts.find((u) => u.table === "panini_pack_state")!
+    expect(up.rows).toHaveLength(1)
+    expect(up.rows[0]).toMatchObject({ id: "A", price_usd: 10, floor_usd: 20 })
+  })
+  it("a sku-keyed capture folds onto the existing row holding that pack_sku", async () => {
+    st.packUpsert = { data: [{ id: "OLD", pack_sku: "S" }] as any, error: null }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ pack_sku: "S", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    expect(st.registryUpserts.find((u) => u.table === "panini_pack_state")!.rows.map((r: any) => r.id)).toEqual(["OLD"])
+  })
+  it("a capture keyed by Panini's NUMERIC pack id is never re-keyed onto a stale sku-keyed row (NWSL #1065)", async () => {
+    st.packUpsert = { data: [{ id: "850176BC-NWSL-PZM-BLK-1", pack_sku: "850176BC-NWSL-PZM-BLK-1" }] as any, error: null }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { packs: [{ rowId: "1065", pack_sku: "850176BC-NWSL-PZM-BLK-1", collection_name: "x" }] } }))
+    if (st.captured) await st.captured()
+    expect(st.registryUpserts.find((u) => u.table === "panini_pack_state")!.rows.map((r: any) => r.id)).toEqual(["1065"])
   })
 })
 

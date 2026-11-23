@@ -38,7 +38,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, toFmvRowV14, toFmvRowV142, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId, unrecognisedSaleKeys } from "@/lib/chains/panini/ingest-normalize";
+import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, toFmvRowV14, toFmvRowV142, toPackRow, mergePackRowsById, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId, unrecognisedSaleKeys } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
@@ -499,11 +499,14 @@ export async function POST(req: NextRequest) {
           const row: Record<string, unknown> = toPackRow(p, nowIso, setIdByName.get(name) ?? null);
           if (prod.error) delete row.product_set_id;
           const existing = typeof p?.pack_sku === "string" ? idBySku.get(p.pack_sku) : undefined;
-          if (existing && existing !== row.id) row.id = existing;
+          // A row already keyed by Panini's NUMERIC pack id is never re-keyed onto an existing
+          // sku-keyed row (2026-11-22, NWSL #1065: the stale sku row would otherwise capture it forever).
+          if (existing && existing !== row.id && !/^[0-9]+$/.test(String(row.id))) row.id = existing;
           return row;
         });
-        // One row per id (the latest capture wins): an upsert may not touch the same row twice.
-        const packRows = [...new Map(packRowsAll.map((r) => [String(r.id), r])).values()];
+        // One row per id: an upsert may not touch the same row twice. Captures of one pack are MERGED
+        // per field (a null never overwrites), so a drop page's price and the marketplace's floor both land.
+        const packRows = mergePackRowsById(packRowsAll);
         const { data, error } = await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" }).select("id");
         if (error) { packsError = error.message; console.log(`[${PIPELINE}] pack state upsert: ${error.message}`); } else packsWritten += data?.length ?? 0;
       }

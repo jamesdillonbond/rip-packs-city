@@ -232,12 +232,17 @@ const HOBBY_PACK_IDS = new Set(["1038", "1056"]);
 
 // getPackMarketStats.data -> panini_pack_state row. Pack id prefers the runner's __pack_id (parsed from
 // the pack URL) so FOTL 1039 doesn't collide with Hobby 1038. Secondary price captured for net rip-EV.
+// Then Panini's own numeric pack_id, BEFORE pack_sku (2026-11-22, NWSL #1065): a /pack-<name>.html drop
+// page yields a packDetails capture (id 1065 via __pack_id) AND a MarketPackStats capture with no
+// __pack_id, which fell through to its pack_sku and became a second row for the same product. In all
+// 377 other live rows raw.pack_id equals the row id, so this names the row every other capture uses.
 // Multi-product (2026-09-28): product_name / sport come from the payload itself (collection_name,
 // sport); product_set_id is resolved by the route against panini_products (a pack payload carries no
 // card setId), and stays null — i.e. NOT MODELED — until a product row names it.
 export function toPackRow(p: any, nowIso: string, productSetId: number | null = null) {
   const ms = p?.market_stats ?? p ?? {};
-  const packId = String(p?.__pack_id ?? p?.pack_sku ?? p?.collection_name ?? "");
+  const numericPackId = p?.pack_id != null && /^[0-9]+$/.test(String(p.pack_id)) ? String(p.pack_id) : null;
+  const packId = String(p?.__pack_id ?? numericPackId ?? p?.pack_sku ?? p?.collection_name ?? "");
   const productName = typeof p?.collection_name === "string" && p.collection_name.trim() ? p.collection_name.trim() : null;
   return {
     id: packId,
@@ -436,4 +441,24 @@ export function toFmvRowV142(
     row.confidence = "MEDIUM"
   }
   return { ...row, algo_version: "panini-1.4.2" }
+}
+
+// Several captures of ONE pack in one batch (a drop page's packDetails + its MarketPackStats) carry
+// DIFFERENT halves of the row: the drop page has Panini's primary price and no market stats, the
+// marketplace payload the reverse. "Latest capture wins" erased whichever half came first. Merge per
+// field instead — a later NON-NULL value wins, a null never overwrites; `raw` is shallow-merged.
+export function mergePackRowsById<T extends Record<string, unknown>>(rows: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const r of rows) {
+    const id = String(r.id);
+    const prev = byId.get(id);
+    if (!prev) { byId.set(id, { ...r }); continue; }
+    const out: Record<string, unknown> = { ...prev };
+    for (const [k, v] of Object.entries(r)) {
+      if (k === "raw" && v && typeof v === "object" && prev.raw && typeof prev.raw === "object") out.raw = { ...(prev.raw as object), ...(v as object) };
+      else if (v !== null && v !== undefined) out[k] = v;
+    }
+    byId.set(id, out as T);
+  }
+  return [...byId.values()];
 }
