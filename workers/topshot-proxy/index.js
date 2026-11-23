@@ -27,17 +27,10 @@ const UPSTREAM_MAP = {
   "topshot":             "https://public-api.nbatopshot.com/graphql",
   "allday":              "https://public-api.nflallday.com/graphql",
   "allday-consumer":     "https://nflallday.com/consumer/graphql",
-  // Browser-fingerprinted TS routes (2026-06-15). Intended to unblock
-  // execution-gated ops (searchMintedMoments) via the /allday-consumer trick.
-  // VERIFIED INEFFECTIVE for that op (kept only as harmless passthroughs):
-  //   - topshot-browser (public-api + browser headers): searchMintedMoments
-  //     still returns generic "unknown field" — the gate is an operation /
-  //     persisted-query allowlist, NOT UA/header based. getMintedMoment works.
-  //   - topshot-marketplace (website endpoint): returns a Cloudflare MANAGED
-  //     bot challenge ("Just a moment…") that header spoofing can't pass.
-  // Conclusion: no server-side path to enumerate an edition's moments+owners.
-  "topshot-browser":     "https://public-api.nbatopshot.com/graphql",
-  "topshot-marketplace": "https://nbatopshot.com/marketplace/graphql",
+  // 2026-11-22: the two browser-fingerprinted TS routes of 2026-06-15 (`topshot-browser`,
+  // `topshot-marketplace`) were removed. Both were verified ineffective (the searchMintedMoments gate is an
+  // operation allowlist; the marketplace endpoint answers a Cloudflare managed challenge) and had no caller
+  // (A1-WORKER-PASSTHROUGH-CLEANUP). A stray request to either path now falls through to DEFAULT_ROUTE.
 };
 
 const DEFAULT_ROUTE = "topshot";
@@ -50,16 +43,6 @@ const ROUTE_HEADERS = {
   "allday-consumer": {
     "Origin": "https://nflallday.com",
     "Referer": "https://nflallday.com/",
-    "User-Agent": BROWSER_UA,
-  },
-  "topshot-browser": {
-    "Origin": "https://nbatopshot.com",
-    "Referer": "https://nbatopshot.com/",
-    "User-Agent": BROWSER_UA,
-  },
-  "topshot-marketplace": {
-    "Origin": "https://nbatopshot.com",
-    "Referer": "https://nbatopshot.com/",
     "User-Agent": BROWSER_UA,
   },
 };

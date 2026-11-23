@@ -86,6 +86,15 @@ describe("topshot-proxy worker — route dispatch", () => {
     expect(upstreamUrl()).toBe("https://nflallday.com/consumer/graphql")
   })
 
+  // 2026-11-22 (A1-WORKER-PASSTHROUGH-CLEANUP): the two dead browser-fingerprinted routes are gone; a stray
+  // call lands on the plain public API with the bare UA — never the marketplace endpoint, never spoofed headers.
+  it.each(["/topshot-browser", "/topshot-marketplace"])("%s is no longer a route: plain public API, bare UA", async (p) => {
+    await worker.fetch(post(p), env)
+    expect(upstreamUrl()).toBe("https://public-api.nbatopshot.com/graphql")
+    expect(upstreamHeaders()["User-Agent"]).toBe("sports-collectible-tool/0.1")
+    expect(upstreamHeaders()["Origin"]).toBeUndefined()
+  })
+
   it("falls back to the default Top Shot route for an unknown path", async () => {
     await worker.fetch(post("/does-not-exist"), env)
     expect(upstreamUrl()).toBe("https://public-api.nbatopshot.com/graphql")
