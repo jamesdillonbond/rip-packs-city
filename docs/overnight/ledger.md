@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~1:20 PM PT · 🧪 TEST (flake) — `physical-paper-listings-cached` no longer double-mocks `next/cache` (Claude Code cloud; Trevor: "work through anything you possibly can")
+- **Why:** CI shard 1/4 red on `8ab927f10` (unrelated change): "never serves a cached result older than 6 h" read `error` at 5 h. The test re-`doMock`ed `next/cache` over the `beforeEach` mock; when the pass-through won, the real loader ran. Failed 1 of 3 local runs, then 0 of 20 — load-dependent.
+- **What:** one mock, steered by a `cacheHit` variable. Planted defect (ceiling check removed) still fails the test. Test-only; no deploy.
+- **Revert:** `git revert` the commit "test: physical-paper-listings-cached — one next/cache mock".
+
 ### 2026-11-23 ~1:08 PM PT · 🔧 SHIPPED (`20261123210830`) — Top Shot unmapped-sale drain every 5 min: promote gap is per scope (Top Shot 5 min, others 20), jobs 476 → `1-59/5`, 474 → `3-59/5` (Claude Code cloud; Trevor: "work through anything you possibly can")
 - **Why:** after 474/476 went every 10 min (`20261123185838`), promote's 20-min `c_min_gap` skipped every other run; Top Shot on-chain sale-ingest read 11:20 AM–1:03 PM PT p50 3.8 min / **p90 24.8** (n 129) — over the 20-min line focus.md set for this step.
 - **What:** `promote_unmapped_sales` gains `v_min_gap` (5 min for scope `95f28a17…`, else `c_min_gap`); base was live md5 `be9ba615…` = `20261004030511`, new live md5 `2622e4fd…` = committed body. ACL unchanged (postgres / service_role / cron_heavy). Off the old :X7/:X9 minutes (the two busiest of ten). No job added.
