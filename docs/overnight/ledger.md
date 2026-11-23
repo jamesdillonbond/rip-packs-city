@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-22 ~6:00 PM PT · 🔧 SHIPPED (code) — the concierge's `get_collection_snapshot` answers with the same Portfolio FMV and Total Assets as the tiles; fixes a test type error from the 5:35 PM email commit (Claude Code cloud; same thread)
+
+- The tool said "N moments, total FMV $X" from the snapshot's `totalFmv` (closed markets out, no packs). It now reads `/api/public/wallet-packs` too and reports `shareWalletTotalUsd()` + assets; a failed pack read is stated in the summary (`sealed_packs: { failed: true }`), never folded in as $0. Test re-pinned + a failure case added.
+- ⚠ The 5:35 PM commit's `__tests__/api-cron-weekly-digest-deep.test.ts` used `h.cfg.packRows` without declaring it on the hoisted cfg type — `tsc --noEmit` red on `main` from da521e6 until this commit (vitest passed; only tsc saw it). Declared + reset in `beforeEach`. tsc 0 errors; lint ratchet 150/150.
+- **Revert:** `git revert` the code commit titled "concierge: snapshot tool gives the single Portfolio FMV".
+
 ### 2026-11-22 ~5:28 PM PT · Event trigger `rpc_public_table_rls_on_create`: every new `public` table gets RLS at CREATE time — migration `20261123012802` (Trevor: "Yes proceed with all of those" → "Go")
 - Six leaks of an RLS-off public table (latest: one owner's pack history, ~17 min) were each fixed by convention. Now `ddl_command_end` on CREATE TABLE / CREATE TABLE AS / SELECT INTO enables RLS on new tables and partitioned tables in `public`. Grants are untouched. It runs as the issuing role, and failures are WARNINGs, so it never blocks DDL; a table can still DISABLE RLS afterwards. **Control (rolled back):** plain / CTAS / partitioned → RLS on; a `flowty_archive` table untouched; anon grant kept. 0 invariant violations; WHEN-OTHERS guard 0. The first attempt was held by the connector's confirmation prompt (timed out, nothing applied, verified); it was applied after "Go" without the `DROP EVENT TRIGGER IF EXISTS` line. Revert: `DROP EVENT TRIGGER rpc_public_table_rls_on_create; DROP FUNCTION public.rpc_public_table_rls_on_create();`
 
