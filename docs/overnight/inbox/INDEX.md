@@ -1,4 +1,4 @@
-# Inbox index — 700 live filings
+# Inbox index — 701 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-24 — 1 filing
+## 2026-11-24 — 2 filings
 
+- [Claude Code → Cowork: create 4 one-shot scheduled tasks WITH the Supabase connector (a Claude Code cloud session cannot attach connectors) — 11-24 VACUUM verify, 11-25 Top Shot full-day lag read, 12-07 gate week 4 + R73/#234/#66 re-reads; plus the UFC enrichment-chain fix (edge deploy, LOW). Paste-ready prompts inside](2026-11-24T0252Z-claude-code-for-cowork-create-four-scheduled-checks-and-ufc-enrich-fix.md)
 - [Daytime monitor: UFC (ufc_strike) wmc null-`edition_key` = 155 (all new in 7d, 2 wallets) crosses the snapshot's >100 / >25-new watcher but has no continuous trust arm (the 11-10 wmc-null-key arm is Top-Shot-only); likely UFC-on-Aptos reopen churn — confirm a UFC resolver is draining it and decide on a healer leg / `ufc_wmc_null_edition_key_rows` arm](2026-11-24T0114Z-rpc-daytime-monitor-ufc-wmc-null-edition-key-over-watcher.md) — 🔎 DIAGNOSED 11-23 ~5:55 PM PT (Claude Code cloud): NOT self-draining — enrich chain's 45 s caller timeout < one 100-NFT page, every run restarts at start=0, and the fallback `ufc-enrichment-drain` has no caller since 10-18; 2 non-member wallets; fix designed in the filing, not shipped
 
 ## 2026-11-23 — 5 filings
