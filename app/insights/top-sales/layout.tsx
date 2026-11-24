@@ -9,10 +9,15 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { ogCardDayKey } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-export const metadata: Metadata = {
+// og:image carries today's PT date (lib/og/card-day-key.ts): 11-23 the Monday 2/2 reply unfurled a
+// blank grey card — X had cached the bare og:image URL, and ?w= on the page link cannot change that.
+export function generateMetadata(): Metadata {
+  const ogImage = `${SITE_URL}/api/og/insights/top-sales?d=${ogCardDayKey()}`
+  return {
   // The root metadata template in lib/seo.ts appends " | Rip Packs City",
   // so baking the brand in here rendered it twice. (deep-audit D24)
   title: "Top Sales — The Whales of the Week",
@@ -38,7 +43,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/top-sales`,
+        url: ogImage,
         width: 1200,
         height: 630,
         alt: "Top Sales — The Whales of the Week — Rip Packs City",
@@ -53,9 +58,10 @@ export const metadata: Metadata = {
     title: "Top Sales — The Whales of the Week",
     description:
       "The biggest recent sales across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, Panini and Candy MLB — with who bought and who sold each one.",
-    images: [`${SITE_URL}/api/og/insights/top-sales`],
+    images: [ogImage],
     creator: "@RipPacksCity",
   },
+  }
 }
 
 export default function TopSalesLayout({ children }: { children: React.ReactNode }) {

@@ -2,6 +2,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { ogCardDayKey } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 const TITLE = "Pack Drops This Week — Top Shot, Pinnacle, Panini & More"
@@ -13,19 +14,9 @@ const DESCRIPTION =
 // The OG IMAGE URL carries today's PT date (2026-11-15). X caches a card by its IMAGE URL as well as
 // the page URL: the 11-15 2/2 reply with ?w=1115 on the page link still unfurled LAST week's card
 // (Rookie Debut Case, Villains Vol.2 …), because og:image was the same bare URL X had cached on 11-08.
-// A per-day ?d= makes each day's card a new image to X; the route ignores the param. Computed at
-// render, and the page revalidates every 900 s, so the key rolls over within 15 min of PT midnight.
-function ptDayKey(now = new Date()): string {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" })
-      .formatToParts(now)
-      .map((x) => [x.type, x.value]),
-  )
-  return `${p.year}${p.month}${p.day}`
-}
-
+// A per-day ?d= makes each day's card a new image to X; the route ignores the param (lib/og/card-day-key.ts).
 export function generateMetadata(): Metadata {
-  const ogImage = `${SITE_URL}/api/og/insights/drops?d=${ptDayKey()}`
+  const ogImage = `${SITE_URL}/api/og/insights/drops?d=${ogCardDayKey()}`
   return {
     title: TITLE,
     description: DESCRIPTION,
