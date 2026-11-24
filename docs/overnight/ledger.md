@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~6:40 PM PT · ✅ SHIPPED — Candy parity pass 2: Candy Squeeze covers every 2026 set; edition pages link both new boards (Claude Code cloud; Trevor: "Keep going")
+- `get_candy_listed_squeeze` (`20261124023333`, applied ~6:33 PM PT, same signature, ACL unchanged — anon/authenticated `has_function_privilege` = false): holders from the census (outside `candy_house_wallets`) instead of `market_cap_current`, whose Candy supply split is Base-only. **283 editions ranked** — 2026 All-Star Game 180 (71 unlisted, max 12.8 %), Base 100 (66 unlisted — identical to pass 1), Quest 2, Gold 1; ~5.4k buffers / 1.5 s cold. Rows carry Candy's own rarity name; payload adds a per-set summary. Legacy 2021–2025 sets stay off (listing sweep thin: 40 asks over 2,114 Leadoff editions).
+- Page / layout / registry / hub / llms.txt / concierge copy say "2026 sets"; public route default limit 100 → 300. Squeeze footer now defines Candy-held as Candy's inventory, ICON buyback and pack treasury wallets. Candy edition pages' "Featured in Insights" link `/insights/candy-serial-premiums` and `/insights/candy-squeeze`.
+- Pass 1 (`855dca3`) CI green: CI, Smoke Tests, E2E DOM Smoke, Cadence type-check.
+- **Revert:** re-apply `get_candy_listed_squeeze` from `20261124013201`; `git revert` the commit "feat(candy): Candy Squeeze covers every 2026 set…".
+
 ### 2026-11-23 ~7:20 PM PT · ✅ SHIPPED (scripts) — X images name buyers by marketplace username, never the X handle (Cowork cloud, attended; Trevor: "don't edit the image with their Twitter handle … just tag them in the Twitter post")
 - `scripts/social/x-image.mjs` (Monday + big-sale cards) no longer maps `X_HANDLES`; the post text still tags. `docs/social/x-calendar.md` rule updated. Site untouched. **Revert:** `git revert` this commit.
 
