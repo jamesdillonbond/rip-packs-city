@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~9:55 PM PT · ✅ SHIPPED (code) — franchise hub checklist link names the Series Checklists (Cowork cloud, attended; Trevor: "Keep going")
+- `/teams/<league>/<slug>` collection panel: the lead checklist link now reads "series checklists, every edition, what you own, cost to complete", so the new panel can be found from the hub. Copy only.
+- Revert: `git revert` the commit "hub checklist link names the Series Checklists".
+
 ### 2026-11-23 ~9:45 PM PT · ✅ SHIPPED (code) — My Teams cards show the closest Series Checklist (Cowork cloud, attended; Trevor: "Keep going")
 - `fetchTeamClosestSeries` (lib/fan-teams/fetchers.ts) reads `get_team_series_checklists` alongside the existing cards, in parallel, so the page's 12 s ceiling is unchanged. Each card gains one line, e.g. "Closest series: Series 1 · 1 to go · $129.99", or "Every series checklist complete". The card leaves the line out when there's no wallet, the wallet hasn't been indexed (unknown), the read failed or timed out (5 s), or the team has no series. 4 new fetcher tests.
 - Revert: `git revert` the commit "My Teams cards show the closest Series Checklist".
