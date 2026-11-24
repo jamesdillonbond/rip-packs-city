@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~9:58 PM PT · 🔧 FIX (code) — Candy OpenSea chain-listings lane: first run 429'd on mainnet-beta; asset reads now paced, fall through to publicnode (10-account batches), three backed-off rounds (Claude Code cloud; Trevor: "Option 2 for now")
+
+- First live run 9:41 PM PT logged `ok=false`, `getMultipleAccounts HTTP 429`, nothing written or retired (the honest failure path). `fetchAssetOwners` now paces 400 ms between 100-asset slices, tries every RPC per slice in that RPC's batch size (publicnode caps at 10, probed), over three rounds (2 s / 4 s back-off). Test added. Revert: revert this commit (the lane fails again on 429, harmlessly).
+
 ### 2026-11-23 ~9:51 PM PT · 🗄 APPLIED (`20261124055144`) — `derive_pinnacle_wmc_from_catalog()` declares `statement_timeout = 90s` (pinnacle-wmc-render-id timed out twice on 11-23) (Claude Code, local box; Trevor: "Keep going")
 - Lane failed 5:37 PM and 9:37 PM PT with `derive: canceling statement due to statement timeout` (the 9:37 run resolved only 132 rows). The derive is a differential UPDATE over ALL 56,651 Pinnacle wmc rows: ~116k buffers/call whatever changes (2.3 s warm, 0 rows); pgss 216 calls, mean 10.4 s, max 29.5 s against service_role's 30 s cap, so the cold-IO tail loses.
 - ALTER only (body + DB pin unchanged; anon EXECUTE false). Via PostgREST a higher function-level timeout raises the role cap (database.md A/B 08-27; gateway ~120 s). Stored statement md5 = file md5.
