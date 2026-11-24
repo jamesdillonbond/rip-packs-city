@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~9:45 PM PT · ✅ SHIPPED (code) — My Teams cards show the closest Series Checklist (Cowork cloud, attended; Trevor: "Keep going")
+- `fetchTeamClosestSeries` (lib/fan-teams/fetchers.ts) reads `get_team_series_checklists` alongside the existing cards, in parallel, so the page's 12 s ceiling is unchanged. Each card gains one line, e.g. "Closest series: Series 1 · 1 to go · $129.99", or "Every series checklist complete". The card leaves the line out when there's no wallet, the wallet hasn't been indexed (unknown), the read failed or timed out (5 s), or the team has no series. 4 new fetcher tests.
+- Revert: `git revert` the commit "My Teams cards show the closest Series Checklist".
+
 ### 2026-11-23 ~9:35 PM PT · 🔧 SHIPPED (migration + code comment) — Panini serial premiums board precomputed hourly; a read is 0.3 ms (Claude Code cloud; Trevor: "Keep going")
 - `panini_serial_premiums` (the #1 / perfect-mint half of `/insights/panini-premiums`, also read by the concierge) re-aggregated 90 days of `panini_sales` on every read: pgss 1,822 calls, mean 5.2 s, ~14k disk blocks/call; 1.9 s warm today. Its page header named the fix ("a precomputed matview … when it lands"). Now `mv_panini_serial_premiums` (same body, unique on `panini_sales`' own key `(sku, sold_at)`, 583 rows) refreshed hourly at :20 by `refresh_panini_serial_premiums()` (pg_cron `panini-serial-premiums`, jobid 922, logs `panini-serial-premiums`; first run ok, 583 rows, 1.9 s). The view keeps its 16 columns, `security_invoker` and ACL, so no reader changed. Top-100 read: index scan, 96 buffers, 0.3 ms.
 - The page keeps its 25 s budget (comment updated): the parallel half still reads FMV live, max 6.0 s.
