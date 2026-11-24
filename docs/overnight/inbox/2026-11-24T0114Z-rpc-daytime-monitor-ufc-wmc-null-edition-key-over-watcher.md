@@ -54,3 +54,10 @@ LOW / read-only symptom. The only user-visible failure mode is if either of the 
 
 - Unkeyed-only keyset pages, 140 s page timeout, deadline inside the 300 s `maxDuration`. Edge deploy run `45320889742` succeeded ~7:40 PM PT.
 - Read ~7:50 PM PT (Cowork, MCP): still 149 + 6 unkeyed; neither wallet walked since the deploy. Mark RESOLVED once both read 0 after a walk.
+
+## ✅ RESOLVED 2026-11-23 ~7:45 PM PT (Claude Code, local box) — both wallets at 0 unkeyed
+
+- One manual `wallet-backfill-ufc` call per wallet at ~7:40 PM PT, against prod deploy `dpl_J7Hn5Aj7…` (`f04a8cd`, READY) and edge `enrich-ufc-wallet` v66 (read-back clean).
+- Vercel: `0xe5492c968fb5d358 pages=1 enriched=6 done=true`; `0xfd6debe3815415c3 pages=3 enriched=149 done=true` (50 per page, as designed).
+- Outcome table (`wallet_moments_cache`, UFC): `0xfd6debe3815415c3` 0 NULL of 249; `0xe5492c968fb5d358` 0 NULL of 106.
+- Not done (optional, budget-neutral): a UFC arm in `v_rpc_trust_health`. The snapshot's `>100` watcher still sees UFC.
