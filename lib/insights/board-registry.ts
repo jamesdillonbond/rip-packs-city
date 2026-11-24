@@ -131,7 +131,7 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     kind: "dataset",
     name: "Candy Squeeze Board",
     description:
-      "2026 MLB Base Series ICONs on Candy ranked by the share of their collector-held copies with a live Magic Eden listing, with floor, FMV and 30-day sales.",
+      "2026 Candy MLB ICONs (Base Series, All-Star Game, Gold) ranked by the share of their collector-held copies with a live Magic Eden listing, with floor, FMV and 30-day sales.",
     publicApi: true,
   },
   {

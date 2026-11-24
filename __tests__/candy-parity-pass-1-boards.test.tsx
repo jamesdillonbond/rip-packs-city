@@ -31,8 +31,8 @@ const serialRow = {
 }
 const jerseyRow = { ...serialRow, external_id: "aaron-judge", name: "Aaron Judge", serial_number: 99, band: "jersey", n_comps: 2, comp_median_usd: null, multiplier: null }
 const squeezeRow = {
-  external_id: "shohei-ohtani", player_name: "Shohei Ohtani", set_name: "2026 MLB Base Series ICONs", tier: "COMMON",
-  thumbnail_url: null, minted: 250, burned: 0, issuer_held: 11, collector_held: 239, listed: 0, pct_listed: 0,
+  external_id: "shohei-ohtani", player_name: "Shohei Ohtani", set_name: "2026 MLB Base Series ICONs", rarity_label: "Core",
+  thumbnail_url: null, minted: 250, burned: null, issuer_held: 11, collector_held: 239, listed: 0, pct_listed: 0,
   floor_ask_usd: null, fmv_usd: 16.16, sales_30d: 4,
 }
 
@@ -47,7 +47,11 @@ describe("shapes", () => {
     expect(CANDY_SERIAL_BAND_LABEL.jersey).toBe("jersey match")
     expect(() => shapeCandySerialPremiums(null)).toThrow()
     expect(() => shapeCandySqueeze({ nope: 1 })).toThrow()
-    expect(shapeCandySqueeze({ rows: [squeezeRow] }).rows[0].floor_ask_usd).toBeNull()
+    const sq = shapeCandySqueeze({ rows: [squeezeRow] })
+    expect(sq.rows[0].floor_ask_usd).toBeNull()
+    // The census sees holders, not burns: an unknown burn stays null, never 0.
+    expect(sq.rows[0].burned).toBeNull()
+    expect(sq.sets).toEqual([])
   })
 })
 
@@ -106,9 +110,21 @@ describe("pages", () => {
     const html = renderToStaticMarkup(await SerialPage())
     expect(html).not.toContain("on record yet")
   })
-  it("squeeze dates the sweep and says 'none listed', never $0 for a missing floor", async () => {
-    rpcResult = { data: { listings_seen_at: "2026-11-24T00:35:26Z", min_held: 25, editions_ranked: 1, editions_zero_listed: 1, rows: [squeezeRow] }, error: null }
+  it("squeeze dates the sweep, says 'none listed' (never $0), names each set and Candy's own rarity", async () => {
+    const asg = { ...squeezeRow, external_id: "asg26:matt-olson-rare", player_name: "Matt Olson", set_name: "2026 MLB All-Star Game ICONs", rarity_label: "Rare", listed: 5, pct_listed: 12.8, floor_ask_usd: 3.45 }
+    rpcResult = {
+      data: {
+        listings_seen_at: "2026-11-24T00:35:26Z", min_held: 25, editions_ranked: 2, editions_zero_listed: 1,
+        sets: [{ set_name: "2026 MLB All-Star Game ICONs", ranked: 1, zero_listed: 0 }, { set_name: "2026 MLB Base Series ICONs", ranked: 1, zero_listed: 1 }],
+        rows: [squeezeRow, asg],
+      },
+      error: null,
+    }
     const html = renderToStaticMarkup(await SqueezePage())
+    expect(html).toContain("2026 MLB All-Star Game ICONs: 1 ranked, 0 unlisted")
+    expect(html).toContain("Rare · 2026 MLB All-Star Game ICONs")
+    expect(html).toContain('href="/candy-mlb/edition/asg26%3Amatt-olson-rare"')
+    expect(html).not.toContain("COMMON")
     expect(html).toContain("Listings as of Nov 23")
     expect(html).toContain("none listed")
     expect(html).toContain("Candy-held")
@@ -117,7 +133,7 @@ describe("pages", () => {
   it("squeeze on a failed read claims nothing about supply", async () => {
     rpcResult = { data: null, error: { message: "down" } }
     const html = renderToStaticMarkup(await SqueezePage())
-    expect(html).not.toContain("No ICON has")
+    expect(html).not.toContain("collector-held copies.</p>")
     expect(html).not.toContain("Listings as of")
   })
 })
@@ -126,5 +142,15 @@ describe("registry", () => {
   it("both boards are registered with a public JSON twin", () => {
     expect(getInsightsBoard("candy-serial-premiums")?.publicApi).toBe(true)
     expect(getInsightsBoard("candy-squeeze")?.publicApi).toBe(true)
+  })
+})
+
+describe("edition page entry points", () => {
+  it("Candy edition pages link both boards from 'Featured in Insights'", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("app/(collections)/[collection]/edition/[slug]/page.tsx", "utf8")
+    const chips = src.slice(src.indexOf("async function CandyInsightChips"), src.indexOf("async function CandyMarketHistorySection"))
+    expect(chips).toContain('href="/insights/candy-serial-premiums"')
+    expect(chips).toContain('href="/insights/candy-squeeze"')
   })
 })

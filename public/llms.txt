@@ -44,7 +44,7 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/pinnacle-serial-premiums — Disney Pinnacle Serial Premiums. Every #1 and perfect-serial sale with the premium over the same pin's other serials.
 - /insights/pinnacle-squeeze — Disney Pinnacle Squeeze Board. Pins ranked by the share of collector-held copies listed for sale.
 - /insights/candy-serial-premiums — Candy Serial Premiums. Every #1, jersey-match and perfect-serial Candy sale with the premium over the same card's other serials.
-- /insights/candy-squeeze — Candy Squeeze Board. 2026 MLB Base Series ICONs ranked by the share of collector-held copies listed on Magic Eden.
+- /insights/candy-squeeze — Candy Squeeze Board. 2026 Candy ICONs (Base, All-Star Game, Gold) ranked by the share of collector-held copies listed on Magic Eden.
 - /insights/pinnacle-pack-reality — Disney Pinnacle Pack Reality. Retail price vs what each Pinnacle drop's opened packs pulled, at open and today.
 - /insights/pinnacle-scarcity — Disney Pinnacle Scarcity Board. Editions ranked by how far below their variant family's average mint they sit.
 - /insights/allday-scarcity — NFL All Day Scarcity Board. Editions ranked by how far below their set and tier family's average mint they sit.

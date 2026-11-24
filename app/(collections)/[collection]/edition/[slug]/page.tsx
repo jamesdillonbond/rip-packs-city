@@ -2056,7 +2056,7 @@ async function AllDayInsightChips({ externalId, bid, floor, playerName }: { exte
   )
 }
 
-// Candy edition → /insights/candy-mlb views. The holder count comes from mv_candy_scarcity_board
+// Candy edition → /insights/candy-mlb views, plus the serial-premium and squeeze boards (2026-11-23). The holder count comes from mv_candy_scarcity_board
 // (the board's own source); a failed or empty read renders the links without the number.
 async function CandyNativeRarityChip({ editionId, tier }: { editionId: string; tier: string | null }) {
   const { ok, label } = await fetchCandyRarityLabel(editionId).catch(() => ({ ok: false, label: null as string | null }))
@@ -2088,6 +2088,12 @@ async function CandyInsightChips({ externalId }: { externalId: string }) {
         </Link>
         <Link href="/insights/candy-mlb?tab=holders" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
           Biggest Candy collectors →
+        </Link>
+        <Link href="/insights/candy-serial-premiums" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+          What special serials sell for →
+        </Link>
+        <Link href="/insights/candy-squeeze" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+          Candy squeeze board →
         </Link>
       </div>
     </Section>

@@ -476,7 +476,7 @@ const CARDS: Card[] = [
           eyebrow: "Chain Two · Live",
           title: "Candy Squeeze Board",
           blurb:
-            "Which Base Series ICONs are collectors not selling? ICONs ranked by the share of collector-held copies listed on Magic Eden right now.",
+            "Which 2026 ICONs are collectors not selling? Base, All-Star Game and Gold ICONs ranked by the share of collector-held copies listed on Magic Eden right now.",
           cta: "Open Candy squeeze",
           available: true,
         },

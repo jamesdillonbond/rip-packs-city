@@ -1,10 +1,10 @@
 // app/api/public/insights/candy-squeeze/route.ts
 //
-// PUBLIC INSIGHTS — Candy Listed-Share Squeeze (2026-11-23, Candy parity pass 1): 2026 Base Series ICONs ranked by the
+// PUBLIC INSIGHTS — Candy Listed-Share Squeeze (2026-11-23, Candy parity pass 1): 2026 Candy ICONs ranked by the
 // share of their collector-held copies with a confirmed Magic Eden listing. JSON twin of /insights/candy-squeeze; the
 // read lives in lib/insights/candy-parity-boards.ts. A failed read is boardUnavailable, never an empty board.
 //
-// Query params: min_held=<1..10000> (default 25) · limit=<1..500> (default 100). A malformed value is a 400.
+// Query params: min_held=<1..10000> (default 25) · limit=<1..500> (default 300). A malformed value is a 400.
 // CACHE: 30-min s-maxage (the Candy listings sweep runs every 3 h).
 
 import { NextRequest, NextResponse } from "next/server"
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   const sp = new URL(req.url).searchParams
   const minHeld = intParam(sp.get("min_held"), 25, 1, 10_000)
-  const limit = intParam(sp.get("limit"), 100, 1, 500)
+  const limit = intParam(sp.get("limit"), 300, 1, 500)
   if (minHeld == null || limit == null) {
     return NextResponse.json({ error: "min_held must be 1..10000 and limit 1..500" }, { status: 400 })
   }

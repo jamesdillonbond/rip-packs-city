@@ -5,8 +5,8 @@
 // is how few of an edition's collector-held copies carry a live Magic Eden listing (re-seen by RPC's whole-book sweep
 // within 12 h — the same "confirmed" ask the edition pages use).
 //
-// 2026 MLB Base Series ICONs only: that is the set whose supply split (minted / Candy-held / collector-held) the
-// market-cap tiles carry. Server-rendered; the read is lib/insights/candy-parity-boards.ts. A failed read renders the
+// Every 2026 Candy set (Base, All-Star Game, Gold, Quest rewards — 20261124023333); holders are counted from RPC's
+// on-chain census. Legacy (2021–2025) sets stay out until their listing sweep is a census. Server-rendered; the read is lib/insights/candy-parity-boards.ts. A failed read renders the
 // degraded notice, never an empty board; the newest sweep time is shown so "0 listed" is dated. No FMV confidence.
 
 import Link from "next/link"
@@ -34,7 +34,7 @@ function fmtSweep(iso: string | null): string {
 }
 
 export default async function CandySqueezePage() {
-  const empty: CandySqueezePayload = { listings_seen_at: null, min_held: 25, editions_ranked: 0, editions_zero_listed: 0, rows: [] }
+  const empty: CandySqueezePayload = { listings_seen_at: null, sets: [], min_held: 25, editions_ranked: 0, editions_zero_listed: 0, rows: [] }
   const res = await fetchBoardForPage("Candy squeeze", empty, (db) => fetchCandySqueeze(db), READ_BUDGET_MS)
   const d = res.data
 
@@ -48,14 +48,19 @@ export default async function CandySqueezePage() {
           Candy Squeeze Board
         </h1>
         <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.55, maxWidth: 760 }}>
-          Which 2026 MLB Base Series ICONs are collectors <strong>not selling</strong>? Every ICON with {d.min_held}+
-          copies in collectors&rsquo; hands, ranked by the share of those copies listed on Magic Eden right now — the
-          tightest supply first.
+          Which 2026 Candy ICONs are collectors <strong>not selling</strong>? Every ICON across the 2026 Base Series,
+          All-Star Game and Gold sets with {d.min_held}+ copies in collectors&rsquo; hands, ranked by the share of those
+          copies listed on Magic Eden right now — the tightest supply first.
         </p>
         {res.ok ? (
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
             Listings as of {fmtSweep(d.listings_seen_at)} · {d.editions_ranked.toLocaleString("en-US")} ICONs ranked ·{" "}
             {d.editions_zero_listed.toLocaleString("en-US")} with none listed
+          </span>
+        ) : null}
+        {res.ok && d.sets.length > 1 ? (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            {d.sets.map((s) => `${s.set_name}: ${s.ranked.toLocaleString("en-US")} ranked, ${s.zero_listed.toLocaleString("en-US")} unlisted`).join(" · ")}
           </span>
         ) : null}
       </header>
@@ -84,7 +89,7 @@ export default async function CandySqueezePage() {
                       <Link prefetch={false} href={editionRouteHref("candy-mlb", r.external_id)} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
                         {r.player_name ?? r.external_id}
                       </Link>
-                      <div style={{ color: "var(--rpc-text-muted)", fontSize: 10, marginTop: 2 }}>{r.set_name ?? ""}</div>
+                      <div style={{ color: "var(--rpc-text-muted)", fontSize: 10, marginTop: 2 }}>{[r.rarity_label, r.set_name].filter(Boolean).join(" · ")}</div>
                     </td>
                     <td style={{ ...cell, fontWeight: 700 }}>{r.listed.toLocaleString("en-US")}</td>
                     <td style={cell}>
@@ -102,13 +107,14 @@ export default async function CandySqueezePage() {
           </div>
         </section>
       ) : res.ok ? (
-        <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)" }}>No ICON has {d.min_held}+ collector-held copies with a known supply split.</p>
+        <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)" }}>No 2026 ICON has {d.min_held}+ collector-held copies.</p>
       ) : null}
 
       <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
         <p style={{ margin: 0 }}>
-          Method: <strong>collector-held</strong> = minted − burned − copies Candy itself still holds (its inventory and
-          buyback wallets), from RPC&rsquo;s on-chain census. <strong>Listed</strong> = Magic Eden listings of the ICON that
+          Method: <strong>collector-held</strong> = copies in collectors&rsquo; wallets, counted from RPC&rsquo;s on-chain
+          census; copies in Candy&rsquo;s own wallets (inventory, ICON buyback and pack treasury) are shown as Candy-held
+          and left out. <strong>Listed</strong> = Magic Eden listings of the ICON that
           RPC&rsquo;s whole-book sweep has seen in the last 12 hours (asks far above the card&rsquo;s value are left out), so
           0 means none were live at that time. Ties are broken by 30-day sales, so an ICON that trades but is rarely
           offered ranks above one nobody trades. ICONs with fewer than {d.min_held} collector-held copies are left out.

@@ -13,11 +13,11 @@ export const metadata: Metadata = {
   // The root template appends " | Rip Packs City" (deep-audit D24).
   title: "Candy Squeeze Board",
   description:
-    "2026 MLB Base Series ICONs on Candy ranked by how few collector-held copies are listed for sale on Magic Eden — the tightest supply first. Free. No signup.",
+    "2026 Candy MLB ICONs (Base Series, All-Star Game, Gold) ranked by how few collector-held copies are listed for sale on Magic Eden — the tightest supply first. Free. No signup.",
   keywords: [
     "Candy MLB ICON supply",
     "Candy Digital listings",
-    "Candy Base Series ICONs",
+    "Candy All-Star Game ICONs",
     "Candy squeeze",
   ].join(", "),
   alternates: { canonical: `${SITE_URL}/insights/candy-squeeze` },

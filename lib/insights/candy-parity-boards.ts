@@ -4,8 +4,9 @@
 // that afternoon), each shared by its server page and its public JSON route so the two cannot drift:
 //   /insights/candy-serial-premiums — get_candy_serial_premiums (20261124013201): #1, jersey-match and perfect-serial
 //                                     sales with the premium over the same edition's other serials (every Candy set);
-//   /insights/candy-squeeze         — get_candy_listed_squeeze (20261124013201): 2026 Base Series ICONs ranked by the
-//                                     share of collector-held copies with a confirmed Magic Eden listing.
+//   /insights/candy-squeeze         — get_candy_listed_squeeze (20261124013201; every 2026 set from 20261124023333):
+//                                     editions ranked by the share of collector-held copies with a confirmed Magic
+//                                     Eden listing.
 // Each fetcher THROWS on a failed read or a body that is not the function's shape (a failure, never "no rows");
 // NULLs stay null (`num`), so an unknown premium is never 1.0× and an unknown ask never $0.
 
@@ -94,10 +95,11 @@ export interface CandySqueezeRow {
   external_id: string
   player_name: string | null
   set_name: string | null
-  tier: string | null
+  rarity_label: string | null
   thumbnail_url: string | null
   minted: number | null
-  burned: number
+  /** NULL: the census sees holders, not burns. */
+  burned: number | null
   issuer_held: number
   collector_held: number
   listed: number
@@ -107,11 +109,18 @@ export interface CandySqueezeRow {
   sales_30d: number
 }
 
+export interface CandySqueezeSet {
+  set_name: string
+  ranked: number
+  zero_listed: number
+}
+
 export interface CandySqueezePayload {
   listings_seen_at: string | null
   min_held: number
   editions_ranked: number
   editions_zero_listed: number
+  sets: CandySqueezeSet[]
   rows: CandySqueezeRow[]
 }
 
@@ -123,14 +132,19 @@ export function shapeCandySqueeze(raw: unknown): CandySqueezePayload {
     min_held: Number(r.min_held ?? 0),
     editions_ranked: Number(r.editions_ranked ?? 0),
     editions_zero_listed: Number(r.editions_zero_listed ?? 0),
+    sets: (Array.isArray(r.sets) ? (r.sets as Record<string, unknown>[]) : []).map((x) => ({
+      set_name: String(x.set_name ?? ""),
+      ranked: Number(x.ranked ?? 0),
+      zero_listed: Number(x.zero_listed ?? 0),
+    })),
     rows: (r.rows as Record<string, unknown>[]).map((x) => ({
       external_id: String(x.external_id ?? ""),
       player_name: (x.player_name as string | null) ?? null,
       set_name: (x.set_name as string | null) ?? null,
-      tier: (x.tier as string | null) ?? null,
+      rarity_label: (x.rarity_label as string | null) ?? null,
       thumbnail_url: (x.thumbnail_url as string | null) ?? null,
       minted: num(x.minted),
-      burned: Number(x.burned ?? 0),
+      burned: num(x.burned),
       issuer_held: Number(x.issuer_held ?? 0),
       collector_held: Number(x.collector_held ?? 0),
       listed: Number(x.listed ?? 0),
@@ -143,7 +157,7 @@ export function shapeCandySqueeze(raw: unknown): CandySqueezePayload {
 }
 
 export async function fetchCandySqueeze(db: Db = supabaseAdmin, opts: { minHeld?: number; limit?: number } = {}): Promise<CandySqueezePayload> {
-  const { data, error } = await db.rpc("get_candy_listed_squeeze", { p_min_held: opts.minHeld ?? 25, p_limit: opts.limit ?? 100 })
+  const { data, error } = await db.rpc("get_candy_listed_squeeze", { p_min_held: opts.minHeld ?? 25, p_limit: opts.limit ?? 300 })
   if (error) throw new Error(error.message ?? "get_candy_listed_squeeze failed")
   return shapeCandySqueeze(data)
 }
