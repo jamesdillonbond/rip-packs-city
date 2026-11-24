@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~10:44 PM PT · 🗄 APPLIED (`20261124064412`) — Sentinel "Zero-Yield Lanes" WARN cleared on a measured drained cleanup: `candy-orphan-one-of-one-editions` suppressed with a re-check condition (Claude Code, local box; Trevor: "Keep going")
+- The lane deletes Candy 1/1 editions no card holds (the 11-09 census re-key backlog); it cleared 11-09..11-16 and found nothing in 174 runs since. Count on its own predicate (~10:40 PM PT): 10,970 Candy 1/1 editions, 2 unheld, 0 inside the 1-day gate, both referenced by guarded tables it skips by design. The zero is real.
+- One row in `pipeline_zero_yield_suppressions` (same pattern as `candy-orphan-name-only-editions`, 11-20), with a RE-CHECK CONDITION in its reason. After: `check_zero_yield_lanes()` offenders `[]`, suppressed 6. Stored statement md5 = file md5. ⚠ The file header and reason say "~10:50 / ~10:55 PM PT": that was a predicted time; the read clock at apply was 10:44 PM PT.
+- Revert: `DELETE FROM public.pipeline_zero_yield_suppressions WHERE pipeline = 'candy-orphan-one-of-one-editions';`
+
 ### 2026-11-23 ~10:55 PM PT · 📝 DOCS — Candy: the 10-11 relabel can't be scored at the per-mint grain; 14 d backtest re-read (MdAPE 37 %, price ~16 % under sales); the stale marketplace-status row flagged (Cowork cloud, attended; Trevor: "Keep going")
 - `docs/strategy/collections/candy-mlb.md` Now item 2 + Open issue #58. Read-only measurements, nothing changed in the DB. The `v_collection_marketplace_status` Candy row still says "no OpenSea feed is needed", which is no longer true. Left for the session that owns the Candy OpenSea lane: the fix is a full view replace, and a concurrent one would collide.
 - Revert: `git revert` this docs commit.
