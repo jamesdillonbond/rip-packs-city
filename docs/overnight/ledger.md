@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~4:38 PM PT · 🔧 SHIPPED (code) — `admin/analytics-smoke` + `cron/pinnacle-wmc-render-id` write invocation markers first (E5 25 → 23) (Claude Code cloud; Trevor: "Keep going")
+- **Why:** next two on E5's queue by measured margin (19 % and 13 % of 300 s walls), both `after()`-only; a `maxDuration` kill there logs nothing.
+- **What:** `writeInvocationHeartbeat` first in each `after()` (the Pinnacle route passes its OWN client); each terminal `log_pipeline_run` now reads its returned error (R123); `rows_*` written NULL instead of a fabricated 0 when nothing was measured (analytics-smoke with no envelope; render-id on a failed candidate read; render-id `rows_skipped`, which it never counts). Ordering pins + unauthorized control, mutation-verified; ratchet BUDGET 23.
+- **Revert:** `git revert` the commit "E5: analytics-smoke + pinnacle-wmc-render-id markers first (25 -> 23)".
+
 ### 2026-11-23 ~4:18 PM PT · ✅ SHIPPED — Disney Pinnacle's own badges, with its own art, on pin pages and checklists (Claude Code cloud; Trevor: "Each collection has their own badge images")
 - Pinnacle publishes badge art + definitions at disneypinnacle.com/news/digital-pins-101 (read in Chrome 11-23; round icons on its Contentful space). `/api/badge-image?src=pinnacle&name=<slug>` proxies them (allowlist = `lib/pinnacle/pin-badges.ts`; Contentful's own crop `w=80&h=80&fit=crop&f=left` returns the icon from the 687×80 banner).
 - Badges derived only from catalog facts Pinnacle's page defines: Starter / Open / Limited Edition (edition type), First Printing (Open Edition, printing 1), Single Printing (Limited Edition), Chaser (is_chaser). NOT shown: Magic Reveal, Pin Limitation, drop mechanics (no field says so); none on Legendary / Genesis (no published badge).
