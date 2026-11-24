@@ -36,6 +36,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { resolvePinnacleRenderIds } from "@/lib/pinnacle/render-lookup"
 
@@ -100,17 +101,19 @@ export async function GET(req: NextRequest) {
   async function logRun(args: {
     ok: boolean;
     error: string | null;
-    rowsFound: number;
-    resolved: number;
+    rowsFound: number | null;
+    resolved: number | null;
     extra: Record<string, unknown>;
   }) {
     try {
-      await supabaseAdmin.rpc("log_pipeline_run", {
+      // supabase-js RETURNS errors (R123): read it. rows_skipped is not counted by this lane, so it is
+      // NULL rather than a fabricated 0 (2026-11-23).
+      const { error: logError } = await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAtIso,
         p_rows_found: args.rowsFound,
         p_rows_written: args.resolved,
-        p_rows_skipped: 0,
+        p_rows_skipped: null,
         p_ok: args.ok,
         p_error: args.error,
         p_collection_slug: "disney_pinnacle",
@@ -118,12 +121,17 @@ export async function GET(req: NextRequest) {
         p_cursor_after: null,
         p_extra: { ...args.extra, duration_ms: Date.now() - started },
       });
+      if (logError) console.warn(`[${PIPELINE_NAME}] log_pipeline_run failed: ${logError.message}`);
     } catch {
       // best-effort
     }
   }
 
   after(async () => {
+    // INVOCATION MARKER FIRST (deep-audit E5, 2026-11-23): a maxDuration kill runs no logRun. Max
+    // 37,595 ms of a 300,000 ms wall over 73 h (13 %), all on this after() path. The db argument is
+    // explicit: this route builds its OWN client.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: started, collectionSlug: "disney_pinnacle" }, supabaseAdmin);
     // Pull unresolved Pinnacle wmc rows (new pins). This is the statement that
     // timed out under saturation; now its failure is logged, not swallowed
     // into a 500.
@@ -137,8 +145,9 @@ export async function GET(req: NextRequest) {
       await logRun({
         ok: false,
         error: `candidate_read: ${error.message}`,
-        rowsFound: 0,
-        resolved: 0,
+        // The read failed: nothing was found or resolved, so NULL, never a measured 0.
+        rowsFound: null,
+        resolved: null,
         extra: { stage: "candidate_read", saturation_suspect: true },
       });
       console.warn(`[${PIPELINE_NAME}] candidate read failed: ${error.message}`);

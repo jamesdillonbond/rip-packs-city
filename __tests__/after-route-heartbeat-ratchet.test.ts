@@ -485,7 +485,11 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   its terminal log_pipeline_run returns (R123). ⛔ NOT next: wallet-backfill-pinnacle
 //   (209,391 / 600,000) and -allday (192,242) — both maxima are the SYNC path
 //   (multicollection calls ?sync=true, 270 s soft deadline), not after(). Check the PATH.
-const BUDGET = 25
+//   2026-11-23: admin/analytics-smoke (57,829 / 300,000 ms, 19 %) and cron/pinnacle-wmc-render-id
+//   (37,595 / 300,000, 13 %) converted (25 -> 23) — next by margin, both after()-only. Same edit
+//   reads each terminal log_pipeline_run error (R123) and writes rows_* NULL, not a fabricated 0,
+//   when the run measured nothing (failed smoke envelope / failed candidate read).
+const BUDGET = 23
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

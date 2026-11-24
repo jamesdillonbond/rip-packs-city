@@ -566,3 +566,76 @@ describe("cron/weekly-digest writes its marker first", () => {
     delete process.env.RPC_SENDER_POSTAL_ADDRESS
   })
 })
+
+// ── 2026-11-23 (ratchet 25 -> 23): admin/analytics-smoke + cron/pinnacle-wmc-render-id ──
+// Next on the queue by margin, both after()-only (no sync path produced the number):
+// analytics-smoke 57,829 / 300,000 ms (19 %), pinnacle-wmc-render-id 37,595 / 300,000 (13 %).
+describe("admin/analytics-smoke writes its marker first", () => {
+  it("marker precedes the smoke RPC and the terminal row; a failed smoke logs rows_* NULL, never 0", async () => {
+    const rec = recorder()
+    mockAfter()
+    process.env.RPC_ADMIN_TOKEN = "tok"
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { GET } = await import("@/app/api/admin/analytics-smoke/route")
+
+    const res = await GET(authedNext("https://t/api/admin/analytics-smoke", "GET") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "analytics-smoke")
+    const marker = rec.events.findIndex((e) => e.kind === "insert" && e.name === "pipeline_runs")
+    const smoke = rec.events.findIndex((e) => e.name === "analytics_smoke_run")
+    expect(smoke, "the smoke RPC never ran, so ordering proves nothing").toBeGreaterThanOrEqual(0)
+    expect(marker).toBeLessThan(smoke)
+    // The recorder's analytics_smoke_run returns data:null — no envelope, nothing measured.
+    const log = rec.rpcArgs.log_pipeline_run!
+    expect(log.p_ok).toBe(false)
+    expect(log.p_rows_found).toBeNull()
+    expect(log.p_rows_written).toBeNull()
+    expect(log.p_rows_skipped).toBeNull()
+  })
+
+  it("POSITIVE CONTROL — an unauthorized call writes NO marker", async () => {
+    const rec = recorder()
+    mockAfter()
+    process.env.RPC_ADMIN_TOKEN = "tok"
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { GET } = await import("@/app/api/admin/analytics-smoke/route")
+    const res = await GET(new NextRequest("https://t/api/admin/analytics-smoke") as never)
+    expect(res.status).toBe(401)
+    await runDeferred()
+    expect(rec.rows.length).toBe(0)
+  })
+})
+
+describe("cron/pinnacle-wmc-render-id writes its marker first — through its OWN client", () => {
+  it("marker precedes the candidate read and the terminal row, under the suffixed name", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@supabase/supabase-js", () => ({ createClient: () => rec.db }))
+    vi.doMock("@/lib/pinnacle/render-lookup", async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>()
+      return {
+        ...actual,
+        resolvePinnacleRenderIds: async () => ({
+          hits: new Map(), fromMintRecords: 0, fromAtlas: 0, unresolvable: [] as string[],
+          atlasErrors: 0, atlasFirstError: null, mintReadError: null,
+        }),
+      }
+    })
+    const { GET } = await import("@/app/api/cron/pinnacle-wmc-render-id/route")
+
+    const res = await GET(authedNext("https://t/api/cron/pinnacle-wmc-render-id", "GET") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "pinnacle-wmc-render-id")
+    const marker = rec.events.findIndex((e) => e.kind === "insert" && e.name === "pipeline_runs")
+    // ⚠ The recorder logs inserts and rpcs, not selects, so the candidate read is invisible here;
+    // anchor on the first RPC the route makes instead (non-vacuous: asserted to exist).
+    const firstRpc = rec.events.findIndex((e) => e.kind === "rpc")
+    expect(firstRpc, "the route made no rpc call, so ordering proves nothing").toBeGreaterThanOrEqual(0)
+    expect(marker).toBeLessThan(firstRpc)
+    expect(rec.rows[0].collection_slug).toBe("disney_pinnacle")
+  })
+})

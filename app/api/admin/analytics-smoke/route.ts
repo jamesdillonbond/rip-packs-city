@@ -29,6 +29,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 import { isSaturationError } from "@/lib/pipeline/saturation";
 
@@ -154,12 +155,15 @@ async function logRun(
   extraNote?: Record<string, unknown>
 ): Promise<void> {
   try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+    // rows_* are NULL when the smoke never produced an envelope (RPC error / null / crash): nothing was
+    // measured, and a 0 there reads as "ran 0 checks" (the `?? 0` fabrication class, 2026-11-23).
+    // supabase-js RETURNS errors rather than throwing (R123), so the returned error is read below.
+    const { error: logError } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: PIPELINE_NAME,
       p_started_at: startedAtIso,
-      p_rows_found: envelope?.check_count ?? 0,
-      p_rows_written: envelope ? envelope.check_count - envelope.fail_count : 0,
-      p_rows_skipped: envelope?.fail_count ?? 0,
+      p_rows_found: envelope ? envelope.check_count : null,
+      p_rows_written: envelope ? envelope.check_count - envelope.fail_count : null,
+      p_rows_skipped: envelope ? envelope.fail_count : null,
       p_ok: ok,
       p_error: error,
       p_collection_slug: null,
@@ -179,6 +183,7 @@ async function logRun(
         ...(extraNote ?? {}),
       },
     });
+    if (logError) console.error("[analytics-smoke pipeline_runs]", logError.message);
   } catch (e) {
     console.error(
       "[analytics-smoke pipeline_runs]",
@@ -255,6 +260,10 @@ export async function GET(req: NextRequest) {
   // Fire-and-forget in after() + return 202 now; the end-of-run
   // log_pipeline_run is the real signal, and the fatal-catch surfaces a crash.
   after(async () => {
+    // INVOCATION MARKER FIRST (deep-audit E5, 2026-11-23): a maxDuration kill runs neither runSmoke's
+    // logRun nor the catch below. Max 57,829 ms of a 300,000 ms wall over 73 h (19 %), the next on the
+    // queue by margin, all on this after() path (the route has no sync path).
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: started });
     try {
       await runSmoke(startedAtIso, started);
     } catch (e) {
