@@ -74,6 +74,7 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 | Product page: market cap | ✓ (series page) | ✓ (new 11-23, sum of edition caps, no rank) | unpriced editions counted, not summed |
 | Rookie board (`/insights/rookies`, `/insights/rookie-board`) | ✓ | ✓ (new 11-23, "Rookie cards" tab on `/insights/panini-squeeze`) | every sport; daily MV; concierge `panini_rookies` |
 | Autographs board (`/insights/autographs`) | ✓ | ✓ (new 11-23, Panini tab) | inserts named Signature(s)/Autograph(s); ask + sales, no premium (no unsigned printing) |
+| Scarcer for less (Panini-only, no Top Shot twin) | — | ✓ (new 11-23, tab on `/insights/panini-squeeze`) | a printing listed below a more common printing's 90-day median sale; market facts, no verdict |
 | RPC Index (`/insights/market`) | ✓ | — measured, declined 11-23 | whole-dollar daily medians make a median index noise; needs a repeat-sales construction |
 | Edition: team chip | ✓ (team_name → team page) | ✓ (new 10-25, from `panini_edition_team_keys` → franchise hub) | Panini editions carry no team_name; a failed read or unplaced card shows no chip |
 | Player page: team | ✓ | ✓ (new 10-26, `get_panini_player_teams` → hubs) | single-player cards only (a two-player card carries both players' teams); up to 4, most cards first |
