@@ -30,10 +30,12 @@
 | Edition: Top Owners | ✓ | ✗ needs an ownership walk (Dune cap) | ✓ (≥ 95 % attributable pins) | ✗ not built | ✗ not built | ✓ counts only | ✓ exact (census) |
 | Edition: found in packs | ✓ | ✓ | ✓ | ◐ | — | ✓ by product | — pack contents unknown |
 | Edition: special serials | ✓ | ✓ | ✓ serial premium | ◐ | ◐ | ✓ | ✓ |
+| Edition: parallel printings ladder (row added 11-23; n/r = not re-read) | ✓ | n/r | — render grain | n/r | n/r | ✓ (11-23, product + player + card number + family) | ✓ (10-26) |
+| Edition: "Featured in Insights" chips (row added 11-23) | ✓ | ✓ (10-26) | ✓ (11-23) | ✗ no chip branch in the edition page | n/r | ✓ (11-23: deals, sealed, floor move, bid vs floor) | ✓ (10-26) |
 | Edition: ask history | ✓ | ◐ | ✓ lowest-ask line on the pin chart (11-23; tracked since 10-19) | ◐ | — | ✓ | ✓ (from 10-26) |
 | Edition: price alerts | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
 | Player / character page + season stats | ✓ | ✓ | ✓ character | ✓ (ESPN box scores, 11-08) | ◐ no stats | ✓ | ✓ |
-| Player checklists (10-31) | ✓ | ✓ | ✓ character checklist (11-23, render grain) | ✓ | ✓ | — | ✓ |
+| Player checklists (10-31) | ✓ | ✓ | ✓ character checklist (11-23, render grain) | ✓ | ✓ | ✓ by Panini username (11-23) | ✓ |
 | Team checklists | ✓ | ✓ | ✓ franchise checklist (11-23) | ✓ | — | — | ✓ |
 | Cross-collection player / franchise hubs | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
 
@@ -52,7 +54,7 @@
 
 ## 4. Insights boards with a leg per collection
 
-Top Shot has every board. Legs elsewhere: **All Day** — deals, top sales, trophies, market cap, market pulse, pack sniper, account value, special-serial owners, buyback, offer-spread, first-mint, rookies (NFL 2025), squeeze, set-squeeze, squeeze-check, TC report, market index, serial premiums. **Panini** — squeeze (with Bid vs Floor and Floor movers tabs), deals, premiums. **Pinnacle** — top sales, hot floors, deals, scarcity, trophies, **pack reality, RPC Index (`/insights/pinnacle-market`), serial premiums, squeeze (all 11-23)**. **Candy** — its own `/insights/candy-mlb` (scarcity, serials, holders), trophies, **serial premiums (`/insights/candy-serial-premiums`) and listed-share squeeze (`/insights/candy-squeeze`, Base Series ICONs) (both 11-23 evening)**. **Golazos, UFC** — cross-collection boards only.
+Top Shot has every board. Legs elsewhere: **All Day** — deals, top sales, trophies, market cap, market pulse, pack sniper, account value, special-serial owners, buyback, offer-spread, first-mint, rookies (NFL 2025), squeeze, set-squeeze, squeeze-check, TC report, market index, serial premiums. **Panini** — squeeze (with Bid vs Floor and Floor movers tabs, deep-linkable by `?tab=` since 11-23), deals, premiums. The RPC Index leg was measured and declined 11-23 (whole-dollar daily medians; see collections/panini.md). **Pinnacle** — top sales, hot floors, deals, scarcity, trophies, **pack reality, RPC Index (`/insights/pinnacle-market`), serial premiums, squeeze (all 11-23)**. **Candy** — its own `/insights/candy-mlb` (scarcity, serials, holders), trophies, **serial premiums (`/insights/candy-serial-premiums`) and listed-share squeeze (`/insights/candy-squeeze`, Base Series ICONs) (both 11-23 evening)**. **Golazos, UFC** — cross-collection boards only.
 
 ## 5. The numbers behind the cells (read tonight, 10:10 PM PT)
 
