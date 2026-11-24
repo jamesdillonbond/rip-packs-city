@@ -16,7 +16,8 @@ import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { PaniniProductPacksSection } from "@/components/entity/PaniniEditionExtras"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { serialLabelOfSku } from "@/lib/panini/product-url"
-import type { PaniniProduct, PaniniProductRead } from "@/lib/panini/product"
+import type { PaniniProduct, PaniniProductPlayer, PaniniProductRead } from "@/lib/panini/product"
+import { slugifyPlayerName } from "@/lib/entity-labels"
 import type { PaniniProductPack } from "@/lib/panini/edition-extras"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
 
@@ -47,11 +48,14 @@ export default function PaniniProductBody({
   collectionLabel,
   product: p,
   packs,
+  topPlayers,
 }: {
   collection: string
   collectionLabel: string
   product: PaniniProduct
   packs: { packs: PaniniProductPack[] | null; productName: string | null }
+  /** Top Players (2026-11-23, Top Shot's "Top Players in this Series"); absent = not read (older callers). */
+  topPlayers?: { ok: boolean; players: PaniniProductPlayer[] }
 }) {
   const unpriced = p.editions - p.priced_editions
   return (
@@ -163,6 +167,36 @@ export default function PaniniProductBody({
           </div>
         )}
       </Section>
+
+      {/* Top Players (2026-11-23, Panini parity pass 2): the series page's "Top Players in this Series" — per player,
+          editions RPC has seen in this product and their FMV total (unpriced editions counted, never summed as $0).
+          A failed read says so; a product whose cards carry no player hides the section. */}
+      {topPlayers && (!topPlayers.ok || topPlayers.players.length > 0) && (
+        <Section title="Top Players in this Product">
+          {!topPlayers.ok ? (
+            <div className="rpc-mono" data-testid="panini-product-players-unavailable" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
+              Top players couldn&rsquo;t load right now.
+            </div>
+          ) : (
+            <div data-testid="panini-product-players" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+              {topPlayers.players.map((pl) => (
+                <Link
+                  key={pl.player_name}
+                  href={`/${collection}/player/${encodeURIComponent(slugifyPlayerName(pl.player_name))}`}
+                  className="rpc-card"
+                  style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
+                >
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{pl.player_name}</div>
+                  <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+                    {fmtCount(pl.editions)} edition{pl.editions === 1 ? "" : "s"} · {pl.fmv_total_usd != null ? fmtUsd(pl.fmv_total_usd) : "no FMV yet"}
+                    {pl.fmv_total_usd != null && pl.priced_editions < pl.editions ? ` (${fmtCount(pl.priced_editions)} priced)` : ""}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section title="Top Sales · 90 Days">
         <div className="rpc-mono" style={sub}>The biggest sales on record in the last 90 days.</div>

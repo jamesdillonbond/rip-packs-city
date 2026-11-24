@@ -354,9 +354,10 @@ export default function PaniniPackMarket() {
 
   return (
     <div>
-      <h1 style={{ fontFamily: display, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 6px" }}>
+      {/* h2, not h1 (2026-11-23): the collection banner owns this page's h1 ("… — Packs"), and the Market tab's Packs section has its own; an h1 here made two (served HTML, 11-23). */}
+      <h2 style={{ fontFamily: display, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 6px" }}>
         Panini — Pack Market
-      </h1>
+      </h2>
       <Note>
         Sealed Panini NFT packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
         stats as of RPC&apos;s last walk. Pack EV is modeled for the standard Hobby and FOTL packs from their odds, with each card at its

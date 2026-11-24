@@ -430,7 +430,14 @@ async function PinnacleTopCollectorsSection({ characterName }: { characterName: 
 // says so. Candy MLB joined 2026-10-26 (ESPN MLB, 20261027014316).
 const SEASON_STATS_COLLECTIONS = new Set(["nfl_all_day", "nba_top_shot", "candy_mlb"])
 
-async function SeasonStatsSection({ playerId, playerName, collectionSlug }: { playerId: string; playerName: string; collectionSlug: string }) {
+async function SeasonStatsSection({ playerId, playerName, slug, collectionSlug }: { playerId: string; playerName: string; slug: string; collectionSlug: string }) {
+  // Panini (2026-11-23, parity pass 2): its players are not in player_identities — they reach ESPN through the
+  // one-person panini_espn_crosswalk Recent Games already reads, by the same slugs (20261124030628).
+  if (collectionSlug === "panini_blockchain") {
+    const slugs = Array.from(new Set([slug, marketCapKey(playerName)].filter((s) => s.length > 0)))
+    const p = await sectionRowResult<SeasonStatsResult>("player season stats", "get_panini_player_season_stats", { p_slugs: slugs, p_seasons: 3 })
+    return <PlayerSeasonStats result={p.row} ok={p.ok} playerName={playerName} />
+  }
   if (!SEASON_STATS_COLLECTIONS.has(collectionSlug)) return null
   const { row, ok } = await sectionRowResult<SeasonStatsResult>("player season stats", "get_player_season_stats", {
     p_player_id: playerId,
@@ -806,7 +813,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
       {/* ── Season stats (ESPN, through the league-id crosswalk) ─────────── */}
       <Suspense fallback={null}>
-        <SeasonStatsSection playerId={detail.id} playerName={detail.name} collectionSlug={coll.dbSlug} />
+        <SeasonStatsSection playerId={detail.id} playerName={detail.name} slug={slug} collectionSlug={coll.dbSlug} />
       </Suspense>
 
       {/* ── Bio (ESPN athlete record; on-chain / nflverse fallbacks) ─────── */}

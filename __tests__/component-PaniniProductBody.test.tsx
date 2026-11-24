@@ -85,6 +85,32 @@ describe("PaniniProductBody", () => {
   })
 })
 
+describe("PaniniProductBody Top Players (2026-11-23)", () => {
+  const players = [
+    { player_name: "Lamine Yamal", editions: 35, priced_editions: 31, fmv_total_usd: 63923 },
+    { player_name: "Unpriced Kid", editions: 2, priced_editions: 0, fmv_total_usd: null },
+  ]
+  it("lists each player with editions and FMV total, linked to the player page, and says how many are priced", () => {
+    const c = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} topPlayers={{ ok: true, players }} />).container
+    const sec = c.querySelector('[data-testid="panini-product-players"]')
+    expect(sec?.textContent).toContain("35 editions · $63,923 (31 priced)")
+    expect(c.querySelector('a[href="/panini-blockchain/player/lamine-yamal"]')).not.toBeNull()
+  })
+  it("an unpriced player reads 'no FMV yet', never $0", () => {
+    const c = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} topPlayers={{ ok: true, players }} />).container
+    const sec = c.querySelector('[data-testid="panini-product-players"]')?.textContent ?? ""
+    expect(sec).toContain("2 editions · no FMV yet")
+    expect(sec).not.toContain("$0")
+  })
+  it("a failed read says so; an empty list hides the section", () => {
+    const failed = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} topPlayers={{ ok: false, players: [] }} />).container
+    expect(failed.querySelector('[data-testid="panini-product-players-unavailable"]')).not.toBeNull()
+    cleanup()
+    const empty = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} topPlayers={{ ok: true, players: [] }} />).container
+    expect(empty.textContent).not.toContain("Top Players in this Product")
+  })
+})
+
 describe("PaniniProductPacksSection modes", () => {
   const pack = { id: "1", title: "Hobby pack", productName: "WC", costUsd: null, costBasis: null, packsRemaining: 5, packsTotal: null, updatedAt: "2026-10-25T00:00:00Z", marketUrl: null }
   it("product mode: no per-card wording and no link back to itself", () => {
@@ -121,5 +147,18 @@ describe("product-url", () => {
     expect(serialLabelOfSku("x__7_199")).toBe("#7/199")
     expect(serialLabelOfSku("x")).toBeNull()
     expect(paniniProductHref("panini-blockchain", "1-a")).toBe("/panini-blockchain/product/1-a")
+  })
+})
+
+describe("readPaniniProductTopPlayers", () => {
+  const db = (res: { data: unknown; error: unknown }) => ({ rpc: () => Promise.resolve(res) })
+  it("a failed read is ok:false, never an empty list", async () => {
+    const { readPaniniProductTopPlayers } = await import("@/lib/panini/product")
+    expect(await readPaniniProductTopPlayers("x", db({ data: null, error: { message: "timeout" } }))).toEqual({ ok: false, players: [] })
+  })
+  it("keeps a null FMV total null and drops unnamed rows", async () => {
+    const { readPaniniProductTopPlayers } = await import("@/lib/panini/product")
+    const r = await readPaniniProductTopPlayers("x", db({ data: [{ player_name: "A", editions: 2, priced_editions: 0, fmv_total_usd: null }, { player_name: "", editions: 1 }], error: null }))
+    expect(r).toEqual({ ok: true, players: [{ player_name: "A", editions: 2, priced_editions: 0, fmv_total_usd: null }] })
   })
 })

@@ -20,6 +20,8 @@ export type PaniniCostSource = "ask" | "fmv" | "ask_no_fmv" | null
 export interface PaniniChecklistCard {
   external_id: string
   name: string | null
+  /** Set on a franchise checklist (several players); absent on a player's own. */
+  player_name?: string | null
   set_name: string | null
   parallel: string | null
   product_name: string | null
@@ -34,7 +36,9 @@ export interface PaniniChecklistCard {
 }
 
 export interface PaniniChecklistData {
-  player: string
+  /** The player's name (player checklist); absent on a franchise checklist, which carries franchise_key. */
+  player?: string
+  franchise_key?: string
   username: string | null
   /** "profile" = the public profile a collector walk read; "seen" = serials read under the name. */
   source: "profile" | "seen" | null
@@ -55,12 +59,26 @@ export interface PaniniChecklistData {
 
 export type PaniniChecklistLoad = { kind: "error" } | { kind: "none" } | { kind: "ok"; data: PaniniChecklistData }
 
-/** One read. A 404 ("no Panini cards") is told apart from a failure; never throws. */
-export async function fetchPaniniPlayerChecklist(slug: string, username: string | null): Promise<PaniniChecklistLoad> {
-  const qs = new URLSearchParams({ slug })
+/** What a checklist is OF: one player (by page slug) or one franchise (hub league + team slug). */
+export type PaniniChecklistSubject =
+  | { kind: "player"; slug: string }
+  | { kind: "franchise"; league: string; team: string }
+
+/** The route a subject reads. */
+export function paniniChecklistUrl(subject: PaniniChecklistSubject, username: string | null): string {
+  const qs = subject.kind === "player"
+    ? new URLSearchParams({ slug: subject.slug })
+    : new URLSearchParams({ league: subject.league, team: subject.team })
   if (username) qs.set("username", username)
+  return subject.kind === "player"
+    ? `/api/entity/panini-player-checklist?${qs}`
+    : `/api/entity/panini-franchise-checklist?${qs}`
+}
+
+/** One read. A 404 ("no Panini cards") is told apart from a failure; never throws. */
+export async function fetchPaniniChecklist(subject: PaniniChecklistSubject, username: string | null): Promise<PaniniChecklistLoad> {
   try {
-    const res = await fetch(`/api/entity/panini-player-checklist?${qs}`)
+    const res = await fetch(paniniChecklistUrl(subject, username))
     if (res.status === 404) return { kind: "none" }
     if (!res.ok) return { kind: "error" }
     const json = (await res.json()) as PaniniChecklistData
@@ -69,6 +87,11 @@ export async function fetchPaniniPlayerChecklist(slug: string, username: string 
   } catch {
     return { kind: "error" }
   }
+}
+
+/** The player checklist's read (kept for callers that name a player slug). */
+export function fetchPaniniPlayerChecklist(slug: string, username: string | null): Promise<PaniniChecklistLoad> {
+  return fetchPaniniChecklist({ kind: "player", slug }, username)
 }
 
 /** The label for one card's price — what the figure IS, never a bare number. */

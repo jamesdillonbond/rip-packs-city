@@ -126,6 +126,46 @@ export async function readPaniniProduct(slug: string, db: any = supabaseAdmin): 
   }
 }
 
+/** One player's line on the product page's "Top Players" (get_panini_product_top_players, 2026-11-23). */
+export interface PaniniProductPlayer {
+  player_name: string
+  editions: number
+  priced_editions: number
+  /** Sum of the priced editions' current FMVs; null when none is priced (never $0). */
+  fmv_total_usd: number | null
+}
+
+/**
+ * The product's top players by FMV total — Top Shot's "Top Players in this Series" for a Panini product. ok:false =
+ * the read failed (the section says so); ok:true with [] = no edition carries a player (the section hides).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readPaniniProductTopPlayers(slug: string, db: any = supabaseAdmin): Promise<{ ok: boolean; players: PaniniProductPlayer[] }> {
+  try {
+    const { data, error } = await withQueryDeadline<unknown>(
+      db.rpc("get_panini_product_top_players", { p_slug: slug, p_limit: 12 }),
+      "panini/product-top-players",
+      apiReadTimeoutMs(),
+    )
+    if (error) return { ok: false, players: [] }
+    if (data == null) return { ok: true, players: [] }
+    if (!Array.isArray(data)) return { ok: false, players: [] }
+    const players: PaniniProductPlayer[] = []
+    for (const r of data as Record<string, unknown>[]) {
+      if (typeof r.player_name !== "string" || !r.player_name) continue
+      players.push({
+        player_name: r.player_name,
+        editions: num(r.editions) ?? 0,
+        priced_editions: num(r.priced_editions) ?? 0,
+        fmv_total_usd: num(r.fmv_total_usd),
+      })
+    }
+    return { ok: true, players }
+  } catch {
+    return { ok: false, players: [] }
+  }
+}
+
 /** Shared by the segment layout, generateMetadata and the page: one read per request. */
 export const fetchPaniniProduct = cache((slug: string) => readPaniniProduct(slug))
 

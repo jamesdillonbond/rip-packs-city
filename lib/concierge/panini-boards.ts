@@ -461,7 +461,7 @@ export function pickPaniniTeam(
   return { status: "none" }
 }
 
-export async function readPaniniTeamForConcierge(db: Db, base: string, typed: string, limit: number): Promise<string> {
+export async function readPaniniTeamForConcierge(db: Db, base: string, typed: string, limit: number, username: string | null = null): Promise<string> {
   try {
     const q = typed.trim()
     if (!q || q.length > 60) return JSON.stringify({ status: "error", message: "team is required." })
@@ -503,9 +503,15 @@ export async function readPaniniTeamForConcierge(db: Db, base: string, typed: st
         message: "RPC has not placed any Panini card on this team yet. Say exactly that — never that Panini has no cards for this team." })
     }
     const rows = eds.error || !Array.isArray(eds.data) ? null : (eds.data as Record<string, unknown>[])
+    // 2026-11-23 (Panini parity pass 2): with a Panini username, the hub panel's checklist — owned vs missing,
+    // cost to complete — from the same read the page renders (get_panini_franchise_checklist).
+    const checklist = username
+      ? summarizePaniniChecklist(await db.rpc("get_panini_franchise_checklist", { p_league: t.league, p_team_slug: t.slug, p_username: username }), base, 15)
+      : null
     return JSON.stringify({
       status: "ok",
       team: t.team_name,
+      ...(checklist ? { checklist } : {}),
       league: t.league,
       hub_url: hubUrl,
       editions_on_team: num(p.edition_count),
@@ -864,4 +870,119 @@ export async function readPaniniSetCompletionForConcierge(
   } catch {
     return failed("The Panini set read failed — say the check failed; never say this collector has no sets in progress.")
   }
+}
+
+/**
+ * One Panini checklist read (get_panini_player_checklist / get_panini_franchise_checklist, 2026-11-23) as the
+ * concierge reports it. Three honest states: the read failed (ownership and cost UNKNOWN — never "owns none"),
+ * a username RPC has never seen (not_seen — never "owns none"), ok. "seen" ownership is a lower bound and says so.
+ */
+export function summarizePaniniChecklist(
+  res: { data: unknown; error: unknown },
+  base: string,
+  missingLimit: number,
+): Record<string, unknown> {
+  if (res.error) {
+    return { status: "error", message: "The Panini checklist read failed — ownership and cost are unknown. Say the check failed; never that the collector owns none." }
+  }
+  const d = res.data as Record<string, unknown> | null
+  if (!d || !Array.isArray(d.cards)) return { status: "no_cards" }
+  const username = typeof d.username === "string" ? d.username : null
+  if (username && d.username_seen === false) {
+    return {
+      status: "username_not_seen",
+      username,
+      total_cards: num(d.total),
+      message: `RPC has not seen any Panini card under "${username}" — ownership is unknown, not zero. Ask them to check the spelling, or link the username on their RPC dashboard so RPC reads their public Panini profile.`,
+    }
+  }
+  const lim = Math.min(Math.max(Math.trunc(missingLimit) || 15, 1), 40)
+  const cards = d.cards as Record<string, unknown>[]
+  const missing = username
+    ? cards
+        .filter((c) => Number(c.owned_count) === 0)
+        .sort((a, b) => (num(b.cost_usd) ?? -1) - (num(a.cost_usd) ?? -1))
+        .slice(0, lim)
+        .map((c) => ({
+          player: c.player_name ?? null,
+          card: c.set_name ?? null,
+          product: c.product_name ?? null,
+          mint: num(c.mint_cap),
+          cost_usd: num(c.cost_usd),
+          cost_source: c.cost_source ?? null,
+          edition_url: typeof c.external_id === "string" ? `${base}/panini-blockchain/edition/${encodeURIComponent(c.external_id)}` : null,
+        }))
+    : null
+  return {
+    status: "ok",
+    username,
+    ownership_source: d.source ?? null,
+    ownership_note: d.source === "seen"
+      ? "Owned = cards RPC has read under this username on Panini's marketplace: a LOWER BOUND, not their whole collection. Say so."
+      : d.source === "profile"
+        ? `Owned = the collector's public Panini profile as RPC last read it (${String(d.profile_read_at ?? "time unknown")}; convert to PT when you quote it).`
+        : null,
+    total_cards: num(d.total),
+    owned: username ? num(d.owned) : null,
+    missing: username ? num(d.missing) : null,
+    cost: {
+      at_confirmed_asks_usd: num(d.cost_at_ask_usd),
+      cards_at_asks: num(d.priced_at_ask),
+      at_fmv_usd: num(d.cost_at_fmv_usd),
+      cards_at_fmv: num(d.priced_at_fmv),
+      unpriced_but_listed_usd: num(d.cost_ask_no_fmv_usd),
+      unpriced_but_listed_cards: num(d.priced_ask_no_fmv),
+      unpriced_cards: num(d.unpriced),
+    },
+    most_valuable_missing: missing,
+    how_to_read: (username ? "Cost to complete" : "Cost of every card") + " = confirmed asks (re-confirmed within 7 days, used when within 3x FMV) + FMV where no ask is near it. Unpriced-but-listed cards and unpriced cards are counted beside it, NOT in it, so the true cost is at least that sum. Never quote an FMV confidence tier.",
+  }
+}
+
+/**
+ * A Panini PLAYER's checklist for the concierge (2026-11-23): resolves the typed name to the player page's slug
+ * (slugifyPlayerName — the same slug the page and get_panini_player_checklist match, unaccent included).
+ */
+export async function readPaniniPlayerChecklistForConcierge(
+  db: Db,
+  base: string,
+  typed: string,
+  username: string | null,
+  missingLimit: number,
+): Promise<string> {
+  const name = typed.trim()
+  if (!name || name.length > 80) return JSON.stringify({ status: "error", message: "player is required." })
+  const slug = slugifyPlayerName(name)
+  const pageUrl = `${base}/panini-blockchain/player/${encodeURIComponent(slug)}`
+  try {
+    const res = await db.rpc("get_panini_player_checklist", { p_player_slug: slug, p_username: username })
+    const out = summarizePaniniChecklist(res, base, missingLimit)
+    if (out.status === "no_cards") {
+      return JSON.stringify({ status: "no_results", player: name, message: `No Panini player page matches "${name}". Ask for the name as Panini spells it, or search with search_across_collections.` })
+    }
+    return JSON.stringify({ player: name, page_url: pageUrl, checklist_on_page: "The \"<Player> Checklist\" section of page_url shows the same list; the collector can enter their Panini username there.", ...out })
+  } catch {
+    return JSON.stringify({ status: "error", player: name, page_url: pageUrl, message: "The Panini checklist read failed — ownership and cost are unknown. Say the check failed and link page_url." })
+  }
+}
+
+/**
+ * get_team_checklist on Panini (2026-11-23): a Panini USERNAME (validated — never looked up as a Top Shot account)
+ * scores the franchise hub's checklist; kind 'player' makes the team argument a player and reads that player's.
+ */
+export async function readPaniniChecklistToolForConcierge(
+  db: Db,
+  base: string,
+  typed: string,
+  input: Record<string, unknown>,
+): Promise<string> {
+  const unameIn = String(input.username ?? "").trim().replace(/^@/, "")
+  if (unameIn && !isPaniniUsername(unameIn)) {
+    return JSON.stringify({ status: "error", message: "That is not a Panini username (2–16 letters, numbers, . _ -). Ask for their Panini username." })
+  }
+  const uname = unameIn ? unameIn.toLowerCase() : null
+  if (input.kind === "player") {
+    return readPaniniPlayerChecklistForConcierge(db, base, typed, uname, Number(input.missingLimit ?? 15))
+  }
+  return readPaniniTeamForConcierge(db, base, typed, Number(input.limit ?? input.missingLimit ?? 10) || 10, uname)
 }

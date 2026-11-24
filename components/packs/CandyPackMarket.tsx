@@ -188,9 +188,10 @@ export default function CandyPackMarket() {
           </div>
         ) : null}
         <div>
-          <h1 style={{ fontFamily: display, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>
+          {/* h2, not h1 (2026-11-23): the collection banner owns this page's h1 ("… — Packs"), and the Market tab's Packs section has its own; an h1 here made two (served HTML, 11-23). */}
+          <h2 style={{ fontFamily: display, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>
             Candy MLB — Pack Market
-          </h1>
+          </h2>
           <Note>
             {product.name} · {usd(product.retailUsd)} retail · {count(product.declaredSupply)} packs · sealed packs trade on Solana marketplaces
           </Note>

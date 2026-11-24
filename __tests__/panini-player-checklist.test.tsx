@@ -12,7 +12,7 @@ import { join } from "node:path"
 vi.mock("@/components/MomentMedia", () => ({ default: () => null }))
 
 import PaniniPlayerChecklist from "@/components/panini/PaniniPlayerChecklist"
-import { paniniCardPriceLabel, paniniCostSummary, paniniOwnershipNote, type PaniniChecklistData } from "@/lib/panini/player-checklist"
+import { paniniCardPriceLabel, paniniCostSummary, paniniOwnershipNote, paniniChecklistUrl, type PaniniChecklistData } from "@/lib/panini/player-checklist"
 import { PANINI_USERNAME_STORAGE_KEY } from "@/lib/panini/username-storage"
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -120,7 +120,34 @@ describe("PaniniPlayerChecklist", () => {
   })
 })
 
+describe("franchise checklist (hub Panini panel, pass 2)", () => {
+  it("reads the franchise route — never the player route under a team's name", () => {
+    expect(paniniChecklistUrl({ kind: "franchise", league: "NBA", team: "blazers" }, "ywrr")).toBe("/api/entity/panini-franchise-checklist?league=NBA&team=blazers&username=ywrr")
+    expect(paniniChecklistUrl({ kind: "player", slug: "damian-lillard" }, null)).toBe("/api/entity/panini-player-checklist?slug=damian-lillard")
+  })
+  it("names each tile's player and the franchise in the complete line", async () => {
+    window.localStorage.setItem(PANINI_USERNAME_STORAGE_KEY, "ywrr")
+    const card = { ...base.cards[0], player_name: "Damian Lillard", owned_count: 1 }
+    const f = stubFetch(200, { ...base, player: undefined, franchise_key: "NBA:blazers", username: "ywrr", source: "profile", username_seen: true, profile_read_at: "2026-11-23T13:49:36Z", total: 1, owned: 1, missing: 0, cards: [card] })
+    const { container } = render(<PaniniPlayerChecklist player="Portland Trail Blazers" franchise={{ league: "NBA", team: "blazers" }} />)
+    await waitFor(() => expect(container.textContent).toContain("1 of 1 cards owned"))
+    expect(String((f.mock.calls.at(-1) as unknown[] | undefined)?.[0])).toContain("/api/entity/panini-franchise-checklist?league=NBA&team=blazers")
+    expect(container.textContent).toContain("Damian Lillard")
+    expect(container.textContent).toContain("holds every Portland Trail Blazers card")
+  })
+})
+
 describe("wiring", () => {
+  it("the franchise hub's Panini panel renders the franchise checklist", () => {
+    const page = readFileSync(join(process.cwd(), "app/teams/[league]/[slug]/page.tsx"), "utf8")
+    expect(page).toMatch(/<PaniniPlayerChecklist player=\{hub\.team_name\} franchise=\{\{ league: hub\.league, team: hub\.team_slug \}\} \/>/)
+    const route = readFileSync(join(process.cwd(), "app/api/entity/panini-franchise-checklist/route.ts"), "utf8")
+    expect(route).toContain('"get_panini_franchise_checklist"')
+    expect(route).toContain("normalizePaniniUsername")
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261124025412_audit_20261123_panini_franchise_checklist.sql"), "utf8")
+    expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.get_panini_franchise_checklist\(text, text, text\) FROM PUBLIC, anon, authenticated/)
+  })
+
   const root = process.cwd()
   it("the Panini player page renders the checklist", () => {
     const page = readFileSync(join(root, "app/(collections)/[collection]/player/[slug]/page.tsx"), "utf8")

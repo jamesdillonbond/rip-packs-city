@@ -105,6 +105,20 @@ describe("fetchPaniniPrintings", () => {
     expect(res.printings).toHaveLength(5)
     expect(res.printings.every((p) => p.fmvUsd === null)).toBe(true)
   })
+  it("never renders panini_editions' RELATIVE art path (404 on the page); uses the shared row's absolute URL", async () => {
+    const rel = lillard1587.map((x) => ({ ...x, thumbnail_url: "pack/68/thumbnail/116A.png" }))
+    let pe = 0
+    const db = {
+      from: (t: string) => {
+        if (t === "panini_editions") return q(pe++ === 0 ? { data: [{ product_set_id: 1587, player_name: "Damian Lillard" }], error: null } : { data: rel, error: null })
+        if (t === "editions") return q({ data: rel.map((x, i) => ({ id: `e${i}`, external_id: x.external_id, thumbnail_url: i === 0 ? "https://assets.paniniamerica.net/catalog/product/pack/68/thumbnail/116A.png" : null })), error: null })
+        return q({ data: [], error: null })
+      },
+    }
+    const res = await fetchPaniniPrintings("packcard-1587_290607_7860573_116", db)
+    expect(res.printings.find((p) => p.externalId === lillard1587[0].external_id)?.thumbnailUrl).toMatch(/^https:\/\//)
+    expect(res.printings.every((p) => p.thumbnailUrl === null || /^https:\/\//.test(p.thumbnailUrl))).toBe(true)
+  })
 })
 
 describe("paniniInsightChips", () => {

@@ -99,6 +99,10 @@ export function paniniPrintingLadder(selfId: string, rows: PaniniPrintingRow[]):
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
+function isAbsoluteUrl(u: string | null | undefined): u is string {
+  return typeof u === "string" && /^https?:\/\//.test(u)
+}
+
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
   const n = Number(v)
@@ -135,13 +139,18 @@ export async function fetchPaniniPrintings(
     if (ladder.length < 2) return { ok: true, printings: [] }
 
     // FMV: the shared editions row (Panini collection) → edition_fmv_current, the price the edition page shows.
+    // The art too: panini_editions.thumbnail_url is a path relative to Panini's asset host ("pack/68/thumbnail/…"),
+    // which the browser resolved against the page URL (404 on every ladder tile, 11-23); the shared editions row
+    // carries the absolute URL the rest of the page uses.
     const fmvBy = new Map<string, number | null>()
-    const eds = await withQueryDeadline<Array<{ id: string; external_id: string }>>(
-      db.from("editions").select("id,external_id").eq("collection_id", PANINI_COLLECTION_ID).in("external_id", ladder.map((p) => p.externalId)),
+    const artBy = new Map<string, string>()
+    const eds = await withQueryDeadline<Array<{ id: string; external_id: string; thumbnail_url: string | null }>>(
+      db.from("editions").select("id,external_id,thumbnail_url").eq("collection_id", PANINI_COLLECTION_ID).in("external_id", ladder.map((p) => p.externalId)),
       "edition/panini-printings-ids",
       apiReadTimeoutMs(),
     )
     if (!eds.error && (eds.data ?? []).length > 0) {
+      for (const e of eds.data ?? []) if (isAbsoluteUrl(e.thumbnail_url)) artBy.set(e.external_id, e.thumbnail_url)
       const extById = new Map((eds.data ?? []).map((e) => [e.id, e.external_id]))
       const fmv = await withQueryDeadline<Array<{ edition_id: string; fmv_usd: unknown }>>(
         db.from("edition_fmv_current").select("edition_id,fmv_usd").in("edition_id", [...extById.keys()]),
@@ -156,7 +165,15 @@ export async function fetchPaniniPrintings(
         }
       }
     }
-    return { ok: true, printings: ladder.map((p) => ({ ...p, fmvUsd: fmvBy.get(p.externalId) ?? null })) }
+    return {
+      ok: true,
+      printings: ladder.map((p) => ({
+        ...p,
+        // An unreadable shared row leaves no art rather than a relative path that 404s.
+        thumbnailUrl: artBy.get(p.externalId) ?? (isAbsoluteUrl(p.thumbnailUrl) ? p.thumbnailUrl : null),
+        fmvUsd: fmvBy.get(p.externalId) ?? null,
+      })),
+    }
   } catch {
     return { ok: false, printings: [] }
   }

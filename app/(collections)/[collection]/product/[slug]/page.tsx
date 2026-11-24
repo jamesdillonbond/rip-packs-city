@@ -11,7 +11,7 @@ import { getCollection } from "@/lib/collections"
 import { decodeSlugOrNull } from "@/lib/entity-detail-gate"
 import { collectionDisplayName, collectionEntityJsonLd, entityUrl, NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED, paniniProductOgUrl } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
-import { fetchPaniniProduct } from "@/lib/panini/product"
+import { fetchPaniniProduct, readPaniniProductTopPlayers } from "@/lib/panini/product"
 import { fetchPaniniProductPacks } from "@/lib/panini/edition-extras"
 import PaniniProductBody, { PaniniProductUnavailable } from "@/components/entity/PaniniProductBody"
 
@@ -53,7 +53,10 @@ export default async function PaniniProductPage(props: Props) {
   if (!res.ok) return <PaniniProductUnavailable collection={collection} />
   if (!res.product) notFound()
   const ids = res.product.product_set_ids.length ? res.product.product_set_ids : [res.product.product_set_id]
-  const packs = await fetchPaniniProductPacks(ids).catch(() => ({ packs: null, productName: null }))
+  const [packs, topPlayers] = await Promise.all([
+    fetchPaniniProductPacks(ids).catch(() => ({ packs: null, productName: null })),
+    readPaniniProductTopPlayers(res.product.slug),
+  ])
   // CollectionPage + BreadcrumbList (+ ItemList of the top editions), the shape the
   // series pages publish (2026-11-06: the 68 product pages were the one indexable
   // entity route with no structured data). route_slug = external_id, as the body's
@@ -68,7 +71,7 @@ export default async function PaniniProductPage(props: Props) {
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 48px" }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
-      <PaniniProductBody collection={collection} collectionLabel={collectionDisplayName(collection)} product={res.product} packs={packs} />
+      <PaniniProductBody collection={collection} collectionLabel={collectionDisplayName(collection)} product={res.product} packs={packs} topPlayers={topPlayers} />
     </div>
   )
 }

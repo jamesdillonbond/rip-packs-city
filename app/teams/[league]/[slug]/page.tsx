@@ -18,6 +18,7 @@
 // get_franchise_hub 404s. And a failed PANEL renders as unavailable, never as
 // "no cards" (three states, lib/franchise-hub.ts).
 
+import PaniniPlayerChecklist from "@/components/panini/PaniniPlayerChecklist"
 import type { Metadata } from "next"
 import { cache, type ReactNode } from "react"
 import Link from "next/link"
@@ -327,6 +328,16 @@ function PaniniPanel({ panel, hub }: { panel: Exclude<PaniniHubPanel, { state: "
                   showSetLink
                 />
               )}
+            </div>
+          )}
+          {/* Panini franchise checklist (2026-11-23, Panini parity pass 2): the team checklist's job for Panini —
+              every card above, owned vs missing for a PANINI USERNAME, cost to complete by price source
+              (get_panini_franchise_checklist). Panini has no per-collection team page, so it lives here. Hides
+              itself on a 404 (no mapped cards). */}
+          {Number(panel.detail.edition_count) > 0 && (
+            <div style={{ marginTop: 16 }} data-testid="panini-hub-checklist">
+              <PanelLabel>{hub.team_name} Panini checklist</PanelLabel>
+              <PaniniPlayerChecklist player={hub.team_name} franchise={{ league: hub.league, team: hub.team_slug }} />
             </div>
           )}
         </>

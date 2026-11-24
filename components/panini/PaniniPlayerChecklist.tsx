@@ -23,12 +23,13 @@ import { EM_DASH, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import { PANINI_USERNAME_STORAGE_KEY, normalizePaniniUsernameClient as normalizePaniniUsername } from "@/lib/panini/username-storage"
 import { PANINI_FMV_SOURCE_NOTE } from "@/lib/panini/fmv-source-note"
 import {
-  fetchPaniniPlayerChecklist,
+  fetchPaniniChecklist,
   paniniCardPriceLabel,
   paniniCostSummary,
   paniniOwnershipNote,
   type PaniniChecklistData,
   type PaniniChecklistLoad,
+  type PaniniChecklistSubject,
 } from "@/lib/panini/player-checklist"
 
 const USERNAME_EVENT = "rpc-panini-username"
@@ -67,7 +68,19 @@ function ptDateTime(iso: string | null): string {
   return new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) + " PT"
 }
 
-export default function PaniniPlayerChecklist({ slug, player }: { slug: string; player: string }) {
+/**
+ * `slug` + `player` = a player's checklist (Panini player pages). `franchise` = a franchise's (the Panini panel of a
+ * /teams/<league>/<slug> hub, 2026-11-23 pass 2); `player` is then the franchise's display name and each tile names
+ * its player.
+ */
+export default function PaniniPlayerChecklist({ slug, player, franchise }: { slug?: string; player: string; franchise?: { league: string; team: string } }) {
+  const fLeague = franchise?.league ?? null
+  const fTeam = franchise?.team ?? null
+  const subject = useMemo<PaniniChecklistSubject>(
+    () => (fLeague && fTeam ? { kind: "franchise", league: fLeague, team: fTeam } : { kind: "player", slug: slug ?? "" }),
+    [fLeague, fTeam, slug],
+  )
+  const subjectKey = fLeague && fTeam ? `f:${fLeague}:${fTeam}` : `p:${slug ?? ""}`
   const username = useSyncExternalStore(subscribeUsername, readSavedUsername, () => null)
   const [draft, setDraft] = useState("")
   const [inputError, setInputError] = useState<string | null>(null)
@@ -77,12 +90,12 @@ export default function PaniniPlayerChecklist({ slug, player }: { slug: string; 
   // Keyed by the request it answers: a result for another username/player/retry is "loading".
   const [result, setResult] = useState<{ key: string; r: PaniniChecklistLoad } | null>(null)
 
-  const reqKey = `${slug}|${username ?? ""}|${nonce}`
+  const reqKey = `${subjectKey}|${username ?? ""}|${nonce}`
   useEffect(() => {
     let live = true
-    void fetchPaniniPlayerChecklist(slug, username).then((r) => { if (live) setResult({ key: reqKey, r }) })
+    void fetchPaniniChecklist(subject, username).then((r) => { if (live) setResult({ key: reqKey, r }) })
     return () => { live = false }
-  }, [slug, username, reqKey])
+  }, [subject, username, reqKey])
   const state: { kind: "loading" } | PaniniChecklistLoad = result && result.key === reqKey ? result.r : { kind: "loading" }
 
   const onTrack = () => {
@@ -156,7 +169,7 @@ export default function PaniniPlayerChecklist({ slug, player }: { slug: string; 
         </div>
       ) : null}
 
-      {data ? <ChecklistHeader data={data} /> : null}
+      {data ? <ChecklistHeader data={data} subjectName={player} /> : null}
 
       {data ? (
         <div style={{ display: "grid", gap: 8, marginTop: 10, gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))" }}>
@@ -176,9 +189,10 @@ export default function PaniniPlayerChecklist({ slug, player }: { slug: string; 
                 }}
               >
                 <div style={{ aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", background: "var(--rpc-surface)" }}>
-                  {c.thumbnail_url ? <MomentMedia thumbnailUrl={c.thumbnail_url} alt={`${player} — ${c.set_name ?? ""}`} size={140} rounded={6} /> : null}
+                  {c.thumbnail_url ? <MomentMedia thumbnailUrl={c.thumbnail_url} alt={`${c.player_name ?? player} — ${c.set_name ?? ""}`} size={140} rounded={6} /> : null}
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.25 }}>{c.set_name ?? c.parallel ?? EM_DASH}</div>
+                {franchise && c.player_name ? <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.25 }}>{c.player_name}</div> : null}
+                <div style={{ fontSize: 12, fontWeight: franchise ? 400 : 600, lineHeight: 1.25 }}>{c.set_name ?? c.parallel ?? EM_DASH}</div>
                 <div style={{ ...muted, fontSize: 10, lineHeight: 1.3 }}>
                   {[c.product_name, c.mint_cap != null ? `/${fmtCount(c.mint_cap)}` : null].filter(Boolean).join(" · ") || EM_DASH}
                 </div>
@@ -205,7 +219,7 @@ export default function PaniniPlayerChecklist({ slug, player }: { slug: string; 
   )
 }
 
-function ChecklistHeader({ data }: { data: PaniniChecklistData }) {
+function ChecklistHeader({ data, subjectName }: { data: PaniniChecklistData; subjectName: string }) {
   const muted = { color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 } as const
   const { headline, parts } = paniniCostSummary(data)
   const tracking = !!(data.username && data.username_seen)
@@ -230,7 +244,7 @@ function ChecklistHeader({ data }: { data: PaniniChecklistData }) {
           : <>{fmtCount(data.total)} cards</>}
       </div>
       {complete ? (
-        <div style={muted}>Complete — {data.username} holds every {data.player} card RPC knows of.</div>
+        <div style={muted}>Complete — {data.username} holds every {subjectName} card RPC knows of.</div>
       ) : (
         <div style={muted}>
           {tracking ? "Cost to complete" : "Cost of every card"}:{" "}
