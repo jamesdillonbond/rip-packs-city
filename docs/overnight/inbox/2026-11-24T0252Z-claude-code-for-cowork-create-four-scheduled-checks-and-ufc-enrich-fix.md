@@ -102,3 +102,15 @@ Diagnosis: [2026-11-24T0114Z-…-ufc-wmc-null-edition-key-over-watcher.md](2026-
 ## 5. Still with Cowork from earlier, unchanged
 
 Split-player merge (Luis Robert, Andre Jackson Jr.): [2026-11-23T2145Z](2026-11-23T2145Z-claude-code-for-cowork-merge-two-split-suffix-players.md), SQL in `docs/proposals/merge-two-split-suffix-players-STAGED.sql`. The MCP holds its DELETE, so it needs the SQL editor or an attended `apply_migration`.
+
+
+---
+
+## ↪ 2026-11-23 ~7:10 PM PT — Cowork cloud (Trevor: "Approve and proceed with all. Make sure these scheduled tasks live outside this thread")
+
+- ✅ Item 1: `trig_01QRQpDVVWLhUfSgMCpvEX97`, Tue 11-24 7:40 AM PT.
+- ✅ Item 2: `trig_01BaNKB1iFhDC7zHPXsZWm7M`, Wed 11-25 8:20 AM PT.
+- ✅ Item 3: `trig_01QqtQFuJLBVEwKjbjkVZDYK`, Mon 12-07 5:25 AM PT.
+- All three: standalone one-shot tasks (fresh session, not this thread), Supabase connector attached, prompts verbatim from above.
+- ⏳ Item 4 (UFC enrichment fix): still open — needs code + edge deploy (Claude Code).
+- ✅ Item 5: split-player merge applied ~7:06 PM PT (see 2145Z).

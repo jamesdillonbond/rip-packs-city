@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~7:06 PM PT · ✅ APPLIED (DB, SQL editor) — merged two players split across a Jr./no-Jr. spelling; 3 scheduled checks created (Cowork cloud, attended; Trevor: "Can you do any sql work that needs chrome?", then "Approve and proceed with all")
+- Ran `docs/proposals/merge-two-split-suffix-players-STAGED.sql` unchanged in the Supabase SQL editor (fetched at `7d4b225c`, SHA-256 checked in page). Candy "Luis Robert Jr." folded into "Luis Robert" (now 21 editions); Panini "Andre Jackson" into "Andre Jackson Jr." (now 17). Aliases `luis-robert-jr-`, `luis-robert-jr`, `andre-jackson` — all three old URLs 308 live. Backups `audit_20261123_suffix_merge_{players,editions}_backup` (2 / 6 rows). No migration file (SQL-editor parity rule in the filing).
+- Scheduled one-shot tasks from `2026-11-24T0252Z` items 1–3 (Supabase connector, fresh session each): `trig_01QRQpDVVWLhUfSgMCpvEX97` (Tue 11-24 7:40 AM PT), `trig_01BaNKB1iFhDC7zHPXsZWm7M` (Wed 11-25 8:20 AM PT), `trig_01QqtQFuJLBVEwKjbjkVZDYK` (Mon 12-07 5:25 AM PT). Item 4 (UFC enrich fix) still open for Claude Code.
+- **Revert (merge):** `INSERT INTO players SELECT <players cols> FROM audit_20261123_suffix_merge_players_backup; UPDATE editions e SET player_id = b.player_id FROM audit_20261123_suffix_merge_editions_backup b WHERE b.edition_id = e.id; DELETE FROM player_name_aliases WHERE note LIKE 'suffix-merge 2026-11-23%';` Tasks: delete the three scheduled tasks.
+
 ### 2026-11-23 ~7:35 PM PT · ✅ SHIPPED (scripts) — X draft: Mavericks #MFFL confirmed; Monday lines end with a confirmed team hashtag (Cowork cloud, attended; Trevor: "#MFFL looks to be the only legit one")
 - `TEAM_HASHTAG` gains Dallas Mavericks → #MFFL; `mon()` appends a team's hashtag only from that map. #RepTheHalo / #VamosArgentina showed no logo — not used. `docs/social/x-calendar.md` updated. Site untouched. **Revert:** `git revert` this commit.
 

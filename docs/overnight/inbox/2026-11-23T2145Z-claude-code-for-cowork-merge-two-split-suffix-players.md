@@ -27,3 +27,10 @@ Kept rows by edition count (R153 rule). Drop rows were read 11-23 ~11:46 AM PT w
 ## ↪ 2026-11-23 ~1:03 PM PT — retried once from Claude Code cloud with Trevor present; held again → back to Cowork (Trevor: "Hand it off to cowork")
 
 `apply_migration` timed out on the confirmation prompt (60 s, no answer). Verified nothing reached Postgres: both drop rows still exist, no `audit_20261123_suffix_merge_players_backup`, 0 `suffix-merge` aliases. Steps above unchanged. Run the staged SQL in the SQL editor.
+
+
+---
+
+## ✅ RESOLVED 2026-11-23 ~7:06 PM PT (Cowork cloud, SQL editor; Trevor: "Can you do any sql work that needs chrome?")
+
+Staged SQL ran unchanged (fetched at `7d4b225c`, SHA-256 checked); post-conditions passed. MCP read ~7:07 PM PT: 0 drop rows, Luis Robert 21 editions, Andre Jackson Jr. 17, 3 aliases, backups 2/6. `/candy-mlb/player/luis-robert-jr-`, `/candy-mlb/player/luis-robert-jr` → 308 `/candy-mlb/player/luis-robert`; `/panini-blockchain/player/andre-jackson` → 308 `/panini-blockchain/player/andre-jackson-jr-`. No migration file. Ledger 2026-11-23 ~7:06 PM PT.
