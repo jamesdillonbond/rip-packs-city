@@ -110,6 +110,8 @@ const PAGES: PageCheck[] = [
   { path: "/insights/pinnacle-market", name: "insights · pinnacle market index" },
   { path: "/insights/pinnacle-serial-premiums", name: "insights · pinnacle serial premiums" },
   { path: "/insights/pinnacle-squeeze", name: "insights · pinnacle squeeze" },
+  { path: "/insights/candy-serial-premiums", name: "insights · candy serial premiums" },
+  { path: "/insights/candy-squeeze", name: "insights · candy squeeze" },
   { path: "/insights/rookie-board", name: "insights · rookie board" },
   { path: "/insights/rookies", name: "insights · rookies" },
   { path: "/insights/serial-premiums", name: "insights · serial premiums" },

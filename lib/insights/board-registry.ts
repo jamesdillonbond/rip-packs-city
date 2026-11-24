@@ -119,6 +119,22 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "candy-serial-premiums",
+    kind: "dataset",
+    name: "Candy Serial Premiums",
+    description:
+      "Every #1, jersey-match and perfect-serial (#N of N) Candy sale on record, with the median price of the same card's other serials sold around the same time and the premium.",
+    publicApi: true,
+  },
+  {
+    slug: "candy-squeeze",
+    kind: "dataset",
+    name: "Candy Squeeze Board",
+    description:
+      "2026 MLB Base Series ICONs on Candy ranked by the share of their collector-held copies with a live Magic Eden listing, with floor, FMV and 30-day sales.",
+    publicApi: true,
+  },
+  {
     slug: "cross-collection",
     kind: "dataset",
     name: "Cross-Collection Whale Map",

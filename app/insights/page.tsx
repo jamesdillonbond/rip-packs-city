@@ -462,6 +462,24 @@ const CARDS: Card[] = [
           cta: "Open the Candy board",
           available: true,
         },
+        {
+          slug: "/insights/candy-serial-premiums",
+          eyebrow: "Chain Two · Live",
+          title: "Candy Serial Premiums",
+          blurb:
+            "What a #1, a jersey-match or a perfect serial is really worth on Candy — every such sale on record against the same card's other serials.",
+          cta: "Open serial premiums",
+          available: true,
+        },
+        {
+          slug: "/insights/candy-squeeze",
+          eyebrow: "Chain Two · Live",
+          title: "Candy Squeeze Board",
+          blurb:
+            "Which Base Series ICONs are collectors not selling? ICONs ranked by the share of collector-held copies listed on Magic Eden right now.",
+          cta: "Open Candy squeeze",
+          available: true,
+        },
       ]
     : []),
   ...(PANINI_PUBLIC

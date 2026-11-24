@@ -1008,6 +1008,8 @@ export const INSIGHT_ROUTES: readonly string[] = [
   'pinnacle-market',
   'pinnacle-serial-premiums',
   'pinnacle-squeeze',
+  'candy-serial-premiums',
+  'candy-squeeze',
   'allday-scarcity',
   'allday-squeeze',
   'allday-set-squeeze',

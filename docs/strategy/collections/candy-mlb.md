@@ -1,6 +1,16 @@
 # Candy MLB — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## ⭐ 2026-11-23 evening — Candy parity pass 1: serial premiums + squeeze boards (read first)
+
+Trevor, 11-23: further the Candy roadmap and bring over any feature other collections already have. The gaps were re-read against today's market (153 sales / $4.8k in 7 days), since several "—" cells below were decided while Candy was frozen. Dated samples, 11-23 ~5:30 PM PT.
+
+- **Shipped — `/insights/candy-serial-premiums`** (`get_candy_serial_premiums`, `20261124013201`): every #1, jersey-match and perfect-serial (#N of N) sale on every Candy set, with the premium over the same edition's other serials within ±60 days (≥ 3 comparables, else "—"). One-of-ones excluded. Medians: #1 **7.33×** (147 sales, 86 with comparables) · jersey **2.89×** (100 / 70) · perfect **1.65×** (114 / 73). This is the evidence behind the special-serial flags on edition pages. It spans every set (not Base-only like `/insights/candy-mlb`) because realised sales are facts on any set; the Base-only rule exists to keep legacy FMVs off the Base board.
+- **Shipped — `/insights/candy-squeeze`** (`get_candy_listed_squeeze`): Candy has no locks or burns, so its squeeze is the LISTED SHARE, as on Pinnacle. Confirmed Magic Eden listings (`candy_listing_floor.confirmed_listing_count`, re-seen in 12 h) ÷ collector-held copies (`market_cap_current`). **2026 Base Series ICONs only:** that is the one Candy set with a supply split today (125 of 21,512 edition rows). 100 ranked, **66 with nothing listed**, max share 1.3 %.
+- **Concierge:** `get_insight_board` boards `candy_serial_premiums` / `candy_squeeze`; a "squeeze" question on Candy now gets pointed at Candy's own board, not a refusal or Top Shot's rows.
+- **Measured, not built:** Hot Floors — 3 sweep sessions in 30 days (same buyer, same edition, 3+ buys, 60-minute gaps), so the board would be empty. RPC Index leg — the Base Series had 17 sales across 100 editions in 30 days, on 15 sale-days, which is too thin to index. Re-check both if 7-day sales hold above ~150 for a month.
+- **Next candidates (not started):** extend the squeeze to the All-Star / Gold sets once `market_cap_current` carries their supply split (that comes from the census, not new data); a serial-premium chip on Candy edition pages linking the board.
+
 ## ⭐ 2026-11-22 morning — the market is trading again; the HIGH/MEDIUM share is a new grain (read first)
 
 Live reads 11-22 ~9:30 AM PT (Claude Code cloud; [strategy-2026-11-22.md](../strategy-2026-11-22.md) §1). Dated samples.

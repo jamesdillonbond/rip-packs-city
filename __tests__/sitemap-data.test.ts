@@ -268,7 +268,10 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 101 → 102 on 2026-11-08: /insights/drops (pack drops this week).
     // 102 → 103 on 2026-11-23: /insights/pinnacle-pack-reality (Disney Pinnacle Pack Reality).
     // 103 → 106 the same afternoon: /insights/pinnacle-market, -serial-premiums, -squeeze (parity pass 3).
-    expect(s).toHaveLength(106)
+    // 106 → 108 that evening: /insights/candy-serial-premiums, /insights/candy-squeeze (Candy parity pass 1).
+    expect(s).toHaveLength(108)
+    expect(s.find((x) => x.url === `${BASE}/insights/candy-squeeze`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/insights/candy-serial-premiums`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/pinnacle-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/pinnacle-pack-reality`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/trade-in`)).toBeTruthy()
