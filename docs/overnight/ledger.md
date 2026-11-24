@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:50 AM PT · 🗄 APPLIED (`20261124153922`) + 📝 DOCS — Candy marketplace-status row names OpenSea; Series Checklists + thread lessons documented (Cowork cloud, attended; Trevor: "work through anything still unresolved from this thread … update any relevant documentation")
+- `v_collection_marketplace_status` Candy row: `secondary_venue` `magic_eden` → `magic_eden_and_opensea`, `last_verified_at` → 11-24 7:45 AM PT, the 10-25 "no OpenSea feed is needed" sentence marked superseded in place, and a re-verify appended (7 d: Magic Eden 187 / $4,687 · OpenSea 111 / $4,782 · Tensor 1 / $1). The migration rewrites the LIVE body (`pg_get_viewdef` + four replaces, each asserted to occur exactly once) and restates `security_invoker=true`. Verified: 7 rows, reloptions kept, `secondary_status` unchanged (the trust view reads only `silent_since_%`).
+- Docs: `routes-and-surfaces.md` gets a Series Checklists entry (chain, roster/cost rules, My Teams + concierge readers, production cost). `testing-and-ci.md` gets the parent-fetch-harness and source-window lessons. `cron-and-schedulers.md` notes that the All Day pack-EV stale tail settled at 950 (honest skips: no FMV / no editions), and that "coverage loss vs aging" is still unmeasured. `candy-mlb.md` marks the view flag done.
+- Revert (DB): the same DO shape with the four replacements reversed, or re-apply `20261120144221`'s body. Docs: `git revert`.
+
 ### 2026-11-24 ~7:26 AM PT · 🔧 FIX (tests) — `main` red on the unit coverage ratchet after 0485bc3 (91.79 vs 91.8): failure-path tests for the Candy OpenSea chain lanes (Claude Code cloud; Trevor: "Keep going")
 
 - `5bd296f`: RPC failure shapes (HTTP, JSON-RPC error, no array, thrown fetch), decode failures and the routes' 207 path for both chain lanes. CI green on `5bd296f`. First offers run 6:47 AM PT: 35 written, 0 retired; Candy editions with a live offer 5 → 38. Revert: revert the commit (tests only).

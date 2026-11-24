@@ -3852,3 +3852,10 @@ Fix:
 ### ⚠ A CLIENT component importing a module that ALSO reads the DB reds `check-unbounded-server-reads` through the PAGE that renders it (2026-11-23)
 
 `components/panini/PaniniPlayerChecklist.tsx` imported `normalizePaniniUsername` from `lib/profile/collector-identities.ts`, a module whose other exports read Supabase. The guard walks page imports transitively, so the player page "reached an unbudgeted read" through a pure string helper. Put client-safe helpers in their own module (`lib/panini/username-storage.ts` → `normalizePaniniUsernameClient`) instead of bounding a read that never runs on the client. Two more first-run reds of the same pass, both cheap to pre-empt: a NEW `components/<subtree>` must join `vitest.components.config.ts` (`component-gate-include-completeness`), and a `?tab=` deep link read with `setState` inside `useEffect` grows the `react-hooks/set-state-in-effect` ratchet — read the URL through `useSyncExternalStore` (server snapshot null) and let a click override it (`app/insights/panini-squeeze/PaniniBoardsTabs.tsx`).
+
+## ⚠ A component that adds a FETCH to a parent breaks every harness that routes that parent's fetches (2026-11-23, PT)
+
+`TeamSeriesChecklists` was mounted inside `TeamChecklist` and fetches its own route. The new tests and the TeamChecklist tests whose names said "filters" / "full-editions" all passed. The base `component-TeamChecklist.test.tsx` was never run: its fetch router answered by URL and had no route for the new panel, and it counted fetch calls (`expected 2 to be 1`). `main` went red on two shards until another session's `4bfb077` added the route.
+- **Before pushing a child that fetches, `grep -l '<ParentName>' __tests__` and run EVERY hit**, not the files named after the feature.
+- **The same push turned two SOURCE-WINDOW guards red** (`ROUTE.slice(start, start + 6000)` / `+ 9000` over a concierge tool branch). Growing the branch pushed the asserted text out of the window. Re-pin such a guard to the whole branch (`indexOf(<next tool>)`) rather than widening the number.
+
