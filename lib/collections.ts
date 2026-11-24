@@ -608,8 +608,11 @@ export function collectionHasWalletPackHistory(id: string): boolean {
   return WALLET_PACK_HISTORY_COLLECTIONS.has(id)
 }
 
-// Disney Pinnacle has no badge program (2026-09-27): a "Badges" column or
-// filter on its Market tab is an empty column that implies one exists.
+// Disney Pinnacle has no Top Shot-style badge program (2026-09-27): a "Badges" column or
+// filter on its Market tab is an empty column that implies one exists. ⚠ It DOES have its own
+// pin badges (Open / Limited / Starter Edition, First / Single Printing, Chaser) with its own
+// art — rendered on pin pages and checklists from lib/pinnacle/pin-badges.ts (2026-11-23), not
+// through this switch.
 const COLLECTIONS_WITHOUT_BADGES: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle"])
 
 /** False for a collection with no badge program — render no badge column or filter. */

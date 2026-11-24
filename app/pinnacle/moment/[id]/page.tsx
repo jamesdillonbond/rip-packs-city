@@ -44,6 +44,8 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { pinInsightChips } from "@/lib/pinnacle/pin-insight-chips"
+import { pinnacleBadgesFor } from "@/lib/pinnacle/pin-badges"
+import PinnacleBadges from "@/components/pinnacle/PinnacleBadges"
 import { readPinChipFacts } from "@/lib/pinnacle/pin-insight-reads"
 
 export async function generateMetadata({
@@ -185,6 +187,11 @@ export default async function PinnacleMomentPage({
   const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, askHistory, nameByAddr, serialLadder, listings, packPulls, topOwners } = data
   // The cheapest listing in the latest sweep, linked to Disney Pinnacle's own page for that pin.
   const cheapest = listings && listings.rows.length > 0 ? listings.rows[0] : null
+  const pinBadges = pinnacleBadgesFor({
+    edition_type: ed.edition_type ?? null,
+    printing: ed.printing != null ? Number(ed.printing) : null,
+    is_chaser: ed.is_chaser ?? null,
+  })
   const cheapestUrl = cheapest ? marketplaceMomentUrl("disney-pinnacle", cheapest.nft_id) : null
   const pctListed =
     listings && ed.total_minted != null && ed.total_minted > 0 ? (100 * listings.total) / ed.total_minted : null
@@ -284,6 +291,12 @@ export default async function PinnacleMomentPage({
             })}
             {ed.is_chaser ? <span className="rpc-pm-chaser">CHASER</span> : null}
           </div>
+          {/* Disney Pinnacle's own badges, with its own art (2026-11-23; lib/pinnacle/pin-badges.ts). */}
+          {pinBadges.length > 0 ? (
+            <div className="rpc-pm-meta-row" style={{ marginTop: 8 }}>
+              <PinnacleBadges badges={pinBadges} size={26} showLabels />
+            </div>
+          ) : null}
           {characterLinks.length > 0 ? (
             <div className="rpc-pm-meta-row">
               <span className="rpc-pm-meta">{characterLinks.length > 1 ? "Characters:" : "Character:"}</span>

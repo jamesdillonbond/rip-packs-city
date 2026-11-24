@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { PINNACLE_BADGE_ASSETS, isPinnacleBadgeSlug } from '@/lib/pinnacle/pin-badges'
 
 export const runtime = 'edge'
 
@@ -8,6 +9,10 @@ export const runtime = 'edge'
 //                         path is DEAD — 302→apex→404 for every slug. The static SVG path is what
 //                         the live TS moment page renders; verified via nbatopshot.com/moment/25510.)
 //   allday              → https://assets.nflallday.com/static/images/badgesV3/<kebab-slug>.svg
+//   pinnacle            → Disney Pinnacle's own badge art on its Contentful space (2026-11-23; read off
+//                         disneypinnacle.com/news/digital-pins-101). The published asset is a 687×80 banner with the
+//                         round icon at the left, so Contentful's own crop (w=80&h=80&fit=crop&f=left) returns just
+//                         the icon. Slug → asset path lives in lib/pinnacle/pin-badges.ts (the allowlist).
 // Each upstream has its own slug allowlist (the slug is echoed into the path, so
 // the allowlist is the injection guard). Both CDNs require a browser UA. Served
 // same-origin so no CSP host needs whitelisting. Anon-public via proxy.ts.
@@ -66,6 +71,10 @@ export async function GET(request: NextRequest) {
   if (src === 'allday') {
     if (name && ALLDAY_SLUGS.has(name)) {
       upstreamUrl = `https://assets.nflallday.com/static/images/badgesV3/${name}.svg`
+    }
+  } else if (src === 'pinnacle') {
+    if (isPinnacleBadgeSlug(name)) {
+      upstreamUrl = `https://images.ctfassets.net/2s37rzr5a7pw/${PINNACLE_BADGE_ASSETS[name]}?w=80&h=80&fit=crop&f=left`
     }
   } else {
     if (name && TOPSHOT_SLUGS.has(name)) {

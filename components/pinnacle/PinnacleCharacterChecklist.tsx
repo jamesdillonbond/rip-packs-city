@@ -23,6 +23,8 @@ import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import { checklistWalletStorageKey, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
 import { EM_DASH, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
+import { pinnacleBadgesFor } from "@/lib/pinnacle/pin-badges"
+import PinnacleBadges from "@/components/pinnacle/PinnacleBadges"
 
 export type PinnacleCostSource = "ask" | "fmv" | "ask_no_fmv" | null
 
@@ -278,6 +280,7 @@ export default function PinnacleCharacterChecklist({ character, kind = "characte
                   {p.is_chaser ? " · Chaser" : ""}
                 </div>
                 <div style={{ ...muted, fontSize: 10, lineHeight: 1.3 }}>{p.set_name ?? EM_DASH}</div>
+                <PinnacleBadges badges={pinnacleBadgesFor(p)} size={16} />
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 4, marginTop: "auto", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                   <span>{pinPriceLabel(p)}</span>
                   {tracking ? (
