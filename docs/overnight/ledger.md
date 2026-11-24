@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~8:35 PM PT · 🔧 FIX (test) — `main` CI red since `5664e68` (Team Series Checklists): TeamChecklist harness now answers the new series-checklists fetch (Claude Code cloud; Trevor: "Do it all")
+- `Unit tests — shard 3/4` and `Component coverage — shard 2/2` red on every push since `5664e68`: 4 cases in `__tests__/component-TeamChecklist.test.tsx` (`expected 2 to be 1`). The new `TeamSeriesChecklists` panel fetches `/api/entity/team-series-checklists`; the test's `routeFetch` did not know that URL, so it fell through to the scripted checklist responses and consumed them. Fixed in the harness the way the full-editions probe already is (its own route → `{ series: [] }`); no component change. 4 TeamChecklist suites, 36 tests green.
+- **Revert:** `git revert` the commit "test(team-checklist): harness answers the series-checklists fetch".
+
 ### 2026-11-23 ~8:20 PM PT · ✅ SHIPPED — every shared link card keyed on both sides + checked before posting (Cowork cloud, attended; Trevor: "do all you need to do to make sure everything is dialed in moving forward")
 - **og:image keys:** all 44 static `/insights/*` layouts → `?v=<deploy sha>` (`OG_CARD_VERSION`); pack-dist pages → `&d=<PT day>`; drops/top-sales already `?d=` (`lib/og/card-day-key.ts`). X caches by og:image URL and keeps a failed fetch as a blank card; a key that rolls per deploy/day means one never outlives it.
 - **`x-draft.mjs`:** `?w=<MMDD>` on every rippackscity.com link in every drafted post (was drops-only), then a Twitterbot pre-check of each link → og:image → image (status, type, size, < 8 s, keyed) that also warms the CDN; any failure is a `warnings[]` line. `docs/social/x-calendar.md` documents it.
