@@ -163,4 +163,14 @@ describe("wiring", () => {
     const sql = readFileSync(join(root, "supabase/migrations/20261124013251_audit_20261123_panini_player_checklist.sql"), "utf8")
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.get_panini_player_checklist\(text, text\) FROM PUBLIC, anon, authenticated/)
   })
+
+  it("renders the first page of tiles, then 'Show all N cards' (24-tile page, 2026-11-23 mobile read)", async () => {
+    const cards = Array.from({ length: 30 }, (_, i) => ({ ...base.cards[0], external_id: `packcard-1_1_1_${i}` }))
+    stubFetch(200, { ...base, total: 30, cards })
+    const { container, getByText } = render(<PaniniPlayerChecklist slug="damian-lillard" player="Damian Lillard" />)
+    await waitFor(() => expect(container.textContent).toContain("30 cards"))
+    expect(container.querySelectorAll('a[href^="/panini-blockchain/edition/"]').length).toBe(24)
+    fireEvent.click(getByText("Show all 30 cards"))
+    expect(container.querySelectorAll('a[href^="/panini-blockchain/edition/"]').length).toBe(30)
+  })
 })

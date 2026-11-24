@@ -33,8 +33,12 @@ import {
 } from "@/lib/panini/player-checklist"
 
 const USERNAME_EVENT = "rpc-panini-username"
-/** Tiles rendered before "Show all" — a big player has 200+ cards. */
-export const PANINI_CHECKLIST_PAGE = 120
+/**
+ * Tiles rendered before "Show all". 24, not Pinnacle's 120 (2026-11-23 mobile read): at 390 px the tiles sit two to a
+ * row, so 120 made a ~37,000 px panel on Lillard's page and pushed Editions, Bio and Recent Games a long scroll
+ * down; a franchise hub panel holds up to 737 cards. "Missing only" and "Show all" reach the rest.
+ */
+export const PANINI_CHECKLIST_PAGE = 24
 
 // Read through useSyncExternalStore: the server snapshot is null, so SSR and the first client render agree (no
 // #418), and no setState runs inside an effect.
