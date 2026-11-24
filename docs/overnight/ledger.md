@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~7:51 PM PT · 🗄 APPLIED (`20261124035113`) — trust arm `ufc_wmc_null_edition_key_aged_rows`: UFC wmc rows unkeyed for over 1 h, breach at 25 (Claude Code, local box; Trevor: "Keep going")
+- Why: the 155-row UFC backlog (inbox 0114Z) sat 4 days with no alarm; the 11-10 arm is Top-Shot-only. AGED (> 1 h), because a healthy walk holds a few hundred unkeyed rows for the ~2 min the chain needs.
+- Same anchored-insert method as `20261110230853` (live definition, refuses on drift). View 42 → 43 arms, all ok; new arm 0/ok; `security_invoker=on` kept; stored body md5 = file md5. No function, no job (lane budget neutral).
+- Positive control (rolled back): 25 rows aged 2 h → `25/BREACH`; 50 fresh rows alongside not counted; 0 left behind.
+- Revert: regexp_replace the arm (from `UNION ALL SELECT 'ufc_wmc_null_edition_key_aged_rows'` to the next `UNION ALL`) out of `pg_get_viewdef`, CREATE OR REPLACE VIEW, `ALTER VIEW public.v_rpc_trust_health SET (security_invoker = on)`.
+
 ### 2026-11-23 ~7:55 PM PT · 📝 DOCS — inbox 0252Z items all done; 0114Z UFC fix shipped, drain verify owed (Cowork cloud, attended; Trevor: "ensuring nothing is left unresolved")
 - `f04a8cd` (Claude Code) + edge deploy run `45320889742` (success ~7:40 PM PT) closed 0252Z item 4; a parallel Cowork draft of the same fix was dropped unpushed. At ~7:50 PM PT the two wallets still read 149 + 6 unkeyed — not walked since the deploy; 0114Z stays open until they read 0. **Revert:** `git revert` this commit (docs only).
 

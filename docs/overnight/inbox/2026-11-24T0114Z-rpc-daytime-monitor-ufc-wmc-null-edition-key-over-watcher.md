@@ -61,3 +61,4 @@ LOW / read-only symptom. The only user-visible failure mode is if either of the 
 - Vercel: `0xe5492c968fb5d358 pages=1 enriched=6 done=true`; `0xfd6debe3815415c3 pages=3 enriched=149 done=true` (50 per page, as designed).
 - Outcome table (`wallet_moments_cache`, UFC): `0xfd6debe3815415c3` 0 NULL of 249; `0xe5492c968fb5d358` 0 NULL of 106.
 - Not done (optional, budget-neutral): a UFC arm in `v_rpc_trust_health`. The snapshot's `>100` watcher still sees UFC.
+- ✅ **Follow-up ~7:51 PM PT:** the optional arm is live: `ufc_wmc_null_edition_key_aged_rows` (`20261124035113`), UFC rows unkeyed > 1 h, breach 25. A planted-defect control read `25/BREACH`.
