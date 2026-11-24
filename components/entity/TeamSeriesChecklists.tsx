@@ -76,7 +76,7 @@ export default function TeamSeriesChecklists({ collectionUrlSlug, teamSlug, team
 
   const hasWallet = !!wallet
   const closest = closestSeries(data.series, hasWallet)
-  const who = teamLabel ?? "team"
+  const who = teamLabel ?? "this team"
 
   return (
     <section aria-label="Series checklists" style={{ marginBottom: 18 }}>
@@ -86,7 +86,7 @@ export default function TeamSeriesChecklists({ collectionUrlSlug, teamSlug, team
         </h3>
       </div>
       <p style={{ fontSize: 12, color: "var(--rpc-text-muted)", margin: "0 0 10px" }}>
-        Collect a Moment of every {who} player from a series to complete its checklist.
+        Collect a Moment of every player on {who} from a series to complete its checklist.
         {" "}Cost is the cheapest live ask for each player still to go{hasWallet ? "" : " (track a wallet below to see yours)"}.
       </p>
       {hasWallet && data.wallet_cached === false && (
@@ -136,16 +136,20 @@ function SeriesRow({ s, collectionUrlSlug, hasWallet, isClosest, expanded, onTog
         aria-controls={panelId}
         style={{
           all: "unset", boxSizing: "border-box", cursor: "pointer", width: "100%",
-          display: "grid", gridTemplateColumns: "minmax(88px, 130px) 1fr auto", alignItems: "center", gap: 12, padding: "12px 14px",
+          display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", columnGap: 12, rowGap: 8, padding: "12px 14px",
         }}
       >
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>Series</div>
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", lineHeight: 1.15 }}>
             {label.replace(/^Series\s+/i, "")}
           </div>
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div className="rpc-mono" style={{ fontSize: 11, textAlign: "right", color: complete ? GREEN : "var(--rpc-text-primary)", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+          <span>{complete ? "\u2713 Complete" : toGoParts(s, money).join(" \u00b7 ")}</span>
+          <span aria-hidden style={{ color: "var(--rpc-text-muted)", transform: expanded ? "rotate(180deg)" : undefined, transition: "transform 150ms ease" }}>{"\u25be"}</span>
+        </div>
+        <div style={{ gridColumn: "1 / -1", minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
             <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
               {hasWallet ? `${owned}/${s.players_total} players` : `${s.players_total} players`}
@@ -160,10 +164,6 @@ function SeriesRow({ s, collectionUrlSlug, hasWallet, isClosest, expanded, onTog
             style={{ height: 6, borderRadius: 999, background: "var(--rpc-surface-raised)", overflow: "hidden" }}>
             <div style={{ width: `${pct}%`, height: "100%", background: GREEN, transition: "width 200ms ease" }} />
           </div>
-        </div>
-        <div className="rpc-mono" style={{ fontSize: 11, textAlign: "right", color: complete ? GREEN : "var(--rpc-text-primary)", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }}>
-          <span>{complete ? "✓ Complete" : toGoParts(s, money).join(" · ")}</span>
-          <span aria-hidden style={{ color: "var(--rpc-text-muted)", transform: expanded ? "rotate(180deg)" : undefined, transition: "transform 150ms ease" }}>▾</span>
         </div>
       </button>
 
