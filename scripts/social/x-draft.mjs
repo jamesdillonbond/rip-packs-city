@@ -243,7 +243,9 @@ async function mon() {
   }
   const lines = top.map((r, i) => {
     const b = buyerOf(r)
-    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${BRAND[r.collection]?.handle.split(" ")[0] ?? coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}`
+    // A line ends with the team's hashtag only when Trevor confirmed it live (TEAM_HASHTAG; 11-23).
+    const tag = r.team_name ? TEAM_HASHTAG[r.team_name] : null
+    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${BRAND[r.collection]?.handle.split(" ")[0] ?? coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}${tag ? ` ${tag}` : ""}`
   })
   // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
   // count is a floor, not a total — say nothing rather than under-count.
@@ -336,6 +338,8 @@ const TEAM_HASHTAG = {
   "Los Angeles Clippers": "#ClipperNation",
   "Milwaukee Bucks": "#FearTheDeer",
   "Los Angeles Lakers": "#LakeShow",
+  // Trevor, 11-23 (showed the team logo in the composer). #RepTheHalo and #VamosArgentina did not.
+  "Dallas Mavericks": "#MFFL",
 }
 // Dates a slot is skipped on purpose, with why. The task reports skip_reason and offers --slot sat.
 const SKIP_DATES = {
