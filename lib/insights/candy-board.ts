@@ -142,7 +142,7 @@ async function fetchOne(
 export async function fetchCandyMlbDefault(
   db: Db = supabaseAdmin
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
-  const [rows, packEv, packMarket, deals, spreads, serials, scarcity, holders, players, parallel] =
+  const [rows, packEv, packMarket, deals, spreads, serials, scarcity, holders, players, parallel, movers] =
     await Promise.all([
       fetchView(db, "candy_secondary_board", MARKET_COLS, "fmv_usd", false, 600, true),
       fetchOne(
@@ -221,6 +221,19 @@ export async function fetchCandyMlbDefault(
         true,
         5
       ),
+      // Floor movers · 7 days (2026-11-24, Top Shot / Panini parity): mv_candy_floor_movers, the confirmed floor
+      // 7 lane-days apart, both $2+. EMPTY BY CONSTRUCTION until the 2026-12-01 lane row — OpenSea asks joined the
+      // book on 11-23, so an earlier window would show the venue being added (the tab copy says so).
+      fetchView(
+        db,
+        "mv_candy_floor_movers",
+        "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,ask_then_usd,ask_now_usd,listed_now," +
+          "change_usd,change_pct,direction,day_then,day_now,window_complete",
+        "change_pct",
+        false,
+        600,
+        true
+      ),
     ])
 
   // ⚠ `ok` on a BoardStatus means "usable", not "the query succeeded":
@@ -239,6 +252,7 @@ export async function fetchCandyMlbDefault(
     ["Holders", holders],
     ["Players", players],
     ["Parallels", parallel],
+    ["Floor movers", movers],
   ].map(([label, sec]: any) => ({
     label: label as string,
     ok: sec.ok && !sec.truncated,
@@ -260,6 +274,7 @@ export async function fetchCandyMlbDefault(
       holders: holders.rows,
       players: players.rows,
       parallel: parallel.rows,
+      movers: movers.rows,
       degraded: summarizeDegraded(sections),
       // ⚠ null when the PRIMARY (Market) read failed — the same section `ok` gates
       // on below. The page renders this as "Updated …"; a render-time stamp over a

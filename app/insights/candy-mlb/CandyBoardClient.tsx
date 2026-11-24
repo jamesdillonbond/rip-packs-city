@@ -323,6 +323,7 @@ const TABS = [
   { k: "market", label: "Market" },
   { k: "deals", label: "Deals" },
   { k: "spread", label: "Spread" },
+  { k: "movers", label: "Floor movers" },
   { k: "serials", label: "Serials" },
   { k: "scarcity", label: "Scarcity" },
   { k: "holders", label: "Holders" },
@@ -389,6 +390,7 @@ export default function CandyBoardClient({
   holders = [],
   players = [],
   parallel = [],
+  movers = [],
   degraded = null,
   fetchedAt,
 }: {
@@ -402,6 +404,8 @@ export default function CandyBoardClient({
   holders?: Dict[];
   players?: Dict[];
   parallel?: Dict[];
+  /** Floor movers · 7 days (mv_candy_floor_movers) — empty until the 2026-12-01 lane row by construction. */
+  movers?: Dict[];
   /** Non-null only when a backing query FAILED — see lib/insights/board-status.ts. */
   degraded?: DegradedSummary | null;
   fetchedAt: string | null;
@@ -515,6 +519,20 @@ export default function CandyBoardClient({
           </span>
         ),
     },
+  ];
+  const moverCols: Col[] = [
+    { k: "player_name", label: "Player", fmt: (_v, r) => playerCell(r) },
+    { k: "edition_name", label: "Edition", fmt: (v) => <span className="cdy-par">{v || "—"}</span> },
+    { k: "ask_then_usd", label: "Floor 7 days ago", n: true, fmt: (v) => usd(v) },
+    { k: "ask_now_usd", label: "Floor now", n: true, fmt: (v) => usd(v) },
+    { k: "change_usd", label: "Change", n: true, fmt: (v) => usd(v) },
+    {
+      k: "change_pct",
+      label: "Change %",
+      n: true,
+      fmt: (v) => (v == null ? "—" : <span className={Number(v) < 0 ? "cdy-disc" : "cdy-off"}>{pct(v)}</span>),
+    },
+    { k: "listed_now", label: "Listed now", n: true, fmt: (v) => num(v) },
   ];
   const spreadCols: Col[] = [
     { k: "player_name", label: "Player", fmt: (_v, r) => playerCell(r) },
@@ -676,7 +694,9 @@ export default function CandyBoardClient({
                 ? sectionBadge("Offer spread", degraded, spreads)
                 : t.k === "holders"
                   ? sectionBadge("Holders", degraded, holders)
-                  : null;
+                  : t.k === "movers"
+                    ? sectionBadge("Floor movers", degraded, movers)
+                    : null;
           return (
             <button key={t.k} className={tab === t.k ? "on" : ""} onClick={() => setTab(t.k)}>
               {t.label}
@@ -893,6 +913,30 @@ export default function CandyBoardClient({
             own, which is the only comparison you could actually trade against.
           </div>
           <DataTable rows={spreads} cols={spreadCols} defaultSort="best_offer_usd" empty={sectionEmptyCopy("Offer spread", degraded, "No offers or asks yet.")} />
+        </>
+      )}
+
+      {tab === "movers" && (
+        <>
+          <div className="cdy-blurb">
+            <b>Floor movers · 7 days</b> — each 2026 Base edition&apos;s confirmed floor (the cheapest Magic Eden or
+            OpenSea ask seen in the last 12 hours) on two days a week apart, where both floors are $2 or more and they
+            differ. An edition with no confirmed ask on either day is left out — an ask nobody re-read is not a price
+            move. A floor can rise because the cheapest copy <b>sold</b> or was delisted, not only because asks went up.
+            {movers.length > 0 && movers.some((r) => r.window_complete === false) ? (
+              <> <b>The daily record missed a day inside this window</b>, so treat the moves as approximate.</>
+            ) : null}
+          </div>
+          <DataTable
+            rows={movers}
+            cols={moverCols}
+            defaultSort="change_pct"
+            empty={sectionEmptyCopy(
+              "Floor movers",
+              degraded,
+              "No floor movers to show. OpenSea asks joined Candy's book on Nov 23, 2026, so the first honest 7-day window closes with the Dec 1 daily record — a window that starts earlier would show the second venue being added, not the market. After that, an empty tab means no 2026 Base edition's floor moved."
+            )}
+          />
         </>
       )}
 

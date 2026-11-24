@@ -38,6 +38,7 @@ export default async function CandyMlbPage() {
       holders={(payload.holders as any[]) ?? []}
       players={(payload.players as any[]) ?? []}
       parallel={(payload.parallel as any[]) ?? []}
+      movers={(payload.movers as any[]) ?? []}
       degraded={(payload.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Candy MLB board")}
       fetchedAt={(payload.fetchedAt as string | null) ?? null}
     />
