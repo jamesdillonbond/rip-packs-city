@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:26 AM PT · 🔧 FIX (tests) — `main` red on the unit coverage ratchet after 0485bc3 (91.79 vs 91.8): failure-path tests for the Candy OpenSea chain lanes (Claude Code cloud; Trevor: "Keep going")
+
+- `5bd296f`: RPC failure shapes (HTTP, JSON-RPC error, no array, thrown fetch), decode failures and the routes' 207 path for both chain lanes. CI green on `5bd296f`. First offers run 6:47 AM PT: 35 written, 0 retired; Candy editions with a live offer 5 → 38. Revert: revert the commit (tests only).
+
 ### 2026-11-24 ~6:32 AM PT · ✅ SHIPPED — Candy OpenSea OFFERS read key-free from the Solana chain (single-card bids, self-funded only); Candy moment page names an OpenSea ask (Claude Code cloud; Trevor: "Keep going")
 
 - **Code:** `lib/candy/opensea-chain-bids.ts` + `/api/ingest/candy-opensea-chain-bids` (Vercel cron `47 * * * *`). One `getProgramAccounts` on OpenSea's Solana program's BidState accounts (1,029 on 11-24, 0 decode failures) → single-card bids on Candy cards whose account holds amount × remaining → `candy_offers` venue `opensea`; collection-wide bids counted, not written; unconfirmed OpenSea offers retired behind a plausible census (≥ 200 accounts, ≥ half the last run). Dry run: 35 live single-card Candy bids, 7 bidders (beside 12 active Magic Eden offers). No DB change: the ME offers lane already retires only `magic_eden` on absence. Moment page: the Listed cell reads "Listed · OpenSea" when the serial's ask is OpenSea's (`fetchCandyAsks` returns the venue). Tests: `__tests__/lib-candy-opensea-chain-bids.test.ts` (planted defect checked: dropping the funding check reds it) + route test.
