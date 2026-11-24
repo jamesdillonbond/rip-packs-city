@@ -364,6 +364,13 @@ export const COLLECTIONS: Collection[] = [
     // 2026-10-25 — PRODUCT pages (/panini-blockchain/product/<set_id>-<slug>), the series-page counterpart.
     productPages: true,
     published: true,
+    // 2026-11-23 (Panini parity pass): dated RPC changes, each in the ledger — the same rule as the other
+    // collections' news (no coverage stats dressed as news).
+    news: [
+      { title: "Player checklists", date: "2026-11-23", summary: "Every Panini player page now lists all of that player's cards. Enter your Panini username to see which you own, which you're missing, and what the rest would cost at today's confirmed asks.", url: "/panini-blockchain/player/damian-lillard" },
+      { title: "Parallel printings on card pages", date: "2026-11-23", summary: "Each card page now lines up the card's other parallels with each one's mint count and FMV.", url: "/panini-blockchain/market" },
+      { title: "Featured in Insights on card pages", date: "2026-11-23", summary: "Card pages now link the Panini boards a card is on: below FMV, still sealed in packs, a 7-day floor move, or a strong bid against the floor.", url: "/insights/panini-squeeze" },
+    ],
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
     pitch: "Panini's digital cards on Panini's own platform — soccer, NBA, NFL, WNBA, MLB and NASCAR products, from 2026 Prizm World Cup back through Panini's earlier releases. Every edition RPC has seen, priced, with live asks. Listing-based coverage: a floor, not a census.",

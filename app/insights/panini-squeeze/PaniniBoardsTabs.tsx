@@ -17,7 +17,7 @@
 //     ask can inflate.
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
 import { scrollRegion } from "@/lib/a11y/scroll-region"
@@ -184,6 +184,19 @@ const TABS: { k: Tab; label: string }[] = [
   { k: "movers", label: "Floor movers · 7 days" },
 ];
 
+function noopSubscribe(): () => void {
+  return () => {};
+}
+/** The `?tab=` the page was opened with, when it names a tab; else null. */
+function readLinkedTab(): Tab | null {
+  try {
+    const want = new URLSearchParams(window.location.search).get("tab");
+    return want && TABS.some((t) => t.k === want) ? (want as Tab) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Mirrors FLOOR_MOVERS_MIN_ASK in lib/insights/panini-more-boards.ts (server module).
 const MOVERS_MIN_ASK = 5;
 
@@ -281,7 +294,12 @@ export default function PaniniBoardsTabs({
   data: PaniniBoardsPayload | null;
   degraded: DegradedSummary | null;
 }) {
-  const [tab, setTab] = useState<Tab>("deals");
+  // Deep link (2026-11-23): Panini edition pages link a specific board (`?tab=movers`, `?tab=spread`). The URL's
+  // tab is read through useSyncExternalStore — its server snapshot is null, so the ISR-cached render stays the same
+  // for every URL (no hydration mismatch) — and a click overrides it. No setState inside an effect.
+  const linkedTab = useSyncExternalStore(noopSubscribe, readLinkedTab, () => null);
+  const [chosenTab, setTab] = useState<Tab | null>(null);
+  const tab: Tab = chosenTab ?? linkedTab ?? "deals";
 
   // Sale-corroborated deals first; within each group, biggest estimated edge first.
   const deals = useMemo(() => {

@@ -70,6 +70,9 @@ export default defineConfig({
         "components/physical/**/*.tsx",
         "components/collection/**/*.tsx",
         "components/pinnacle/**/*.tsx",
+        // Added 2026-11-23 with its first component: `components/panini/PaniniPlayerChecklist`
+        // (__tests__/panini-player-checklist.test.tsx).
+        "components/panini/**/*.tsx",
         "components/alerts/**/*.tsx",
         "components/fast-break/**/*.tsx",
         "components/rtr/**/*.tsx",

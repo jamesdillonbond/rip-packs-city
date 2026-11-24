@@ -27,6 +27,8 @@ import {
 import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers"
 import { fetchCandyFloorListing } from "@/lib/candy/edition-floor-listing"
 import { fetchAllDayScarcityRow, allDayInsightChips } from "@/lib/allday/edition-insight-chips"
+import { fetchPaniniChipFacts, paniniInsightChips } from "@/lib/panini/edition-insight-chips"
+import { fetchPaniniPrintings } from "@/lib/panini/edition-printings"
 import { fetchCandyPrintings } from "@/lib/candy/edition-printings"
 import { fetchCandyRarityLabel, nativeRarityChipText } from "@/lib/candy/edition-rarity-label"
 import { fetchCandyMarketHistory, fetchCandyScarcityRow } from "@/lib/candy/edition-market-history"
@@ -1491,6 +1493,14 @@ export default async function EditionPage(
         </Suspense>
       )}
 
+      {/* Panini (2026-11-23, parity pass): the same ladder from Panini's shape — one product + player + card
+          number + parallel family (lib/panini/edition-printings.ts). Self-hides with < 2 printings or a failed read. */}
+      {isPanini && detail.external_id && (
+        <Suspense fallback={null}>
+          <PaniniPrintingsSection externalId={detail.external_id} />
+        </Suspense>
+      )}
+
       {/* "Media Verified on IPFS" section removed 2026-07-11 — CID plumbing
           stays in the data layer (topshot_ipfs_assets / the market bundle);
           it just isn't front-end content. */}
@@ -1562,6 +1572,15 @@ export default async function EditionPage(
             floor={highOffer?.low_ask ?? null}
             playerName={detail.player_name ?? null}
           />
+        </Suspense>
+      )}
+
+      {/* Panini (2026-11-23, parity pass): chips only for facts true of THIS edition — on the Below FMV board,
+          still sealed on the WC squeeze board, a 7-day floor move, the top bid vs the floor ask
+          (lib/panini/edition-insight-chips.ts). Renders nothing when it earns none. */}
+      {isPanini && detail.external_id && (
+        <Suspense fallback={null}>
+          <PaniniInsightChips externalId={detail.external_id} />
         </Suspense>
       )}
 
@@ -1960,6 +1979,61 @@ async function EditionBottomSections({
         </Section>
       )}
     </>
+  )
+}
+
+// Panini edition → the Panini boards it sits on (lib/panini/edition-insight-chips.ts). Renders nothing when the
+// edition earns no chip; a failed read earns none.
+async function PaniniInsightChips({ externalId }: { externalId: string }) {
+  const chips = paniniInsightChips(await fetchPaniniChipFacts(externalId))
+  if (chips.length === 0) return null
+  return (
+    <Section title="Featured in Insights">
+      <div data-testid="panini-insight-chips" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {chips.map((c) => (
+          <Link key={c.key} href={c.href} className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+            {c.label}
+          </Link>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+// Panini "Parallel Printings": the other printings of this card (same product, player, card number and parallel
+// family). A failed read or a single-printing card renders nothing; a failed FMV read shows "no FMV", never $0.
+async function PaniniPrintingsSection({ externalId }: { externalId: string }) {
+  const { printings } = await fetchPaniniPrintings(externalId).catch(() => ({ ok: false, printings: [] }))
+  if (printings.length < 2) return null
+  return (
+    <Section title="Parallel Printings">
+      <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+        Same card, different parallels — each printing is its own edition with its own mint count, serials and market.
+      </div>
+      <div data-testid="panini-printings" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
+        {printings.map((s) => (
+          <Link
+            key={s.externalId}
+            href={`/panini-blockchain/edition/${encodeURIComponent(s.externalId)}`}
+            className="rpc-card"
+            title={s.setName}
+            style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: s.isSelf ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)" }}
+          >
+            <IpfsThumb src={proxyIpfsImageUrl(s.thumbnailUrl, 320)} alt={s.label} label={s.label} />
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.isSelf ? "var(--rpc-red-text)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{s.label}</span>
+              {s.isSelf && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)" }}>viewing</span>}
+            </div>
+            <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
+              {s.fmvUsd != null ? fmtUsd(s.fmvUsd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
+            </div>
+            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
+              {s.mintCap != null ? `/${fmtCount(s.mintCap)} mint` : "mint —"}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </Section>
   )
 }
 

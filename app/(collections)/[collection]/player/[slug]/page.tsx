@@ -41,6 +41,7 @@ import MarketCapTile from "@/components/entity/MarketCapTile"
 import OnTheBlockLink from "@/components/entity/OnTheBlockLink"
 import TeamChecklist from "@/components/entity/TeamChecklist"
 import PinnacleCharacterChecklist from "@/components/pinnacle/PinnacleCharacterChecklist"
+import PaniniPlayerChecklist from "@/components/panini/PaniniPlayerChecklist"
 import { getCollection } from "@/lib/collections"
 import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
@@ -732,10 +733,21 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
           owned vs missing for a pasted wallet, with a cost to complete. Same component, same three
           routes, `entity="player"` (get_player_checklist / _progress, 20261031044056). Offered where
           the team checklist is (registry `teamPages`); a Pinnacle character or a Panini player has
-          no checklist here, so nothing half-built renders for them. */}
+          no checklist here, so nothing half-built renders for them (each has its own panel below). */}
       {!isCharacter && getCollection(collection)?.teamPages ? (
         <Section title={`${detail.name} Checklist`}>
           <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} entity="player" />
+        </Section>
+      ) : null}
+
+      {/* ── Panini Player Checklist (2026-11-23, Panini parity pass) ──
+          The player checklist's job for Panini: every card this page lists, owned vs missing for a PANINI
+          USERNAME (a Panini owner is a username, never a wallet), cost to complete split by price source.
+          Its own route + RPC (get_panini_player_checklist) because the shared checklist reads
+          wallet_moments_cache, which holds no Panini rows. Hides itself on a 404 (no cards). */}
+      {isPanini ? (
+        <Section title={`${detail.name} Checklist`}>
+          <PaniniPlayerChecklist slug={slug} player={detail.name} />
         </Section>
       ) : null}
 

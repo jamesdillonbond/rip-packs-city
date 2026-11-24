@@ -41,8 +41,9 @@ import {
 } from "@/lib/panini/collection-view"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
 import { PANINI_FMV_SOURCE_NOTE } from "@/lib/panini/fmv-source-note"
+import { PANINI_USERNAME_STORAGE_KEY } from "@/lib/panini/username-storage"
 
-const STORAGE_KEY = "rpc.panini.collection.username"
+const STORAGE_KEY = PANINI_USERNAME_STORAGE_KEY
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
 
