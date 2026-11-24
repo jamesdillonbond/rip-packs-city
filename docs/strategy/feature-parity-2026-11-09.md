@@ -34,9 +34,9 @@
 | Edition: "Featured in Insights" chips (row added 11-23) | ✓ | ✓ (10-26) | ✓ (11-23) | ✗ no chip branch in the edition page | n/r | ✓ (11-23: deals, sealed, floor move, bid vs floor) | ✓ (10-26) |
 | Edition: ask history | ✓ | ◐ | ✓ lowest-ask line on the pin chart (11-23; tracked since 10-19) | ◐ | — | ✓ | ✓ (from 10-26) |
 | Edition: price alerts | ✓ | ✓ | ✓ | ✓ | — | ✓ | ✓ |
-| Player / character page + season stats | ✓ | ✓ | ✓ character | ✓ (ESPN box scores, 11-08) | ◐ no stats | ✓ | ✓ |
+| Player / character page + season stats | ✓ | ✓ | ✓ character | ✓ (ESPN box scores, 11-08) | ◐ no stats | ✓ (season stats via the ESPN crosswalk, 11-23) | ✓ |
 | Player checklists (10-31) | ✓ | ✓ | ✓ character checklist (11-23, render grain) | ✓ | ✓ | ✓ by Panini username (11-23) | ✓ |
-| Team checklists | ✓ | ✓ | ✓ franchise checklist (11-23) | ✓ | — | — | ✓ |
+| Team checklists | ✓ | ✓ | ✓ franchise checklist (11-23) | ✓ | — | ✓ franchise hub Panini panel, by username (11-23) | ✓ |
 | Cross-collection player / franchise hubs | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
 
 ## 3. Wallet, trading, concierge
