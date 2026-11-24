@@ -130,6 +130,9 @@ const PARAM_VALUES = {
 const PATTERN_PARAM_VALUES = {
   "/edition/[id]": { id: "00000000-0000-4000-8000-000000000001" },
   "/analytics/sets/[set_id]": { set_id: "00000000-0000-4000-8000-000000000001" },
+  // 2026-11-23 (Candy parity pass 3): the set page 404s a malformed id before any read; a UUID reaches the read,
+  // which fails here, so the page must render its degraded notice (200) — never a 404 for an outage.
+  "/insights/candy-squeeze/set/[setId]": { setId: "00000000-0000-4000-8000-000000000001" },
 }
 
 /** Collection ids from the registry itself — never a hand-kept list (a list
