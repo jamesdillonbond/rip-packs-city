@@ -13,6 +13,12 @@ CLAUDE.md's preamble says a new rule must **DISPLACE** one rather than spend roo
 ⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second. ⭐ **The sharper reason: the set you remember to enumerate is the set LEAST likely to contain the thing you dropped.**
 
 ⚠ **ONE CAVEAT, so a future session does not panic at a clean result: a line REWORDED IN PLACE reads as removed and will not be found verbatim, producing a FALSE ORPHAN.** So `orphans: 0` is a strong proof and `orphans: N` is a **prompt to look**, not a failure — glance at each one and confirm it was reworded rather than lost. ⭐ **The asymmetry is what makes the check worth running: zero orphans is a guarantee no enumeration can give, and a non-zero count costs only a glance.**
+## Condensed in CLAUDE.md 2026-11-24 (verbatim) — the brand-token bullet (Code patterns)
+
+Condensed to a pointer by the biweekly context-hygiene pass when CLAUDE.md stood at 39,997 / 40,000 characters. Topic-specific by the test above: needed only once you are writing UI or email HTML, and [brand-auth-proxy.md](brand-auth-proxy.md) carries all three facts in full (the two reds, why email hardcodes its red, the theme-aware `--rpc-black` / `--rpc-text-primary`). The `#E03A2F` / `'Barlow Condensed'` ban itself stays in CLAUDE.md.
+
+> Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
+
 ## Condensed in CLAUDE.md 2026-09-25 (verbatim) — the second confidence vocabulary (Enums bullet)
 
 Same displacement as the entry below. Topic-specific: needed only when writing `nba_player_projections`.

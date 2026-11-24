@@ -252,7 +252,7 @@ The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/
 - Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read.
 - Next.js conventions (`proxy.ts`, `any` client, `generateMetadata` placement + shallow merge, Suspense): [architecture-notes.md](docs/reference/architecture-notes.md) (end).
 - Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ **`try/catch` CANNOT catch a `maxDuration` kill and the kill is ABSENT from `pipeline_runs_daily`** — write a `<pipeline>-heartbeat` BEFORE the work (`rows_*` NULL), read kills by CORRELATION (`npm run pipelines:kills`), bound every `fetch`. Cases: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
-- Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. ⚠ **Web red is `#E03A2F`; email red is `#E55A4C`**, hardcoded on purpose (email clients lack CSS custom properties). ⚠ `--rpc-black` and `--rpc-text-primary` are THEME-AWARE — a hardcoded dark hex renders a black slab in light mode.
+- Never hardcode `#E03A2F` or `'Barlow Condensed'` — always the tokens in `app/rpc-tokens.css`. Two reds (web ≠ email) + theme-aware tokens: [brand-auth-proxy.md](docs/reference/brand-auth-proxy.md).
 
 ---
 
