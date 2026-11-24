@@ -639,3 +639,53 @@ describe("cron/pinnacle-wmc-render-id writes its marker first — through its OW
     expect(rec.rows[0].collection_slug).toBe("disney_pinnacle")
   })
 })
+
+// ── 2026-11-23 (ratchet 23 -> 21): the two 60 s walls with the most margin used ──
+// admin/cron/detect-league-drift 10,949 / 60,000 ms (18 %), admin/cron/refresh-error-triage
+// 10,082 / 60,000 (17 %) — both after()-only.
+describe("admin/cron/refresh-error-triage writes its marker first", () => {
+  it("marker precedes the rollup rebuild and the terminal row; rows_* NULL (the lane counts none)", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/admin/cron/refresh-error-triage/route")
+    const res = await POST(authedNext("https://t/api/admin/cron/refresh-error-triage") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+    assertMarkerContract(rec, "refresh-error-triage")
+    const marker = rec.events.findIndex((e) => e.kind === "insert" && e.name === "pipeline_runs")
+    const rebuild = rec.events.findIndex((e) => e.name === "refresh_error_triage")
+    expect(rebuild).toBeGreaterThanOrEqual(0)
+    expect(marker).toBeLessThan(rebuild)
+    expect(rec.rpcArgs.log_pipeline_run!.p_rows_found).toBeNull()
+    expect(rec.rpcArgs.log_pipeline_run!.p_rows_written).toBeNull()
+  })
+})
+
+describe("admin/cron/detect-league-drift writes its marker first", () => {
+  it("marker precedes the drift RPC and the terminal row", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { GET } = await import("@/app/api/admin/cron/detect-league-drift/route")
+    const res = await GET(authedNext("https://t/api/admin/cron/detect-league-drift", "GET") as never)
+    expect(res.status).toBeLessThan(300)
+    await runDeferred()
+    assertMarkerContract(rec, "league-drift-detection")
+    const marker = rec.events.findIndex((e) => e.kind === "insert" && e.name === "pipeline_runs")
+    const firstRpc = rec.events.findIndex((e) => e.kind === "rpc")
+    expect(firstRpc).toBeGreaterThanOrEqual(0)
+    expect(marker).toBeLessThan(firstRpc)
+  })
+
+  it("POSITIVE CONTROL — an unauthorized call writes NO marker", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { GET } = await import("@/app/api/admin/cron/detect-league-drift/route")
+    const res = await GET(new NextRequest("https://t/api/admin/cron/detect-league-drift") as never)
+    expect(res.status).toBe(401)
+    await runDeferred()
+    expect(rec.rows.length).toBe(0)
+  })
+})

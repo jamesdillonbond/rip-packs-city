@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // POST /api/admin/cron/refresh-error-triage
@@ -25,6 +26,9 @@ export async function POST(req: NextRequest) {
   // entry can never be auto-disabled. pipeline_runs is the success signal now.
   after(async () => {
     const startedAt = Date.now();
+    // INVOCATION MARKER FIRST (deep-audit E5, 2026-11-23): a maxDuration kill writes no terminal row.
+    // Max 10,082 ms of a 60,000 ms wall over 73 h (17 %), after()-only.
+    await writeInvocationHeartbeat({ pipeline: "refresh-error-triage", startedAtMs: Date.parse(startedAtIso) });
     let ok = true;
     let errMsg: string | null = null;
     try {
@@ -45,16 +49,19 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      // rows_* are NULL: this lane rebuilds a rollup and counts no rows, so a 0 there was a measurement
+      // nobody took (2026-11-23). supabase-js RETURNS errors (R123), so the returned error is read.
+      const { error: logError } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: "refresh-error-triage",
         p_started_at: startedAtIso,
-        p_rows_found: 0,
-        p_rows_written: 0,
-        p_rows_skipped: 0,
+        p_rows_found: null,
+        p_rows_written: null,
+        p_rows_skipped: null,
         p_ok: ok,
         p_error: errMsg,
         p_extra: { duration_ms: Date.now() - startedAt },
       });
+      if (logError) console.log(`[refresh-error-triage] log_pipeline_run err: ${logError.message}`);
     } catch (logErr) {
       console.log(
         `[refresh-error-triage] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`

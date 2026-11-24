@@ -489,7 +489,11 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   (37,595 / 300,000, 13 %) converted (25 -> 23) — next by margin, both after()-only. Same edit
 //   reads each terminal log_pipeline_run error (R123) and writes rows_* NULL, not a fabricated 0,
 //   when the run measured nothing (failed smoke envelope / failed candidate read).
-const BUDGET = 23
+//   2026-11-23: admin/cron/detect-league-drift (10,949 / 60,000 ms, 18 %) and
+//   admin/cron/refresh-error-triage (10,082 / 60,000, 17 %) converted (23 -> 21); both after()-only.
+//   refresh-error-triage also wrote rows_* = 0 on EVERY run while counting nothing -> NULL (the
+//   zero-yield arm keys on a FALL from a non-zero baseline, which this lane never had).
+const BUDGET = 21
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

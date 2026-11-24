@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fitTelegramText } from "@/lib/telegram-message"
 
 // GET /api/admin/cron/detect-league-drift
@@ -55,6 +56,9 @@ export async function GET(req: NextRequest) {
   const startedAtIso = new Date().toISOString()
 
   after(async () => {
+    // INVOCATION MARKER FIRST (deep-audit E5, 2026-11-23): a maxDuration kill writes no terminal row.
+    // Max 10,949 ms of a 60,000 ms wall over 73 h (18 %), after()-only.
+    await writeInvocationHeartbeat({ pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAtIso) })
     let ok = true
     let errMsg: string | null = null
     let result: DetectResult | null = null
@@ -175,7 +179,8 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      // supabase-js RETURNS errors (R123): read it.
+      const { error: logError } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAtIso,
         p_rows_found: inserted + skipped,
@@ -188,6 +193,7 @@ export async function GET(req: NextRequest) {
         p_cursor_after: null,
         p_extra: { inserted, skipped_existing_open: skipped },
       })
+      if (logError) console.log(`[${PIPELINE_NAME}] log_pipeline_run err: ${logError.message}`)
     } catch (e) {
       console.log(
         `[${PIPELINE_NAME}] log_pipeline_run err: ${
