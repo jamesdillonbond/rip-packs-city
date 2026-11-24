@@ -3,6 +3,7 @@ import {
   fetchFanTeams,
   fetchBoundWallet,
   fetchTeamCard,
+  fetchTeamClosestSeries,
   type FanTeam,
 } from "@/lib/fan-teams/fetchers"
 
@@ -250,5 +251,41 @@ describe("bounds — a hung read is a failed read, not an empty account", () => 
     const res = await fetchFanTeams(db)
 
     expect(res).toEqual({ teams: [], ok: true })
+  })
+})
+
+// 2026-11-23: the My Teams "Closest series" line (get_team_series_checklists). Every non-answer is null
+// (the card omits the line); an unwalked wallet is unknown, never a closest series computed from zeros.
+describe("fetchTeamClosestSeries", () => {
+  const series = (to_go: number[], extra: Record<string, unknown> = {}) => ({
+    wallet_cached: true,
+    series: to_go.map((t, i) => ({ series_num: 9 - i, players_total: 10, players_owned: 10 - t, to_go: t, cost_to_go_usd: t * 2, unlisted: 0, complete: t === 0, players: [] })),
+    ...extra,
+  })
+
+  it("no wallet: no read at all, null", async () => {
+    const { db, calls } = rpcClient({})
+    expect(await fetchTeamClosestSeries(TEAM, null, db)).toBeNull()
+    expect(calls).toHaveLength(0)
+  })
+
+  it("picks the incomplete series with the fewest players to go", async () => {
+    const { db, calls } = rpcClient({ get_team_series_checklists: { data: series([4, 0, 2, 7]) } })
+    expect(await fetchTeamClosestSeries(TEAM, "0xabc", db)).toEqual({
+      allComplete: false, series_num: 7, to_go: 2, players_total: 10, cost_to_go_usd: 4, unlisted: 0,
+    })
+    expect(calls[0].args).toMatchObject({ p_team_slug: "portland-trail-blazers", p_wallet: "0xabc" })
+  })
+
+  it("an UNWALKED wallet is unknown — null, never a closest series computed from zeros", async () => {
+    const { db } = rpcClient({ get_team_series_checklists: { data: series([4, 2], { wallet_cached: false }) } })
+    expect(await fetchTeamClosestSeries(TEAM, "0xabc", db)).toBeNull()
+  })
+
+  it("every series finished is a measured fact; a failed read or no series is null", async () => {
+    expect(await fetchTeamClosestSeries(TEAM, "0xabc", rpcClient({ get_team_series_checklists: { data: series([0, 0]) } }).db))
+      .toMatchObject({ allComplete: true })
+    expect(await fetchTeamClosestSeries(TEAM, "0xabc", rpcClient({ get_team_series_checklists: { error: { message: "boom" } } }).db)).toBeNull()
+    expect(await fetchTeamClosestSeries(TEAM, "0xabc", rpcClient({ get_team_series_checklists: { data: { wallet_cached: true, series: [] } } }).db)).toBeNull()
   })
 })

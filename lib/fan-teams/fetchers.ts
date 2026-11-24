@@ -22,6 +22,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import { closestSeries, parseTeamSeriesChecklists } from "@/lib/entity/team-series-checklists"
 
 // ── BUDGETS ─────────────────────────────────────────────────────────────────
 // ⚠ Every read below is awaited INLINE by a server page with no Suspense
@@ -240,4 +241,54 @@ export async function fetchTeamCard(
       ? (progressRes.data as TeamProgress)
       : null
   return { detail, progress }
+}
+
+// ── Closest Series Checklist (2026-11-23) ────────────────────────────────────
+// The team page's Series Checklists panel (get_team_series_checklists — one Moment of every player
+// per series) distilled to the one line a My Teams card has room for: the incomplete series with the
+// fewest players to go. Read IN PARALLEL with fetchTeamCard (the page's Promise.all), so the page's
+// ceiling arithmetic above is unchanged (max, not sum). Every non-answer is null and the card omits
+// the line — no wallet, an UNWALKED wallet (ownership unknown, never "0 owned"), a failed or slow
+// read, a team with no series. `allComplete` is a measured fact (every series 0 to go), not a default.
+export interface ClosestSeriesSummary {
+  allComplete: boolean
+  series_num: number | null
+  to_go: number
+  players_total: number
+  cost_to_go_usd: number
+  unlisted: number
+}
+
+export async function fetchTeamClosestSeries(
+  team: FanTeam,
+  wallet: string | null,
+  db: RpcClient = supabaseAdmin as unknown as RpcClient,
+): Promise<ClosestSeriesSummary | null> {
+  if (!team.collection_id || !wallet) return null
+  let res: Awaited<ReturnType<RpcClient["rpc"]>>
+  try {
+    res = await withBoardBudget(
+      db.rpc("get_team_series_checklists", {
+        p_collection_id: team.collection_id,
+        p_team_slug: team.route_slug,
+        p_wallet: wallet,
+      }),
+      `team-series:${team.route_slug}`,
+      TEAM_CARD_TIMEOUT_MS,
+      "my-teams/",
+    )
+  } catch {
+    return null
+  }
+  if (res.error) return null
+  const parsed = parseTeamSeriesChecklists(res.data)
+  if (parsed.wallet_cached !== true || parsed.series.length === 0) return null
+  const closest = closestSeries(parsed.series, true)
+  if (closest == null) {
+    return parsed.series.every((s) => s.to_go === 0)
+      ? { allComplete: true, series_num: null, to_go: 0, players_total: 0, cost_to_go_usd: 0, unlisted: 0 }
+      : null
+  }
+  const s = parsed.series.find((x) => x.series_num === closest)!
+  return { allComplete: false, series_num: s.series_num, to_go: s.to_go, players_total: s.players_total, cost_to_go_usd: s.cost_to_go_usd, unlisted: s.unlisted }
 }

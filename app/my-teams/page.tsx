@@ -19,6 +19,8 @@ import {
   fetchFanTeams,
   fetchBoundWallet,
   fetchTeamCard,
+  fetchTeamClosestSeries,
+  type ClosestSeriesSummary,
   type FanTeam,
   type TeamDetail,
   type TeamProgress,
@@ -31,6 +33,8 @@ import { franchiseHubPath } from "@/lib/franchise-hub"
 import { chainKindForDbChain, isValidAddressForChain } from "@/lib/address"
 import { getCollection } from "@/lib/collections"
 import type { CSSProperties, ReactNode } from "react"
+import { tileSeriesLabel } from "@/lib/series-label"
+import { toGoParts } from "@/lib/entity/team-series-checklists"
 
 export const dynamic = "force-dynamic"
 
@@ -113,8 +117,12 @@ export default async function MyTeamsPage() {
     // address OR a Top Shot username, and the checklist RPC resolves both.
     return isValidAddressForChain(wallet, "solana") ? null : wallet
   }
-  const cards = await Promise.all(teams.map((t) => fetchTeamCard(t, walletFor(t))))
-  const enriched = teams.map((team, i) => ({ team, hasWallet: walletFor(team) != null, ...cards[i] }))
+  // The Series Checklists line reads IN PARALLEL with the cards (max, not sum — lib/fan-teams/fetchers.ts).
+  const [cards, closest] = await Promise.all([
+    Promise.all(teams.map((t) => fetchTeamCard(t, walletFor(t)))),
+    Promise.all(teams.map((t) => fetchTeamClosestSeries(t, walletFor(t)))),
+  ])
+  const enriched = teams.map((team, i) => ({ team, hasWallet: walletFor(team) != null, closest: closest[i], ...cards[i] }))
 
   // Group by league in canonical order.
   const byLeague = LEAGUE_ORDER
@@ -153,8 +161,8 @@ export default async function MyTeamsPage() {
             {LEAGUE_LABEL[group.league] ?? group.league}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: 14 }}>
-            {group.rows.map(({ team, detail, progress, hasWallet }) => (
-              <TeamCard key={`${team.league}:${team.route_slug}`} team={team} detail={detail} progress={progress} hasWallet={hasWallet} />
+            {group.rows.map(({ team, detail, progress, hasWallet, closest }) => (
+              <TeamCard key={`${team.league}:${team.route_slug}`} team={team} detail={detail} progress={progress} hasWallet={hasWallet} closest={closest} />
             ))}
           </div>
         </section>
@@ -202,11 +210,14 @@ function TeamCard({
   detail,
   progress,
   hasWallet,
+  closest = null,
 }: {
   team: FanTeam
   detail: TeamDetail | null
   progress: TeamProgress | null
   hasWallet: boolean
+  /** The Series Checklists line (null = omit: no wallet, unwalked, failed read). */
+  closest?: ClosestSeriesSummary | null
 }) {
   const coll = team.collection_id ? getCollectionByUuid(team.collection_id) : null
   // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
@@ -327,6 +338,18 @@ function TeamCard({
         ) : (
           <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
             {total != null ? `${fmtCount(total)} editions in the all-time checklist` : "Checklist count unavailable right now"}
+          </div>
+        )}
+
+        {/* Series Checklists (2026-11-23): the closest series to finishing — one Moment of every player */}
+        {closest && (
+          <div className="rpc-mono" style={{ marginTop: 8, fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+            {closest.allComplete
+              ? "Every series checklist complete"
+              : `Closest series: ${tileSeriesLabel(String(closest.series_num), coll?.urlSlug ?? null) ?? `Series ${closest.series_num}`} · ${toGoParts(
+                  { series_num: closest.series_num ?? 0, players_total: closest.players_total, players_owned: null, to_go: closest.to_go, cost_to_go_usd: closest.cost_to_go_usd, unlisted: closest.unlisted, complete: false, players: [] },
+                  (n) => (n >= 100 ? fmtUsd(n) : `$${n.toFixed(2)}`),
+                ).join(" · ")}`}
           </div>
         )}
 
