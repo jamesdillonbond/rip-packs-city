@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { paniniCardNumber, paniniParallelFamily, paniniPrintingLadder, fetchPaniniPrintings, type PaniniPrintingRow } from "@/lib/panini/edition-printings"
-import { paniniInsightChips, fetchPaniniChipFacts } from "@/lib/panini/edition-insight-chips"
+import { paniniInsightChips, fetchPaniniChipFacts, belowRecentSalesPct } from "@/lib/panini/edition-insight-chips"
 
 // 2026-11-23 Panini parity pass: the edition page's Parallel Printings ladder and Featured in Insights chips.
 // Rows below are real panini_editions rows read 11-23 (Damian Lillard, products 1587 and 1602; Lionel Messi 2332).
@@ -134,6 +134,53 @@ describe("paniniInsightChips", () => {
   it("a small move is no chip; a huge rise reads as a multiple, not +499,900 %", () => {
     expect(paniniInsightChips({ dealPct: null, stillInPacks: 0, floorChangePct: 4, bidPctOfAsk: null })).toEqual([])
     expect(paniniInsightChips({ dealPct: null, stillInPacks: null, floorChangePct: 499900, bidPctOfAsk: null })[0].label).toBe("Floor 5,000× in 7 days →")
+  })
+})
+
+describe("the deal chip never contradicts the ask-capped FMV on its own page (2026-11-23)", () => {
+  it("says 'under recent sales', never 'below FMV'", () => {
+    const [c] = paniniInsightChips({ dealPct: 89.5, stillInPacks: null, floorChangePct: null, bidPctOfAsk: null })
+    expect(c.label).toBe("90% under recent sales →")
+    expect(c.label).not.toMatch(/FMV/)
+  })
+  it("computes against the recent-sales median, and claims nothing without one", () => {
+    expect(belowRecentSalesPct(10, 95)).toBe(89.5)
+    expect(belowRecentSalesPct(10, null)).toBeNull()
+    expect(belowRecentSalesPct(null, 95)).toBeNull()
+    expect(belowRecentSalesPct(100, 95)).toBeNull()
+    expect(belowRecentSalesPct(10, 0)).toBeNull()
+  })
+  it("reads the median off the deals row, not its discount_pct", async () => {
+    const db = {
+      from: (t: string) => {
+        if (t === "mv_panini_public_deals") return q({ data: [{ low_ask: 20, recent_sales_median_usd: 100, discount_pct: 80 }], error: null })
+        return q({ data: [], error: null })
+      },
+    }
+    expect((await fetchPaniniChipFacts("packcard-1587_290606_7861479_32", db)).dealPct).toBe(80)
+    const db2 = {
+      from: (t: string) => {
+        if (t === "mv_panini_public_deals") return q({ data: [{ low_ask: 20, recent_sales_median_usd: null, discount_pct: 80 }], error: null })
+        return q({ data: [], error: null })
+      },
+    }
+    expect((await fetchPaniniChipFacts("packcard-1587_290606_7861479_32", db2)).dealPct).toBeNull()
+  })
+})
+
+describe("the public deals leg compares against the UNCAPPED deal FMV (2026-11-23)", () => {
+  // edition_fmv_current is capped at the lowest live ask, and the deal ask IS that ask, so `ask < capped FMV` is false on
+  // every row — the leg sat at 0 rows for days while its lane logged ok. The live body must read the deal board's fmv_usd.
+  const dir = join(process.cwd(), "supabase/migrations")
+  const latest = readdirSync(dir).filter((f) => /mv_panini_public_deals|panini_public_deals/.test(readFileSync(join(dir, f), "utf8")) && /CREATE MATERIALIZED VIEW public\.mv_panini_public_deals/.test(readFileSync(join(dir, f), "utf8"))).sort().at(-1)!
+  const body = readFileSync(join(dir, latest), "utf8").split("\n").filter((l) => !/^\s*--/.test(l)).join("\n")
+  it("the newest definition is the fix", () => {
+    expect(latest).toMatch(/panini_public_deals_uncapped_basis/)
+  })
+  it("compares the ask with d.fmv_usd, never with the ask-capped f.fmv_usd", () => {
+    expect(body).toMatch(/d\.ask_usd < d\.fmv_usd/)
+    expect(body).not.toMatch(/ask_usd\s*<\s*f\.fmv_usd/)
+    expect(body).not.toMatch(/\(f\.fmv_usd - d\.ask_usd\)/)
   })
 })
 

@@ -16,7 +16,12 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
 
 export interface PaniniChipFacts {
-  /** % below FMV on the public deals board; null = not on it, or the read failed. */
+  /**
+   * % the board's ask sits under the edition's 30-day recent-sales median, for an edition on the public deals board;
+   * null = not on it, no median, or the read failed. ⚠ Deliberately NOT the board's "% below FMV": since 11-12 the
+   * edition page's FMV is capped at the live ask (fmv_snapshots_cap_panini_low_to_live_ask), and the deal ask IS that
+   * ask — so a "% below FMV" chip would contradict the FMV printed above it on the same page (2026-11-23).
+   */
   dealPct: number | null
   /** Copies still sealed (a floor); null = not on the squeeze board, or the read failed. */
   stillInPacks: number | null
@@ -40,11 +45,17 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** Pure: % an ask sits under a recent-sales median; null unless both are known and the ask is under it. */
+export function belowRecentSalesPct(ask: number | null, median: number | null): number | null {
+  if (ask == null || median == null || !(median > 0) || !(ask > 0) || ask >= median) return null
+  return Math.round(((median - ask) / median) * 1000) / 10
+}
+
 /** Pure: which chips this edition earns. */
 export function paniniInsightChips(f: PaniniChipFacts): PaniniInsightChip[] {
   const out: PaniniInsightChip[] = []
   if (f.dealPct != null && f.dealPct > 0) {
-    out.push({ key: "deal", href: "/insights/deals", label: `${Math.round(f.dealPct)}% below FMV →` })
+    out.push({ key: "deal", href: "/insights/deals", label: `${Math.round(f.dealPct)}% under recent sales →` })
   }
   if (f.stillInPacks != null && f.stillInPacks > 0) {
     out.push({ key: "sealed", href: "/insights/panini-squeeze", label: `At least ${f.stillInPacks.toLocaleString("en-US")} still sealed in packs →` })
@@ -82,13 +93,13 @@ export async function fetchPaniniChipFacts(
   db: any = supabaseAdmin,
 ): Promise<PaniniChipFacts> {
   const [deal, sq, mv, sp] = await Promise.all([
-    one(db.from("mv_panini_public_deals").select("discount_pct").eq("external_id", externalId).limit(1), "panini-chip/deals"),
+    one(db.from("mv_panini_public_deals").select("low_ask, recent_sales_median_usd").eq("external_id", externalId).limit(1), "panini-chip/deals"),
     one(db.from("panini_squeeze_board").select("still_in_packs").eq("external_id", externalId).limit(1), "panini-chip/squeeze"),
     one(db.from("mv_panini_floor_movers").select("change_pct, window_complete").eq("external_id", externalId).limit(1), "panini-chip/movers"),
     one(db.from("mv_panini_offer_spread").select("offer_pct_of_ask").eq("external_id", externalId).limit(1), "panini-chip/spread"),
   ])
   return {
-    dealPct: num(deal?.discount_pct),
+    dealPct: belowRecentSalesPct(num(deal?.low_ask), num(deal?.recent_sales_median_usd)),
     stillInPacks: num(sq?.still_in_packs),
     floorChangePct: mv && mv.window_complete === true ? num(mv.change_pct) : null,
     bidPctOfAsk: num(sp?.offer_pct_of_ask),
