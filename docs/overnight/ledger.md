@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~8:20 PM PT · ✅ SHIPPED — every shared link card keyed on both sides + checked before posting (Cowork cloud, attended; Trevor: "do all you need to do to make sure everything is dialed in moving forward")
+- **og:image keys:** all 44 static `/insights/*` layouts → `?v=<deploy sha>` (`OG_CARD_VERSION`); pack-dist pages → `&d=<PT day>`; drops/top-sales already `?d=` (`lib/og/card-day-key.ts`). X caches by og:image URL and keeps a failed fetch as a blank card; a key that rolls per deploy/day means one never outlives it.
+- **`x-draft.mjs`:** `?w=<MMDD>` on every rippackscity.com link in every drafted post (was drops-only), then a Twitterbot pre-check of each link → og:image → image (status, type, size, < 8 s, keyed) that also warms the CDN; any failure is a `warnings[]` line. `docs/social/x-calendar.md` documents it.
+- `__tests__/candy-launch-flag-contract.test.ts` re-pinned: OG URL must be the route path **with** the `?v=` key. Full suite 26,944 pass; tsc, lint ratchet, ci:guards green.
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-23 ~8:25 PM PT · 🔧 FIX — Panini Rookie cards tab read "couldn't load" on a board snapshot cached before the tab existed (Claude Code cloud; Trevor: "Do it all")
 - Live check after the pass-3 deploy: `public_board_snapshots` `panini-boards` (refreshed 7:37 PM PT) carries no `rookies` key, and the tab treated the missing key as a failed read. An absent key with no `rookies_error` now says the board joins with the next hourly refresh (~8:37 PM PT); a real failure still says failed. Test pinned. Revert: `git revert` "fix(panini): rookie tab on a pre-board snapshot".
 
