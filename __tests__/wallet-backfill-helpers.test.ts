@@ -191,6 +191,7 @@ import {
   isAccessApiInternalServerError,
   isNoCollectionCapabilityError,
   triggerUfcEnrichmentChain,
+  UFC_ENRICH_PAGE_TIMEOUT_MS,
   runIdOnlyBackfill,
   runAllDayDetailsBackfill,
   runPinnacleDetailsBackfill,
@@ -530,18 +531,42 @@ describe("triggerUfcEnrichmentChain", () => {
     expect(await triggerUfcEnrichmentChain(WALLET)).toEqual({ pagesFired: 0, totalEnriched: 0, done: false })
   })
 
-  it("walks pages until the edge fn reports done, summing enriched", async () => {
+  it("walks unkeyed pages by the moment_id keyset until done, summing enriched", async () => {
     ;(fetch as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ enriched: 100, nextStart: 100 }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ enriched: 40, done: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, enriched: 50, done: false, nextAfter: "1582500" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, enriched: 40, done: true, nextAfter: null }) })
     const out = await triggerUfcEnrichmentChain(WALLET)
-    expect(out).toEqual({ pagesFired: 2, totalEnriched: 140, done: true })
+    expect(out).toEqual({ pagesFired: 2, totalEnriched: 90, done: true })
+    const urls = (fetch as any).mock.calls.map((c: any[]) => new URL(String(c[0])))
+    // Only NULL-edition_key rows, never an offset: an offset over a set that
+    // shrinks as it is enriched skips rows (inbox 2026-11-24T0114Z).
+    expect(urls.every((u: URL) => u.searchParams.get("unkeyed") === "1")).toBe(true)
+    expect(urls.some((u: URL) => u.searchParams.has("start"))).toBe(false)
+    expect(urls[0].searchParams.has("after")).toBe(false)
+    expect(urls[1].searchParams.get("after")).toBe("1582500")
   })
 
-  it("stops (done) when nextStart is null even without an explicit done flag", async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ enriched: 5, nextStart: null }) })
+  it("gives each page a timeout ABOVE one page of work (the 45 s abort never let page 0 finish)", async () => {
+    const spy = vi.spyOn(AbortSignal, "timeout")
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ ok: true, enriched: 1, done: true }) })
+    await triggerUfcEnrichmentChain(WALLET)
+    expect(spy).toHaveBeenCalledWith(UFC_ENRICH_PAGE_TIMEOUT_MS)
+    expect(UFC_ENRICH_PAGE_TIMEOUT_MS).toBeGreaterThan(45_000)
+    expect(UFC_ENRICH_PAGE_TIMEOUT_MS).toBeLessThan(150_000)
+    spy.mockRestore()
+  })
+
+  it("does not start a page past the caller's deadline", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ ok: true, enriched: 1, done: true }) })
+    const out = await triggerUfcEnrichmentChain(WALLET, { deadlineMs: Date.now() + 5_000 })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(out).toEqual({ pagesFired: 0, totalEnriched: 0, done: false })
+  })
+
+  it("stops NOT done when a page reports its writes did not land (ok:false)", async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ ok: false, enriched: 50, done: false, nextAfter: "9" }) })
     const out = await triggerUfcEnrichmentChain(WALLET)
-    expect(out).toEqual({ pagesFired: 1, totalEnriched: 5, done: true })
+    expect(out).toEqual({ pagesFired: 1, totalEnriched: 50, done: false })
   })
 
   it("breaks (not done) on a non-ok HTTP response", async () => {
@@ -557,10 +582,15 @@ describe("triggerUfcEnrichmentChain", () => {
     expect(out.pagesFired).toBe(0)
   })
 
-  it("breaks when the returned nextStart is non-positive", async () => {
-    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ enriched: 3, nextStart: 0 }) })
+  it("breaks (not done) when the cursor is missing or does not move forward", async () => {
+    ;(fetch as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, enriched: 3, done: false, nextAfter: "500" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, enriched: 2, done: false, nextAfter: "500" }) })
     const out = await triggerUfcEnrichmentChain(WALLET)
-    expect(out).toEqual({ pagesFired: 1, totalEnriched: 3, done: false })
+    expect(out).toEqual({ pagesFired: 2, totalEnriched: 5, done: false })
+    ;(fetch as any).mockReset()
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ ok: true, enriched: 3, done: false, nextAfter: null }) })
+    expect(await triggerUfcEnrichmentChain(WALLET)).toEqual({ pagesFired: 1, totalEnriched: 3, done: false })
   })
 })
 

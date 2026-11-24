@@ -801,14 +801,27 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
   }
 }
 
-// triggerUfcEnrichmentChain — fire-and-forget loop that calls
-// enrich-ufc-wallet edge function with paginated start values until done.
-// Called from wallet-backfill-ufc after the ID-only wmc insert lands so
-// per-moment chain metadata (edition_key, player_name, set_name, tier)
-// gets populated without manual intervention. Up to 30 pages × 100
-// moments = 3,000 moments per wallet enriched per backfill run; any
-// remaining tail drains on the next cron pass.
-export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
+// triggerUfcEnrichmentChain — loop that calls the enrich-ufc-wallet edge
+// function in its `unkeyed=1` mode: only rows with edition_key NULL, paged by a
+// moment_id keyset (`after`), 50 per page. Called from wallet-backfill-ufc after
+// the ID-only wmc insert lands so per-moment chain metadata (edition_key,
+// player_name, set_name, tier) gets populated without manual intervention.
+//
+// 2026-11-23 (inbox 2026-11-24T0114Z): this used to walk ALL rows from start=0
+// with a 45 s per-page timeout, shorter than one 100-NFT page (100 Flow scripts
+// at concurrency 5). Page 0 aborted, the chain stopped, and the next run
+// restarted at 0 — 155 rows in 2 wallets never got keyed, and the fallback
+// `ufc-enrichment-drain` has had no caller since 10-18. Now each run starts on
+// the rows still NULL, so progress survives an abort; the per-page timeout sits
+// above one page (≤ 140 s, edge wall 150 s); and `deadlineMs` stops the chain
+// from starting a page the caller's lambda (maxDuration 300) cannot finish.
+export const UFC_ENRICH_PAGE_TIMEOUT_MS = 140_000
+const UFC_ENRICH_MIN_PAGE_MS = 30_000
+
+export async function triggerUfcEnrichmentChain(
+  wallet: string,
+  opts: { deadlineMs?: number } = {},
+): Promise<{
   pagesFired: number
   totalEnriched: number
   done: boolean
@@ -819,15 +832,25 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
     return { pagesFired: 0, totalEnriched: 0, done: false }
   }
   const baseUrl = `${supabaseUrl}/functions/v1/enrich-ufc-wallet`
-  let start = 0
+  let after: string | null = null
   let pages = 0
   let enrichedTotal = 0
   let done = false
-  const MAX_PAGES = 30
+  const MAX_PAGES = 60
   while (pages < MAX_PAGES) {
+    let timeoutMs = UFC_ENRICH_PAGE_TIMEOUT_MS
+    if (opts.deadlineMs != null) {
+      const remaining = opts.deadlineMs - Date.now()
+      if (remaining < UFC_ENRICH_MIN_PAGE_MS) {
+        console.warn(`[ufc-enrich-chain] deadline reached wallet=${wallet} pages=${pages}; the rest stays NULL for the next run`)
+        break
+      }
+      timeoutMs = Math.min(timeoutMs, remaining)
+    }
     const url = new URL(baseUrl)
     url.searchParams.set("wallet", wallet)
-    url.searchParams.set("start", String(start))
+    url.searchParams.set("unkeyed", "1")
+    if (after) url.searchParams.set("after", after)
     // The token rides ONLY in the Authorization header below (2026-09-25):
     // a `?token=` copy wrote INGEST_SECRET_TOKEN into edge request logs.
     let json: any
@@ -835,10 +858,10 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
       const res = await fetch(url.toString(), {
         method: "GET",
         headers: { Authorization: `Bearer ${ingestToken}` },
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       if (!res.ok) {
-        console.warn(`[ufc-enrich-chain] HTTP ${res.status} wallet=${wallet} start=${start}`)
+        console.warn(`[ufc-enrich-chain] HTTP ${res.status} wallet=${wallet} after=${after ?? "-"}`)
         break
       }
       json = await res.json()
@@ -848,12 +871,19 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
     }
     pages++
     enrichedTotal += Number(json?.enriched ?? 0)
-    if (json?.done === true || json?.nextStart == null) {
+    // A page whose writes did not all land is not progress: stop, not done.
+    if (json?.ok === false) {
+      console.warn(`[ufc-enrich-chain] page write failed wallet=${wallet} after=${after ?? "-"}: ${JSON.stringify(json?.sampleErrors ?? []).slice(0, 300)}`)
+      break
+    }
+    if (json?.done === true) {
       done = true
       break
     }
-    start = Number(json.nextStart)
-    if (!Number.isFinite(start) || start <= 0) break
+    const next = typeof json?.nextAfter === "string" ? json.nextAfter : null
+    // A cursor that does not move forward would re-read the same page forever.
+    if (!next || (after != null && next <= after)) break
+    after = next
   }
   return { pagesFired: pages, totalEnriched: enrichedTotal, done }
 }

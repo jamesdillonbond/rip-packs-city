@@ -106,7 +106,9 @@ export async function POST(req: NextRequest) {
     // sitting NULL. enrich-ufc-wallet is paginated (100 NFTs per page)
     // so we drive it sequentially until done.
     try {
-      const result = await triggerUfcEnrichmentChain(wallet)
+      // Deadline inside maxDuration (300 s) with ~15 s for the log line and
+      // teardown: the chain will not START a page it cannot finish.
+      const result = await triggerUfcEnrichmentChain(wallet, { deadlineMs: startedMs + 285_000 })
       console.log(
         `[wallet-backfill-ufc] enrich chain wallet=${wallet} pages=${result.pagesFired} enriched=${result.totalEnriched} done=${result.done}`,
       )

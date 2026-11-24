@@ -137,13 +137,36 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
+  // TWO MODES (2026-11-23):
+  //   * default (`start=<offset>`): every UFC row of the wallet, offset-paged,
+  //     100 per page. ufc-wallet-scan (user binder scan) uses this to re-enrich
+  //     the whole wallet. Unchanged.
+  //   * `unkeyed=1` (`after=<moment_id>`): ONLY rows with edition_key NULL,
+  //     keyset-paged on moment_id, UNKEYED_CHUNK per page. The wallet-backfill
+  //     chain uses this. Until now that chain re-read every row from start=0 on
+  //     every run with a 45 s caller timeout shorter than one 100-NFT page, so a
+  //     wallet whose first page was slow never reached its unkeyed tail: 155
+  //     rows in 2 wallets sat NULL for days (inbox 2026-11-24T0114Z). An OFFSET
+  //     over a set that shrinks as it is enriched would skip rows, hence keyset.
+  const unkeyed = url.searchParams.get("unkeyed") === "1";
+  const afterId = url.searchParams.get("after");
+  const UNKEYED_CHUNK = 50;
+
   // Pull existing wallet rows including image_url so the COALESCE can prefer
   // an already-populated thumbnail over editions.thumbnail_url.
-  const { data: moments, error: momentsErr } = await supabase.from("wallet_moments_cache")
+  let momentsQuery = supabase.from("wallet_moments_cache")
     .select("moment_id, image_url")
     .eq("wallet_address", wallet)
-    .eq("collection_id", UFC_COLLECTION_ID)
-    .order("moment_id");
+    .eq("collection_id", UFC_COLLECTION_ID);
+  if (unkeyed) {
+    momentsQuery = momentsQuery.is("edition_key", null);
+    if (afterId) momentsQuery = momentsQuery.gt("moment_id", afterId);
+    // One more than a page tells "more remain" without a second count query.
+    momentsQuery = momentsQuery.order("moment_id").limit(UNKEYED_CHUNK + 1);
+  } else {
+    momentsQuery = momentsQuery.order("moment_id");
+  }
+  const { data: moments, error: momentsErr } = await momentsQuery;
   // A failed read is not "No moments". That answer carries no nextStart, so the
   // caller (triggerUfcEnrichmentChain) recorded the wallet done:true with
   // nothing enriched. A 500 makes it stop with done:false and leave the wallet
@@ -152,7 +175,13 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: false, error: `wallet_moments_cache read: ${momentsErr.message.slice(0, 200)}` }), { status: 500 });
   }
   const allMoments = (moments ?? []) as Array<{ moment_id: string; image_url: string | null }>;
-  if (!allMoments.length) return new Response(JSON.stringify({ ok: true, message: "No moments" }));
+  if (!allMoments.length) {
+    return new Response(JSON.stringify(
+      unkeyed
+        ? { ok: true, done: true, nextAfter: null, nextStart: null, message: "No unkeyed moments" }
+        : { ok: true, message: "No moments" },
+    ));
+  }
   const allIds = allMoments.map(m => m.moment_id);
   const existingImageMap = new Map<string, string | null>();
   for (const m of allMoments) existingImageMap.set(m.moment_id, m.image_url);
@@ -249,8 +278,13 @@ Deno.serve(async (req: Request) => {
   }
 
   const CHUNK = 100, CONC = 5;
-  const endIdx = Math.min(startIdx + CHUNK, allIds.length);
-  const batch = allIds.slice(startIdx, endIdx);
+  // Unkeyed mode: allIds IS the page (+1 lookahead row), so it always starts at 0.
+  const pageStart = unkeyed ? 0 : startIdx;
+  const endIdx = unkeyed
+    ? Math.min(UNKEYED_CHUNK, allIds.length)
+    : Math.min(startIdx + CHUNK, allIds.length);
+  const batch = allIds.slice(pageStart, endIdx);
+  const unkeyedMore = unkeyed && allIds.length > UNKEYED_CHUNK;
   let enriched = 0, errCount = 0;
   const updates: any[] = [];
   const sampleErrors: string[] = [];
@@ -330,6 +364,29 @@ Deno.serve(async (req: Request) => {
      // upserted: 0 even when sampleData looks correct.
     const { error } = await supabase.from("wallet_moments_cache").upsert(b, { onConflict: "wallet_address,collection_id,moment_id" });
     if (!error) upserted += b.length; else sampleErrors.push(`upsert: ${error.message}`);
+  }
+
+  if (unkeyed) {
+    // The cursor advances past rows that failed to enrich too (a script error,
+    // no edition name): they stay NULL and the NEXT run retries them, so a bad
+    // row cannot pin the chain to its own position.
+    // ok is DERIVED from whether every write landed: a failed upsert leaves the
+    // rows NULL, and the caller must stop (not done) rather than walk on.
+    return new Response(JSON.stringify({
+      ok: upserted === updates.length,
+      mode: "unkeyed",
+      done: !unkeyedMore,
+      after: afterId,
+      nextAfter: unkeyedMore ? batch[batch.length - 1] : null,
+      nextStart: null,
+      processed: batch.length,
+      enriched,
+      upserted,
+      editionsLoaded: editionMap.size,
+      errors: errCount,
+      sampleErrors,
+      sampleData,
+    }), { headers: { "Content-Type": "application/json" } });
   }
 
   return new Response(JSON.stringify({
