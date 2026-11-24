@@ -1,0 +1,28 @@
+-- audit_20261123_derive_pinnacle_wmc_statement_timeout_90s
+--
+-- 2026-11-23 ~9:50 PM PT (Claude Code, Trevor's laptop; Trevor: "Keep going").
+--
+-- WHY. pinnacle-wmc-render-id (hourly :37, app/api/cron/pinnacle-wmc-render-id) failed twice on 11-23 with
+-- "derive: canceling statement due to statement timeout" (5:37 PM and 9:37 PM PT). The 5:37 PM focus.md steer said a
+-- repeat means derive needs its own budget. Measured:
+--   * derive_pinnacle_wmc_from_catalog() is a differential UPDATE over ALL Pinnacle wallet_moments_cache rows
+--     (56,651) joined to pinnacle_catalog (2,985): ~116k buffers per call however few rows change (EXPLAIN ANALYZE in
+--     a rolled-back block at ~9:45 PM PT: 118k buffers, 2.3 s warm, 0 rows changed).
+--   * pg_stat_statements: 216 calls, mean 10.4 s, sd 7.6 s, MAX 29.5 s. It is called through PostgREST as
+--     service_role, whose statement_timeout is 30 s. So the successful calls already run up to the cap and the cold-IO
+--     tail loses; the 9:37 PM run resolved only 132 rows and still timed out, so it is the scan, not the batch.
+--   * A failure rolls the derive back and the next hour catches up (it did at 6:37 PM), so the cost is pins showing
+--     without character / set / image for an extra hour, plus ok=false on the lane.
+--
+-- WHAT. ALTER only: the function declares its own statement_timeout = 90s. Measured mechanism (database.md, A/B
+-- 2026-08-27): via PostgREST a HIGHER function-level statement_timeout raises the 30 s role cap; the gateway caps
+-- that path at ~120 s, so 90 s stays reachable. The caller has maxDuration 300 and no abort on this RPC. The other
+-- caller (app/api/admin/backfill-pinnacle-catalog) gets the same budget. Body unchanged, so the DB pin
+-- (supabase/tests/derive_pinnacle_wmc_from_catalog.sql, registered at 20261019010856) is unaffected. No ACL change.
+--
+-- NOT DONE. Cutting the scan itself (deriving only rows that can differ) changes which rows the hourly pass catches
+-- (render_ids written by OTHER writers rely on this full sweep), so it needs its own equivalence proof.
+--
+-- REVERT: ALTER FUNCTION public.derive_pinnacle_wmc_from_catalog() RESET statement_timeout;
+
+ALTER FUNCTION public.derive_pinnacle_wmc_from_catalog() SET statement_timeout = '90s';

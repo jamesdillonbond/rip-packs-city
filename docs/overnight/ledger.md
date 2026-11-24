@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~9:51 PM PT · 🗄 APPLIED (`20261124055144`) — `derive_pinnacle_wmc_from_catalog()` declares `statement_timeout = 90s` (pinnacle-wmc-render-id timed out twice on 11-23) (Claude Code, local box; Trevor: "Keep going")
+- Lane failed 5:37 PM and 9:37 PM PT with `derive: canceling statement due to statement timeout` (the 9:37 run resolved only 132 rows). The derive is a differential UPDATE over ALL 56,651 Pinnacle wmc rows: ~116k buffers/call whatever changes (2.3 s warm, 0 rows); pgss 216 calls, mean 10.4 s, max 29.5 s against service_role's 30 s cap, so the cold-IO tail loses.
+- ALTER only (body + DB pin unchanged; anon EXECUTE false). Via PostgREST a higher function-level timeout raises the role cap (database.md A/B 08-27; gateway ~120 s). Stored statement md5 = file md5.
+- Not done: scoping the scan, because render_ids written by other writers rely on the full sweep; that needs an equivalence proof.
+- Verify: next runs (hourly :37) `ok=true`, `derive_error` null; a run's `duration_ms` over ~45 s with ok=true is the raise working.
+- Revert: `ALTER FUNCTION public.derive_pinnacle_wmc_from_catalog() RESET statement_timeout;`
+
 ### 2026-11-23 ~9:55 PM PT · ✅ SHIPPED (code) — franchise hub checklist link names the Series Checklists (Cowork cloud, attended; Trevor: "Keep going")
 - `/teams/<league>/<slug>` collection panel: the lead checklist link now reads "series checklists, every edition, what you own, cost to complete", so the new panel can be found from the hub. Copy only.
 - Revert: `git revert` the commit "hub checklist link names the Series Checklists".
