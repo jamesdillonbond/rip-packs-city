@@ -123,3 +123,36 @@ Trevor: "work autonomously for the next 12 hours … find things to work on. Fix
 - **Split-player merge: with Cowork** (inbox `2026-11-23T2145Z`; staged SQL in `docs/proposals/`). Nothing owed here.
 - **Nothing else open from this thread.** The register's OPEN rows (R136, R73, E5, R59, R65) and known-issues' 3 open / 1 partial each carry their own gate or date; the dated reads are scheduled tasks (Panini WARN 5:23 PM PT today, fmv-recalc 11-25, gate week 3 11-30, FMV week-2 11-30, Dune items 12-14) plus the 11-24 Top Shot lag in focus.md.
 
+
+## Afternoon close-out (11-23 ~1:20 → ~5 PM PT; Trevor: "Keep going" ×4 → "work through anything unresolved from this thread")
+
+Everything below is in the ledger with a revert path.
+
+- **Top Shot sale-ingest.**
+  - **5-min drain shipped, then my own boundary defect fixed.** `20261123210830` (1:08 PM PT) set the promote gap to 5 min on a 5-min schedule. pg_cron start jitter then skipped **14 of 33** ticks, so every parked sale waited two ticks (~9.7 min).
+  - **Fix:** `20261123235536` (3:55 PM PT), gap 4 min. The 3:58, 4:03 and 4:08 PM ticks all drained with 0 skips.
+  - **Early read (1:15–3:27 PM PT, n 323):** direct-indexed sales p50 2.8 / p90 4.6 min; promoted sales p50 12.1 / p90 14.6 min, before the 4-min fix; overall p90 13.9, 0 sales over 20 min.
+  - **Still owed:** the full-day 11-24 verification steer is in focus.md.
+- **GHA watchdog red (1:38 PM PT):**
+  - The "1 cadence lane breaching" was the lane Trevor paused this morning. Its watchlist row is now inactive (`20261123220749`).
+  - The rest was probe-workflow shedding. It self-cleared at 2:08 PM PT, and the inbox `2026-11-23T1913Z` filing is RESOLVED.
+- **CI red: `physical-paper-listings-cached` flake.**
+  - Fixed with one `next/cache` mock (a second `doMock` raced the first).
+  - The Clock sweep called it clock-dependent. That is not supported: re-run alone at all four sampled hours, old and new code both pass, and the failing path reads no clock (testing-and-ci.md).
+- **`panini_card_serials` VACUUM timed out at 120 s** (inbox `2026-11-23T2206Z`).
+  - The job now runs as `cron_heavy` with MAINTAIN (`20261123231928`, jobid 919). The monitor's suggested `SET …;` prefix cannot run VACUUM.
+  - **Still owed:** verify the 11-24 3:04 AM PT run by `last_vacuum` (focus.md).
+- **E5 26 → 21:** invocation markers added to `weekly-digest`, `analytics-smoke`, `pinnacle-wmc-render-id`, `detect-league-drift` and `refresh-error-triage`.
+  - Each conversion also reads its terminal-write error (R123) and writes NULL rather than fabricated `rows_*` zeros.
+  - ⛔ The wallet-backfill pinnacle/allday maxima came from the SYNC path, so they are not on the queue.
+  - Remaining queue: every route at ≤ 11 % of its wall. No queued route took a Vercel wall kill in 7 d.
+- **Checked, no change:**
+  - FCL "Access Node Error" on `/api/wallet-backfill` and `/api/owned-flow-ids`: log noise (0 failed backfills in 72 h; both routes report a failed read honestly).
+  - `get_set_activity` timeouts: ~0.06 % of 56k calls.
+  - No other DB rate gate equals its schedule period.
+  - 21 more route `p_rows_*: … ?? 0` sites: left alone (a population; NULL can change `rows_written = 0` detectors).
+- **Lessons promoted:**
+  - cron-and-schedulers.md: a gate equal to its period skips about half the ticks; pausing a lane is two edits.
+  - database.md: VACUUM over 120 s → `cron_heavy` + MAINTAIN.
+  - testing-and-ci.md: a clock-sweep verdict on an intermittent test.
+  - tooling-gotchas.md: a scheduled task made from here carries no connectors.
