@@ -33,3 +33,18 @@ LOW / read-only symptom. The only user-visible failure mode is if either of the 
 3. If UFC has no resolver leg: consider extending the wmc-null-key healer to UFC and/or adding a `ufc_wmc_null_edition_key_rows` arm to `v_rpc_trust_health` (template: the TS arm in `20261110230853`). ⚠ Mind the lane budget (retire-one rule, baseline 318 jobs) — a trust arm is a view edit, not a new job, so it is budget-neutral; a new healer job is not.
 
 **Revert:** n/a (filing only; no production change in this pass).
+
+---
+
+## 🔎 DIAGNOSED 2026-11-23 ~5:55 PM PT (Claude Code cloud) — not self-draining; LOW; fix designed, not shipped
+
+- **Who:** 149 of the 155 rows are `0xfd6debe3815415c3` (walked 3:46 PM PT 11-23: `wallet-backfill-ufc` found 249, 100 already keyed). The other 6 are `0xe5492c968fb5d358` (11-19), still unkeyed after 4 days. **Neither is a saved/member wallet.**
+- **Why they stay NULL:** two defects in the UFC enrichment chain.
+  1. **Page 0 timed out.** Vercel 3:47:44 PM PT: `[ufc-enrich-chain] fetch failed wallet=0xfd6debe3815415c3: The operation was aborted due to timeout`, then `pages=0 enriched=0 done=false`. The caller's `AbortSignal.timeout(45_000)` (`lib/chains/flow/wallet-backfill-helpers.ts` `triggerUfcEnrichmentChain`) is shorter than one page: `enrich-ufc-wallet` runs 100 Flow scripts at concurrency 5.
+  2. **Every run restarts at `start=0` over ALL the wallet's UFC rows in `moment_id` order, keyed or not.** A wallet whose first page is slow never reaches its unkeyed tail.
+- **The drain it falls back to has no caller.** The edge function's own comment says a failed page leaves the wallet "to the drain cron", and `ufc-enrichment-drain` has had no caller since cron-job.org disabled it on 10-18 (E5 row). So these rows never heal.
+- **Fix (for a session that can deploy edge fns via `.github/workflows/edge-fn-deploy.yml`):**
+  - In `enrich-ufc-wallet`, select only rows with `edition_key IS NULL`, and page by a `moment_id > cursor` keyset rather than an offset (an offset over a set that shrinks as it is enriched skips rows).
+  - Give the caller a timeout above one page (≤ 140 s, under the edge wall), keeping `wallet-backfill-ufc`'s 300 s `maxDuration` in mind.
+  - Optionally, a UFC arm in `v_rpc_trust_health` (budget-neutral view edit, template `20261110230853`).
+  - Not shipped tonight: impact is two non-member wallets on the legacy Flow UFC collection, and the paging contract change needs an edge deploy plus a caller change together.

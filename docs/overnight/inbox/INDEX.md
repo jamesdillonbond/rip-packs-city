@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-24 — 1 filing
 
-- [Daytime monitor: UFC (ufc_strike) wmc null-`edition_key` = 155 (all new in 7d, 2 wallets) crosses the snapshot's >100 / >25-new watcher but has no continuous trust arm (the 11-10 wmc-null-key arm is Top-Shot-only); likely UFC-on-Aptos reopen churn — confirm a UFC resolver is draining it and decide on a healer leg / `ufc_wmc_null_edition_key_rows` arm](2026-11-24T0114Z-rpc-daytime-monitor-ufc-wmc-null-edition-key-over-watcher.md)
+- [Daytime monitor: UFC (ufc_strike) wmc null-`edition_key` = 155 (all new in 7d, 2 wallets) crosses the snapshot's >100 / >25-new watcher but has no continuous trust arm (the 11-10 wmc-null-key arm is Top-Shot-only); likely UFC-on-Aptos reopen churn — confirm a UFC resolver is draining it and decide on a healer leg / `ufc_wmc_null_edition_key_rows` arm](2026-11-24T0114Z-rpc-daytime-monitor-ufc-wmc-null-edition-key-over-watcher.md) — 🔎 DIAGNOSED 11-23 ~5:55 PM PT (Claude Code cloud): NOT self-draining — enrich chain's 45 s caller timeout < one 100-NFT page, every run restarts at start=0, and the fallback `ufc-enrichment-drain` has no caller since 10-18; 2 non-member wallets; fix designed in the filing, not shipped
 
 ## 2026-11-23 — 5 filings
 
