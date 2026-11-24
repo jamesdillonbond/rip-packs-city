@@ -28,6 +28,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - Not done: scoping the scan, because render_ids written by other writers rely on the full sweep; that needs an equivalence proof.
 - Verify: next runs (hourly :37) `ok=true`, `derive_error` null; a run's `duration_ms` over ~45 s with ok=true is the raise working.
 - Revert: `ALTER FUNCTION public.derive_pinnacle_wmc_from_catalog() RESET statement_timeout;`
+- Read 10:41 PM PT: the 10:37 PM run ok, derived 214 (the 9:37 backlog included), 21.5 s, derive_error null. Under 30 s, so it does not yet PROVE the 90 s binds; the focus.md read stays open until a run over ~45 s succeeds or a derive times out again.
 
 ### 2026-11-23 ~9:55 PM PT · ✅ SHIPPED (code) — franchise hub checklist link names the Series Checklists (Cowork cloud, attended; Trevor: "Keep going")
 - `/teams/<league>/<slug>` collection panel: the lead checklist link now reads "series checklists, every edition, what you own, cost to complete", so the new panel can be found from the hub. Copy only.
