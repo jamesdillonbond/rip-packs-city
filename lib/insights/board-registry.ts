@@ -131,7 +131,7 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     kind: "dataset",
     name: "Candy Squeeze Board",
     description:
-      "Candy cards ranked by the share of their collector-held copies with a live Magic Eden listing, with floor, FMV and 30-day sales: the 2026 MLB ICONs by default, and every other Candy set whose listings RPC can verify on its own page.",
+      "Candy cards ranked by the share of their collector-held copies with a live Magic Eden or OpenSea listing, with floor, FMV and 30-day sales: the 2026 MLB ICONs by default, and every other Candy set whose listings RPC can verify on its own page.",
     publicApi: true,
   },
   {

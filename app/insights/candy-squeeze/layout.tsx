@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   // The root template appends " | Rip Packs City" (deep-audit D24).
   title: "Candy Squeeze Board",
   description:
-    "Candy cards ranked by how few collector-held copies are listed for sale on Magic Eden — the 2026 MLB ICONs and every older Candy set, tightest supply first. Free. No signup.",
+    "Candy cards ranked by how few collector-held copies are listed for sale on Magic Eden or OpenSea — the 2026 MLB ICONs and every older Candy set, tightest supply first. Free. No signup.",
   keywords: [
     "Candy MLB ICON supply",
     "Candy Digital listings",

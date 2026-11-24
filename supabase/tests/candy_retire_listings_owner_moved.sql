@@ -9,9 +9,11 @@
 -- Never retired: holder = seller; a walk too close to first_seen; a multi-run walk with no clean start
 -- recorded, or one that began before first_seen; an errored walk.
 -- A card back with its seller lifts the mark.
+-- 11-23: only Magic Eden asks are judged — an OpenSea ask escrows the card (holder = its ListState, never the
+-- seller), so it is never retired here; its own lane confirms the escrow hourly.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261121012809_audit_20261120_candy_owner_moved_census_arm_own_statement.sql);
+-- (supabase/migrations/20261124044913_audit_20261123_candy_owner_moved_retirer_magic_eden_only.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -23,7 +25,7 @@ CREATE TABLE public.candy_collections (set_id uuid, last_census_at timestamptz, 
   last_census_clean_walk_started_at timestamptz);
 CREATE TABLE public.wallet_moments_cache (collection_id uuid, wallet_address text, moment_id text, last_seen_at timestamptz);
 CREATE TABLE public.candy_listings (pda_address text PRIMARY KEY, token_mint text, edition_id uuid, seller text,
-  is_active boolean, first_seen_at timestamptz, owner_moved_at timestamptz);
+  is_active boolean, first_seen_at timestamptz, owner_moved_at timestamptz, venue text NOT NULL DEFAULT 'magic_eden');
 CREATE TABLE public.candy_packs (token_mint text, owner text, last_seen_at timestamptz);
 CREATE TABLE public.candy_pack_listings (pda_address text PRIMARY KEY, token_mint text, seller text,
   is_active boolean, first_seen_at timestamptz, owner_moved_at timestamptz);
@@ -42,6 +44,9 @@ DECLARE
   v_packs_cleared integer;
 BEGIN
   -- Evidence: a census walk that ran AFTER we first saw the ask shows another owner.
+  -- MAGIC EDEN asks only (11-23): an OpenSea ask ESCROWS the card — its on-chain owner is the ListState
+  -- account, never the seller — so "census holder <> seller" is TRUE of every live OpenSea ask. Those
+  -- rows are confirmed hourly by their own lane (asset owner = ListState) and retired there.
   -- (1) The holder row itself was (re)written after first_seen (registry census) — the 11-08 rule,
   --     unchanged, so it keeps its per-ask index plan.
   UPDATE candy_listings l
@@ -49,6 +54,7 @@ BEGIN
          owner_moved_at = COALESCE(l.owner_moved_at, now())
     FROM wallet_moments_cache w
    WHERE l.is_active
+     AND l.venue = 'magic_eden'
      AND w.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid
      AND w.moment_id = l.token_mint
      AND l.seller IS NOT NULL
@@ -67,6 +73,7 @@ BEGIN
          owner_moved_at = COALESCE(l.owner_moved_at, now())
     FROM editions e, candy_collections c, wallet_moments_cache w
    WHERE l.is_active
+     AND l.venue = 'magic_eden'
      AND l.seller IS NOT NULL
      AND e.id = l.edition_id
      AND c.set_id = e.set_id
@@ -116,6 +123,7 @@ BEGIN
     'cards_cleared', v_cards_cleared, 'packs_cleared', v_packs_cleared);
 END;
 $$;
+
 -- <<< END verbatim candy_retire_listings_owner_moved <<<
 
 \set CANDY '''209ade70-32c5-4470-bc7c-4793d660f713'''
@@ -149,7 +157,8 @@ INSERT INTO public.wallet_moments_cache VALUES
   (:CANDY::uuid, 'NEWWALLET', 'M_MULTIEARLY', now() - interval '2 days'), -- S7, clean multi-run before -> kept
   (:CANDY::uuid, 'SELLER',    'M_OWNED',    now() - interval '2 days'),  -- S1, holder = seller   -> kept
   (:CANDY::uuid, 'BUYER',     'M_REGISTRY', now() - interval '1 hour'),  -- S5, row rewritten after first_seen -> RETIRED (old arm)
-  (:CANDY::uuid, 'SELLER',    'M_BACK',     now() - interval '5 minutes'); -- marked earlier, now back with seller -> mark lifted
+  (:CANDY::uuid, 'SELLER',    'M_BACK',     now() - interval '5 minutes'), -- marked earlier, now back with seller -> mark lifted
+  (:CANDY::uuid, 'OS_LISTSTATE', 'M_OPENSEA', now() - interval '1 hour');  -- OpenSea escrow: holder <> seller, rewritten after first_seen, S1 walk -> kept
 INSERT INTO public.candy_listings VALUES
   ('P_PHANTOM',  'M_PHANTOM',  '20000000-0000-0000-0000-000000000001', 'OLDCUSTODY', true, now() - interval '3 hours', NULL),
   ('P_TOOCLOSE', 'M_TOOCLOSE', '20000000-0000-0000-0000-000000000002', 'OLDCUSTODY', true, now() - interval '3 hours', NULL),
@@ -161,6 +170,8 @@ INSERT INTO public.candy_listings VALUES
   ('P_OWNED',    'M_OWNED',    '20000000-0000-0000-0000-000000000001', 'SELLER',     true, now() - interval '3 hours', NULL),
   ('P_REGISTRY', 'M_REGISTRY', '20000000-0000-0000-0000-000000000005', 'SELLER',     true, now() - interval '3 hours', NULL),
   ('P_BACK',     'M_BACK',     '20000000-0000-0000-0000-000000000001', 'SELLER',     false, now() - interval '3 days', now() - interval '1 day');
+INSERT INTO public.candy_listings VALUES
+  ('OS_LISTSTATE', 'M_OPENSEA', '20000000-0000-0000-0000-000000000001', 'SELLER', true, now() - interval '3 hours', NULL, 'opensea');
 
 DO $t$
 DECLARE v jsonb;
@@ -178,6 +189,8 @@ BEGIN
                     WHERE pda_address IN ('P_TOOCLOSE','P_MULTIRUN','P_ERRORED','P_NOWALK','P_OWNED','P_MULTIEARLY')),
     '⚠ never retired: walk within 20 min of first_seen, multi-run walk with no clean start, a clean walk that began before first_seen, errored walk, no walk since, or holder = seller');
   PERFORM _assert((SELECT owner_moved_at IS NULL FROM public.candy_listings WHERE pda_address = 'P_BACK'), 'mark lifted');
+  PERFORM _assert((SELECT is_active AND owner_moved_at IS NULL FROM public.candy_listings WHERE pda_address = 'OS_LISTSTATE'),
+    '⚠ an escrowed OpenSea ask is never retired here, though both arms'' evidence (holder <> seller, rewritten after first_seen, a completed walk) holds for it');
 END
 $t$;
 

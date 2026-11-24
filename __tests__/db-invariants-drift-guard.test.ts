@@ -3734,9 +3734,10 @@ const PINS = [
     // census after first_seen + 20 min as evidence (the legacy census is insert-only, so ~9.6k
     // pre-migration phantom asks never met the row-level last_seen_at gate), or a CLEAN multi-run walk
     // that began after first_seen (candy_collections.last_census_clean_walk_started_at, same day).
+    // 11-23: both retire arms scoped to venue 'magic_eden' — an OpenSea ask escrows the card.
     fn: "candy_retire_listings_owner_moved",
     test: "supabase/tests/candy_retire_listings_owner_moved.sql",
-    migration: "supabase/migrations/20261121012809_audit_20261120_candy_owner_moved_census_arm_own_statement.sql",
+    migration: "supabase/migrations/20261124044913_audit_20261123_candy_owner_moved_retirer_magic_eden_only.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

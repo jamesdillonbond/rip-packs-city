@@ -155,6 +155,10 @@
       "schedule": "11 * * * *"
     },
     {
+      "path": "/api/ingest/candy-opensea-chain-listings",
+      "schedule": "41 * * * *"
+    },
+    {
       "path": "/api/candy-sales-indexer",
       "schedule": "20 * * * *"
     },

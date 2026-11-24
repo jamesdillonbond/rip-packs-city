@@ -1,7 +1,7 @@
 // app/api/public/insights/candy-squeeze/route.ts
 //
 // PUBLIC INSIGHTS — Candy Listed-Share Squeeze (2026-11-23, Candy parity pass 1): 2026 Candy ICONs ranked by the
-// share of their collector-held copies with a confirmed Magic Eden listing. JSON twin of /insights/candy-squeeze; the
+// share of their collector-held copies with a confirmed Magic Eden or OpenSea listing. JSON twin of /insights/candy-squeeze; the
 // read lives in lib/insights/candy-parity-boards.ts. A failed read is boardUnavailable, never an empty board.
 //
 // Query params: min_held=<1..10000> (default 25) · limit=<1..500> (default 300) · set=<Candy set id> (default: the 2026

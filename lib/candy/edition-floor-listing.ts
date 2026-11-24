@@ -43,6 +43,10 @@ export async function fetchCandyFloorListing(
       db.from("candy_listings")
         .select("token_mint,price_usd")
         .eq("edition_id", editionId)
+        // Magic Eden only (2026-11-23): the CTA deep-links Magic Eden's item page by mint, and OpenSea asks
+        // (venue 'opensea', from the chain) have no item URL RPC can confirm — they count toward the floor and the
+        // ask cap, but the button never sends a buyer to a page that may not show the ask.
+        .eq("venue", "magic_eden")
         .eq("is_active", true)
         .gt("price_usd", 0)
         .gte("last_seen_at", since)

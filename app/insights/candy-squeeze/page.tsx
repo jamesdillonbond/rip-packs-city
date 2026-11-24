@@ -2,7 +2,7 @@
 //
 // PUBLIC INSIGHTS — Candy Listed-Share Squeeze (2026-11-23, Candy parity passes 1–3; the Candy leg of
 // /insights/squeeze, /insights/allday-squeeze and /insights/pinnacle-squeeze). Candy has no lock or burn mechanic, so
-// its supply squeeze is how few of an edition's collector-held copies carry a live Magic Eden listing (re-seen by RPC's
+// its supply squeeze is how few of an edition's collector-held copies carry a live Magic Eden or OpenSea listing (re-seen by RPC's
 // sweep within 12 h — the same "confirmed" ask the edition pages use).
 //
 // This page is the default view: every 2026 Candy set (Base, All-Star Game, Gold, Quest rewards). Every other Candy set

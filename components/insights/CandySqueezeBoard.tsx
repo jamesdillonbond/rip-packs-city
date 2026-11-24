@@ -106,13 +106,13 @@ export default function CandySqueezeBoard({
             <>
               Which <strong>{activeSet.set_name}</strong> cards are collectors <strong>not selling</strong>? Every card in
               the set with {d.min_held}+ copies in collectors&rsquo; hands, ranked by the share of those copies listed on
-              Magic Eden right now — the tightest supply first.
+              Magic Eden or OpenSea right now — the tightest supply first.
             </>
           ) : (
             <>
               Which 2026 Candy ICONs are collectors <strong>not selling</strong>? Every ICON across the 2026 Base Series,
               All-Star Game and Gold sets with {d.min_held}+ copies in collectors&rsquo; hands, ranked by the share of those
-              copies listed on Magic Eden right now — the tightest supply first. Pick any other Candy set below.
+              copies listed on Magic Eden or OpenSea right now — the tightest supply first. Pick any other Candy set below.
             </>
           )}
         </p>
@@ -181,8 +181,10 @@ export default function CandySqueezeBoard({
         <p style={{ margin: 0 }}>
           Method: <strong>collector-held</strong> = copies in collectors&rsquo; wallets, counted from RPC&rsquo;s on-chain
           census (refreshed every 3 hours); copies in Candy&rsquo;s own wallets (inventory, ICON buyback and pack treasury)
-          are shown as Candy-held and left out. <strong>Listed</strong> = Magic Eden listings of the card that RPC&rsquo;s
-          sweep has seen in the last 12 hours, so 0 means none were live at that time. Listings left over from before
+          are shown as Candy-held and left out. <strong>Listed</strong> = Magic Eden and OpenSea listings of the card that
+          RPC&rsquo;s sweeps have seen in the last 12 hours (OpenSea&rsquo;s read straight from the Solana chain, each
+          confirmed by the card sitting in that listing&rsquo;s escrow), so 0 means none were live at that time.
+          Listings on other Solana marketplaces such as Tensor are not counted. Listings left over from before
           Candy&rsquo;s October wallet migration, whose seller no longer holds the card, are not counted, and asks far above
           the card&rsquo;s value are left out. A set appears only while RPC can vouch for its listings: it trades on Magic
           Eden, its last sweep was clean and under 12 hours old, and its holders were fully counted. Ties are broken by
