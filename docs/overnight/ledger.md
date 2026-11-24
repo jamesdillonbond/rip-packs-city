@@ -12,6 +12,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~4:54 PM PT · 🔧 SHIPPED (code) — `detect-league-drift` + `refresh-error-triage` write invocation markers first (E5 23 → 21) (Claude Code cloud; Trevor: "work through anything unresolved from this thread")
+- **Why:** highest margin-used left against each route's own 60 s wall (18 % / 17 %), both `after()`-only.
+- **What:** marker first in each `after()`; terminal `log_pipeline_run` errors read (R123); `refresh-error-triage`'s always-0 `rows_*` (it counts nothing) → NULL — its only reader, the zero-yield arm, keys on a fall from a non-zero baseline, so no detector changes. Ordering pins + unauthorized control, mutation-verified; ratchet BUDGET 21. Remaining E5 queue: every route ≤ 11 % of its wall.
+- **Revert:** `git revert` the commit "E5: detect-league-drift + refresh-error-triage markers first (23 -> 21)".
+
 ### 2026-11-23 ~4:38 PM PT · 🔧 SHIPPED (code) — `admin/analytics-smoke` + `cron/pinnacle-wmc-render-id` write invocation markers first (E5 25 → 23) (Claude Code cloud; Trevor: "Keep going")
 - **Why:** next two on E5's queue by measured margin (19 % and 13 % of 300 s walls), both `after()`-only; a `maxDuration` kill there logs nothing.
 - **What:** `writeInvocationHeartbeat` first in each `after()` (the Pinnacle route passes its OWN client); each terminal `log_pipeline_run` now reads its returned error (R123); `rows_*` written NULL instead of a fabricated 0 when nothing was measured (analytics-smoke with no envelope; render-id on a failed candidate read; render-id `rows_skipped`, which it never counts). Ordering pins + unauthorized control, mutation-verified; ratchet BUDGET 23.
