@@ -12,6 +12,13 @@ const state: { result: { data: any[] | null; error: any }; throwErr: Error | nul
 }
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {}, supabase: {} }))
+const mvAsOf: { value: string | null; calls: string[] } = { value: "2026-11-24T05:48:00.000Z", calls: [] }
+vi.mock("@/lib/insights/mv-freshness", () => ({
+  readMvAsOf: async (board: string) => {
+    mvAsOf.calls.push(board)
+    return mvAsOf.value
+  },
+}))
 vi.mock("@/lib/insights/autographs-board", async (orig) => {
   const actual = await orig<typeof import("@/lib/insights/autographs-board")>()
   return {
@@ -33,6 +40,33 @@ beforeEach(() => {
   state.result = { data: [], error: null }
   state.throwErr = null
   state.lastOpts = null
+})
+
+describe("GET /api/public/insights/autographs — the Panini leg (2026-11-23)", () => {
+  it("serves Panini from its matview and stamps the REFRESH time, not the fetch time", async () => {
+    mvAsOf.value = "2026-11-24T05:48:00.000Z"
+    mvAsOf.calls = []
+    state.result = { data: [{ edition_id: "u1", external_id: "packcard-1631_302397_7719658_7", low_ask: 12 }], error: null }
+    const res = await GET(req(`${base}?collection=panini_blockchain`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.meta.source).toBe("mv_panini_autographs")
+    expect(body.meta.fetched_at).toBe("2026-11-24T05:48:00.000Z")
+    expect(mvAsOf.calls).toEqual(["panini-autographs"])
+  })
+  it("an undatable refresh is null, never now()", async () => {
+    mvAsOf.value = null
+    const res = await GET(req(`${base}?collection=panini_blockchain`))
+    expect((await res.json()).meta.fetched_at).toBeNull()
+  })
+  it("REFUSES the premium sort on Panini (no unsigned printing) instead of an empty board", async () => {
+    const res = await GET(req(`${base}?collection=panini_blockchain&sort=premium`))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.rows).toBeUndefined()
+    expect(body.supported).not.toContain("premium")
+    expect(state.lastOpts).toBeNull()
+  })
 })
 
 describe("GET /api/public/insights/autographs", () => {

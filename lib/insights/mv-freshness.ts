@@ -50,6 +50,8 @@ export const MV_PIPELINE = {
   // Top Shot perfect-mint headline of /insights/serial-premiums (2026-11-14,
   // refresh_topshot_perfect_mint_premiums_board, pg_cron rpc-refresh-perfect-mint-premiums every 2 h).
   "perfect-mint-premiums": "topshot-perfect-mint-premiums-mv",
+  // Panini leg of /insights/autographs (2026-11-23, refresh_panini_autographs, hourly at :48).
+  "panini-autographs": "panini-autographs",
 } as const
 
 export type MvBoardKey = keyof typeof MV_PIPELINE

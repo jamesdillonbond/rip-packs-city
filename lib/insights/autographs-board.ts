@@ -11,8 +11,13 @@
 // ASK_ONLY, and a signed-from-unsigned estimate was measured WORSE than FMV
 // (docs/research/autographs-topshot-allday-2026-10-19.md). `premium_x` exists only
 // when both sides have ≥ 3 sales in 90 days.
+//
+// Panini (2026-11-23): its own matview, mv_panini_autographs (hourly; migration 20261124055225) — every edition whose
+// INSERT name carries Signature(s) / Autograph(s). Same row shape; `unsigned_*` and `premium_x` are always null there
+// (a Panini autograph insert has no unsigned printing of the same card), so the "premium" sort does not apply to it.
+// `product_name` / `sport` fill the subline Panini cards have no team for.
 
-export const AUTOGRAPH_BOARD_COLLECTIONS = ["nba_top_shot", "nfl_all_day"] as const
+export const AUTOGRAPH_BOARD_COLLECTIONS = ["nba_top_shot", "nfl_all_day", "panini_blockchain"] as const
 export type AutographBoardCollection = (typeof AUTOGRAPH_BOARD_COLLECTIONS)[number]
 
 export const AUTOGRAPH_BOARD_SORTS = ["listed", "premium", "recent", "scarcity"] as const
@@ -41,6 +46,20 @@ export type AutographRow = {
   unsigned_median_90d: number | null
   unsigned_sales_90d: number | null
   premium_x: number | null
+  /** Panini only: the product the card was printed in (Panini cards carry no team). */
+  product_name?: string | null
+  /** Panini only: the product's sport. */
+  sport?: string | null
+}
+
+/** The sorts a collection's rows can answer. Panini has no unsigned pairing, so no premium. */
+export function autographSortsFor(collection: AutographBoardCollection): readonly AutographBoardSort[] {
+  return collection === "panini_blockchain" ? AUTOGRAPH_BOARD_SORTS.filter((s) => s !== "premium") : AUTOGRAPH_BOARD_SORTS
+}
+
+/** The relation behind one collection's rows. */
+export function autographSourceFor(collection: AutographBoardCollection): "v_insights_autographs" | "mv_panini_autographs" {
+  return collection === "panini_blockchain" ? "mv_panini_autographs" : "v_insights_autographs"
 }
 
 const COLS = [
@@ -84,11 +103,14 @@ export function normalizeAutographRow(raw: Record<string, unknown>): AutographRo
     unsigned_median_90d: num(raw.unsigned_median_90d),
     unsigned_sales_90d: num(raw.unsigned_sales_90d),
     premium_x: num(raw.premium_x),
+    product_name: str(raw.product_name),
+    sport: str(raw.sport),
   }
 }
 
 /** URL slug for an edition page of this board's collections. */
 export function autographCollectionUrlSlug(collection: string): string {
+  if (collection === "panini_blockchain") return "panini-blockchain"
   return collection === "nfl_all_day" ? "nfl-all-day" : "nba-top-shot"
 }
 
@@ -109,7 +131,8 @@ export async function fetchAutographsBoard(
   db: AutographBoardClient,
   opts: { collection: AutographBoardCollection; sort: AutographBoardSort; listedOnly?: boolean; limit: number },
 ): Promise<{ data: AutographRow[] | null; error: { message?: string } | null }> {
-  let q = db.from("v_insights_autographs").select(COLS).eq("collection", opts.collection)
+  const cols = opts.collection === "panini_blockchain" ? `${COLS}, product_name, sport` : COLS
+  let q = db.from(autographSourceFor(opts.collection)).select(cols).eq("collection", opts.collection)
   if (opts.listedOnly || opts.sort === "listed") q = q.not("low_ask", "is", null)
   if (opts.sort === "premium") q = q.not("premium_x", "is", null)
   if (opts.sort === "recent") q = q.not("last_sale_at", "is", null)

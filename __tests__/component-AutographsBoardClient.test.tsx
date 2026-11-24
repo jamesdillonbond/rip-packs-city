@@ -87,4 +87,31 @@ describe("AutographsBoardClient", () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain("collection=nfl_all_day")
     expect(container.querySelectorAll("tbody tr")).toHaveLength(0)
   })
+
+  it("Panini (2026-11-23): picking it from the premium sort falls back to cheapest-listed, hides premium, links the Panini edition and names the product", async () => {
+    const pan = row({
+      edition_id: "u1", external_id: "packcard-1631_302397_7719658_7", collection: "panini_blockchain",
+      player_name: "AJ Griffin", team_name: null, set_name: "Rookie Signatures", parallel: null,
+      unsigned_external_id: null, unsigned_median_90d: null, unsigned_sales_90d: null, premium_x: null,
+      product_name: "2022-23 Panini NFT Prizm Basketball",
+    })
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ rows: [pan], meta: { fetched_at: null } }),
+      text: async () => JSON.stringify({ rows: [pan], meta: { fetched_at: null } }),
+    })
+    const { getByText, queryByText, container } = render(<AutographsBoardClient initialRows={[row()]} initialFetchedAt="2026-10-20T04:00:00Z" />)
+    fireEvent.click(getByText("Biggest premium"))
+    fireEvent.click(getByText("Panini"))
+    await waitFor(() => expect(container.textContent).toContain("AJ Griffin"))
+    const last = String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0])
+    expect(last).toContain("collection=panini_blockchain")
+    expect(last).toContain("sort=listed")
+    expect(queryByText("Biggest premium")).toBeNull()
+    expect(container.textContent).toContain("2022-23 Panini NFT Prizm Basketball")
+    const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))
+    expect(hrefs).toContain("/panini-blockchain/edition/packcard-1631_302397_7719658_7")
+    // an undatable matview refresh renders "—", never the previous tab's time
+    expect(container.textContent).toContain("Updated —")
+  })
 })

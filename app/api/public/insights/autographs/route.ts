@@ -20,9 +20,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
 import { boardRowMeta } from "@/lib/insights/board-meta"
+import { readMvAsOf } from "@/lib/insights/mv-freshness"
 import {
   AUTOGRAPH_BOARD_COLLECTIONS,
   AUTOGRAPH_BOARD_SORTS,
+  autographSortsFor,
+  autographSourceFor,
   fetchAutographsBoard,
   type AutographBoardCollection,
   type AutographBoardSort,
@@ -46,6 +49,14 @@ export async function GET(req: NextRequest) {
   const sort: AutographBoardSort = (AUTOGRAPH_BOARD_SORTS as readonly string[]).includes(sortRaw)
     ? (sortRaw as AutographBoardSort)
     : "listed"
+  // Panini autographs have no unsigned printing, so a premium view of them would be an empty board that reads as
+  // "no premiums" — refuse it instead (2026-11-23).
+  if (!autographSortsFor(collection).includes(sort)) {
+    return NextResponse.json(
+      { error: "unsupported sort for this collection", supported: autographSortsFor(collection) },
+      { status: 400 },
+    )
+  }
   const listedOnly = sp.get("listed") === "1"
   const limit = Math.max(1, Math.min(500, Number(sp.get("limit")) || 200))
 
@@ -58,13 +69,17 @@ export async function GET(req: NextRequest) {
   if (result.error || !result.data) return boardUnavailable(result.error, "insights/autographs")
   const rows = result.data
 
+  // The Panini leg is a matview: its data time is the last refresh, not this fetch (lib/insights/mv-freshness.ts).
+  // null = cannot tell, rendered as "—", never now().
+  const fetchedAt = collection === "panini_blockchain" ? await readMvAsOf("panini-autographs") : new Date().toISOString()
+
   const elapsedMs = Date.now() - startedAt
   console.log(`[public/insights/autographs] returned=${rows.length} collection=${collection} sort=${sort} elapsedMs=${elapsedMs}`)
 
   const res = NextResponse.json({
     meta: {
-      fetched_at: new Date().toISOString(),
-      source: "v_insights_autographs",
+      fetched_at: fetchedAt,
+      source: autographSourceFor(collection),
       ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
       filters: { collection, sort, listed: listedOnly || sort === "listed", limit },

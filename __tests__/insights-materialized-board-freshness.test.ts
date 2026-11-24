@@ -102,6 +102,8 @@ describe("readMvAsOf", () => {
       "panini-deals": "panini-public-deals",
       // refresh_topshot_perfect_mint_premiums_board (audit_20261114_perfect_mint_premiums_refresh_logs_its_run)
       "perfect-mint-premiums": "topshot-perfect-mint-premiums-mv",
+      // refresh_panini_autographs (audit_20261123_panini_autographs_board)
+      "panini-autographs": "panini-autographs",
     })
   })
 })

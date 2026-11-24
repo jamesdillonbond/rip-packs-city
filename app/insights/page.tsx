@@ -392,7 +392,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Autographed Moments",
     blurb:
-      "Every signed Top Shot and All Day edition, edition by edition — signing often lands on one parallel only, like a Rookie Debut Hardcourt /50. See the lowest live ask, recent sales, and what the same Moment trades for unsigned.",
+      "Every signed Top Shot and All Day edition, edition by edition — signing often lands on one parallel only, like a Rookie Debut Hardcourt /50 — plus every Panini on-chain autograph card. See the lowest live ask, recent sales, and what the same Moment trades for unsigned.",
     cta: "Open autographs",
     available: true,
   },

@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import {
   autographEditionHref,
+  autographSortsFor,
   type AutographBoardCollection,
   type AutographBoardSort,
   type AutographRow,
@@ -49,6 +50,7 @@ function fmtDay(iso: string | null): string {
 const COLLECTIONS: { key: AutographBoardCollection; label: string }[] = [
   { key: "nba_top_shot", label: "NBA Top Shot" },
   { key: "nfl_all_day", label: "NFL All Day" },
+  { key: "panini_blockchain", label: "Panini" },
 ]
 const SORTS: { key: AutographBoardSort; label: string; blurb: string }[] = [
   { key: "listed", label: "Cheapest listed", blurb: "Signed editions with a live ask, cheapest first." },
@@ -85,7 +87,7 @@ export default function AutographsBoardClient({
     setLoading(true)
     setLoadFailed(false)
     const qs = new URLSearchParams({ collection: nextCollection, sort: nextSort, limit: "200" })
-    fetchJson<{ rows?: AutographRow[]; meta?: { fetched_at?: string } }>(
+    fetchJson<{ rows?: AutographRow[]; meta?: { fetched_at?: string | null } }>(
       `/api/public/insights/autographs?${qs.toString()}`,
       { signal: ctrl.signal },
     )
@@ -98,7 +100,8 @@ export default function AutographsBoardClient({
           return
         }
         setRows(res.json.rows as AutographRow[])
-        if (res.json.meta?.fetched_at) setFetchedAt(res.json.meta.fetched_at)
+        // A matview leg (Panini) may not be datable: null renders "—", never the previous tab's time.
+        setFetchedAt(res.json.meta?.fetched_at ?? null)
       })
       .finally(() => {
         if (!ctrl.signal.aborted) setLoading(false)
@@ -108,8 +111,11 @@ export default function AutographsBoardClient({
 
   function pickCollection(c: AutographBoardCollection) {
     if (c === collection) return
+    // Panini has no unsigned printing, so no premium view: fall back to the default sort rather than ask for it.
+    const nextSort = autographSortsFor(c).includes(sort) ? sort : "listed"
     setCollection(c)
-    load(c, sort)
+    setSort(nextSort)
+    load(c, nextSort)
   }
   function pickSort(k: AutographBoardSort) {
     if (k === sort) return
@@ -132,6 +138,8 @@ export default function AutographsBoardClient({
           Every signed NBA Top Shot and NFL All Day edition, read from Dapper&apos;s own autograph data. Signing is per
           edition — often only one parallel of a player&apos;s Moment carries the signature — so this lists the exact
           signed printing, its lowest live ask, what it has traded for, and what the same Moment sells for unsigned.
+          The Panini tab lists every autograph card Panini has printed on chain: its lowest live ask and what it has
+          traded for.
         </p>
       </header>
 
@@ -141,7 +149,7 @@ export default function AutographsBoardClient({
         ))}
       </div>
       <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-        {SORTS.map((s) => (
+        {SORTS.filter((s) => autographSortsFor(collection).includes(s.key)).map((s) => (
           <Chip key={s.key} active={sort === s.key} onClick={() => pickSort(s.key)} label={s.label} />
         ))}
       </div>
@@ -168,7 +176,7 @@ export default function AutographsBoardClient({
                   <Link href={autographEditionHref(r)} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontWeight: 600 }}>
                     {r.player_name ?? "—"}
                   </Link>
-                  <div style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{r.team_name ?? ""}</div>
+                  <div style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{r.team_name ?? r.product_name ?? ""}</div>
                 </td>
                 <td style={td}>
                   <div style={{ color: "var(--rpc-text-secondary)" }}>{r.set_name ?? "—"}</div>
@@ -211,7 +219,9 @@ export default function AutographsBoardClient({
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
         Signed = Dapper&apos;s Atlas marks the edition autographed. Unsigned printing = the same player&apos;s base-set
         edition for a Signature Edition set, or the Standard printing of a signed parallel. Premium = signed 90-day
-        median ÷ unsigned 90-day median, shown only when both sides traded at least 3 times.{" "}
+        median ÷ unsigned 90-day median, shown only when both sides traded at least 3 times. Panini: an autograph card is
+        one whose insert is a Signatures or Autographs line; Panini prints those as their own cards, so there is no
+        unsigned printing to compare and no premium. Lowest ask = the cheapest listing RPC re-read in the last 7 days.{" "}
         {fetchedAt
           ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} PT.`
           : "Updated — (the read did not complete, so there is no data time to show)."}

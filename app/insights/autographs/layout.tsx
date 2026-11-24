@@ -11,9 +11,9 @@ import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-const TITLE = "Autographed Moments — Every Signed Top Shot & All Day Edition"
+const TITLE = "Autographed Moments — Every Signed Top Shot, All Day & Panini Card"
 const DESCRIPTION =
-  "Every signed NBA Top Shot and NFL All Day edition in one place — the lowest live ask, recent sales, and what the same Moment trades for unsigned. Read from Dapper's own autograph data, edition by edition. Free, no signup."
+  "Every signed NBA Top Shot and NFL All Day edition and every Panini on-chain autograph card in one place — the lowest live ask, recent sales, and what the same Moment trades for unsigned. Free, no signup."
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -25,6 +25,7 @@ export const metadata: Metadata = {
     "All Day autographed moments",
     "Top Shot Hardcourt signed",
     "Signature Series Top Shot",
+    "Panini NFT autographs",
     "digital autograph collectibles",
   ].join(", "),
   alternates: { canonical: `${SITE_URL}/insights/autographs` },
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
     ...TWITTER_INHERITED,
     card: "summary_large_image",
     title: TITLE,
-    description: "Every signed Top Shot and All Day edition — live ask, recent sales, and the unsigned price of the same Moment.",
+    description: "Every signed Top Shot, All Day and Panini card — live ask, recent sales, and the unsigned price of the same Moment.",
     images: [`${SITE_URL}/api/og/insights/autographs?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
