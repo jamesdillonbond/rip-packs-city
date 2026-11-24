@@ -12,6 +12,8 @@ import {
   OPENSEA_SOLANA_PROGRAM,
   decodeListState,
   encodeBase58,
+  fetchAssetOwners,
+  gmaBatchSize,
   runOpenSeaChainListings,
 } from "@/lib/candy/opensea-chain-listings"
 
@@ -37,18 +39,18 @@ const coreAsset = (owner: number) => { const a = new Uint8Array(33); a[0] = 1; a
 const b64 = (u: Uint8Array) => Buffer.from(u).toString("base64")
 
 // A fake RPC: getProgramAccounts returns `accounts`; getMultipleAccounts answers from `assetOwners`.
-function fakeRpc(accounts: Array<{ pda: number; data: Uint8Array }>, assetOwners: Map<string, number | null>, opts: { failGma?: boolean } = {}) {
+function fakeRpc(accounts: Array<{ pda: number; data: Uint8Array }>, assetOwners: Map<string, number | null>, opts: { failGma?: boolean; gma429On?: string } = {}) {
   const calls: string[] = []
-  const f = async (_url: string, init?: RequestInit) => {
+  const f = async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body))
-    calls.push(body.method)
+    calls.push(`${body.method}@${url}`)
     if (body.method === "getProgramAccounts") {
       expect(body.params[0]).toBe(OPENSEA_SOLANA_PROGRAM)
       expect(body.params[1].filters[0].memcmp.bytes).toBe(LIST_STATE_DISCRIMINATOR_B58)
       return new Response(JSON.stringify({ result: accounts.map((a) => ({ pubkey: b58(a.pda), account: { data: [b64(a.data), "base64"] } })) }))
     }
     if (body.method === "getMultipleAccounts") {
-      if (opts.failGma) return new Response("boom", { status: 503 })
+      if (opts.failGma || url === opts.gma429On) return new Response("rate limited", { status: opts.failGma ? 503 : 429 })
       const value = (body.params[0] as string[]).map((asset) => {
         const o = assetOwners.get(asset)
         return o == null ? null : { data: [b64(coreAsset(o)), "base64"] }
@@ -174,9 +176,28 @@ describe("runOpenSeaChainListings", () => {
     const accounts = [{ pda: 51, data: listState({ owner: 1, asset: 11, lamports: BigInt(1) }) }, ...filler(MIN_PLAUSIBLE_ACCOUNTS)]
     const { f } = fakeRpc(accounts, new Map([[b58(11), 51]]), { failGma: true })
     const { db, upserts, active } = fakeDb({ wmc, editions, active: [{ pda_address: "OLD", last_seen_at: new Date(NOW - 1).toISOString() }] })
-    await expect(runOpenSeaChainListings(db, { fetchImpl: f, now: () => NOW })).rejects.toThrow(/getMultipleAccounts/)
+    await expect(runOpenSeaChainListings(db, { fetchImpl: f, now: () => NOW, sleep: async () => {} })).rejects.toThrow(/getMultipleAccounts HTTP 503/)
     expect(upserts).toEqual([])
     expect([...active.keys()]).toEqual(["OLD"])
+  })
+
+  it("a 429 from the census RPC falls through to the next RPC for the asset reads (the 11-23 first-run failure)", async () => {
+    const accounts = [{ pda: 51, data: listState({ owner: 1, asset: 11, lamports: BigInt(1) }) }, ...filler(MIN_PLAUSIBLE_ACCOUNTS)]
+    const { f, calls } = fakeRpc(accounts, new Map([[b58(11), 51]]), { gma429On: "https://a" })
+    const { db, upserts } = fakeDb({ wmc, editions })
+    const rep = await runOpenSeaChainListings(db, { fetchImpl: f, now: () => NOW, urls: ["https://a", "https://b"], sleep: async () => {} })
+    expect(rep.written).toBe(1)
+    expect(upserts.map((r) => r.pda_address)).toEqual([b58(51)])
+    expect(calls).toEqual(["getProgramAccounts@https://a", "getMultipleAccounts@https://a", "getMultipleAccounts@https://b"])
+  })
+
+  it("reads publicnode in its 10-account batches", async () => {
+    const owners = new Map<string, number | null>(Array.from({ length: 25 }, (_, i) => [b58(20 + i), 30] as [string, number]))
+    const { f, calls } = fakeRpc([], owners)
+    const got = await fetchAssetOwners(f, [...owners.keys()], ["https://solana-rpc.publicnode.com"], { sleep: async () => {} })
+    expect(got.size).toBe(25)
+    expect(calls.filter((c) => c.startsWith("getMultipleAccounts")).length).toBe(3)
+    expect(gmaBatchSize("https://api.mainnet-beta.solana.com")).toBe(100)
   })
 
   it("an implausibly small census retires nothing and says why", async () => {

@@ -172,23 +172,67 @@ const chunk = <T,>(xs: T[], n: number): T[][] => {
  * Current owner of each Core asset (bytes [1..33] of the account; key byte 1 = AssetV1). Missing / non-Core accounts
  * are absent from the map. Throws on a failed or malformed answer — an unconfirmed escrow must not be written.
  */
-export async function fetchAssetOwners(doFetch: FetchFn, assets: string[], url: string): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  for (const slice of chunk(assets, 100)) {
+/** getMultipleAccounts batch ceiling per RPC: publicnode answers "A maximum of 10 accounts is allowed" (probed 11-23). */
+export function gmaBatchSize(url: string): number {
+  return url.includes("publicnode") ? 10 : 100
+}
+
+async function gmaOnce(doFetch: FetchFn, url: string, keys: string[]): Promise<unknown[] | string> {
+  try {
     const r = await doFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         jsonrpc: "2.0", id: 1, method: "getMultipleAccounts",
-        params: [slice, { encoding: "base64", dataSlice: { offset: 0, length: 33 } }],
+        params: [keys, { encoding: "base64", dataSlice: { offset: 0, length: 33 } }],
       }),
       signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
     })
-    if (!r.ok) throw new Error(`getMultipleAccounts HTTP ${r.status}`)
+    if (!r.ok) return `getMultipleAccounts HTTP ${r.status} (${url})`
     const j = (await r.json()) as { result?: { value?: unknown }; error?: { message?: string } }
-    if (j.error) throw new Error(`getMultipleAccounts: ${j.error.message ?? "error"}`)
-    const value = j.result?.value
-    if (!Array.isArray(value) || value.length !== slice.length) throw new Error("getMultipleAccounts: malformed result")
+    if (j.error) return `getMultipleAccounts: ${j.error.message ?? "error"} (${url})`
+    const v = j.result?.value
+    if (!Array.isArray(v) || v.length !== keys.length) return `getMultipleAccounts: malformed result (${url})`
+    return v
+  } catch (e) {
+    return `getMultipleAccounts: ${e instanceof Error ? e.message : String(e)} (${url})`
+  }
+}
+
+export async function fetchAssetOwners(
+  doFetch: FetchFn,
+  assets: string[],
+  urls: string[],
+  opts: { sleep?: (ms: number) => Promise<void>; paceMs?: number } = {},
+): Promise<Map<string, string>> {
+  // The first live run (11-23 9:41 PM PT) died on mainnet-beta's 429 from Vercel's egress (back-to-back calls). So the
+  // calls are paced, each 100-asset slice tries every RPC in turn (in that RPC's own batch size) over three backed-off
+  // rounds, and only a slice that no RPC answered fails the run.
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  const pace = opts.paceMs ?? 400
+  const out = new Map<string, string>()
+  let first = true
+  for (const slice of chunk(assets, 100)) {
+    if (!first) await sleep(pace)
+    first = false
+    let value: unknown[] | null = null
+    let last = "no rpc"
+    for (let round = 0; round < 3 && !value; round++) {
+      if (round > 0) await sleep(2000 * round)
+      for (const url of urls) {
+        const got: unknown[] = []
+        let failed: string | null = null
+        for (const part of chunk(slice, gmaBatchSize(url))) {
+          const v = await gmaOnce(doFetch, url, part)
+          if (typeof v === "string") { failed = v; break }
+          got.push(...v)
+        }
+        if (failed) { last = failed; continue }
+        value = got
+        break
+      }
+    }
+    if (!value) throw new Error(last)
     value.forEach((acc, i) => {
       const data = (acc as { data?: string[] } | null)?.data?.[0]
       if (typeof data !== "string") return
@@ -226,7 +270,7 @@ export interface OpenSeaChainListingsReport {
 
 export async function runOpenSeaChainListings(
   db: Db,
-  opts: { fetchImpl?: FetchFn; now?: () => number; solUsd?: () => Promise<number | null>; urls?: string[]; previousAccounts?: number | null } = {},
+  opts: { fetchImpl?: FetchFn; now?: () => number; solUsd?: () => Promise<number | null>; urls?: string[]; previousAccounts?: number | null; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<OpenSeaChainListingsReport> {
   const now = opts.now ?? Date.now
   const doFetch: FetchFn = opts.fetchImpl ?? ((u, i) => fetch(u, i))
@@ -284,7 +328,8 @@ export async function runOpenSeaChainListings(
   }
 
   // 3. Escrow check — the asset's on-chain owner must be the ListState account (see header). Throws on a failed read.
-  const owners = await fetchAssetOwners(doFetch, [...new Set(candy.map((d) => d.asset))], url)
+  const rpcOrder = [url, ...(opts.urls ?? CENSUS_RPC_URLS).filter((u) => u !== url)]
+  const owners = await fetchAssetOwners(doFetch, [...new Set(candy.map((d) => d.asset))], rpcOrder, { sleep: opts.sleep })
 
   // 4. Rows.
   let solRate: number | null = null
