@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:53 AM PT · 📝 DOCS — CLAUDE.md headroom 3 → 132 chars (Cowork, hygiene follow-up, `25d4356c1`)
+- The Code-patterns brand-token bullet condensed to a pointer at [brand-auth-proxy.md](../reference/brand-auth-proxy.md), which already carries all three facts (web `#E03A2F` vs email `#E55A4C`, why email hardcodes, theme-aware `--rpc-black` / `--rpc-text-primary`). The `#E03A2F` / `'Barlow Condensed'` ban stays. Verbatim original kept in [claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md) (topic-specificity test). CLAUDE.md 39,997 → 39,868 (`node -e` .length). Link guard 0 live broken; retired-rule + brand-token guards clean.
+- revert: git revert 25d4356c1
+
 ### 2026-11-24 ~10:45 AM PT · 🧹 DOCS — biweekly context hygiene (Cowork scheduled, laptop VM clone, `ea7b5fe47`) [ledger-roll]
 - **Ledger:** entries 2026-10-25 → 2026-11-09 (2,125 lines) rolled verbatim to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md); ledger 8,191 → 6,066 lines (still ~1.86 MB — entries are long). Header pointer now "older than 2026-11-10". Swallowed-heading awk unchanged, future-dated headings 0.
 - **Focus:** dated STEER blocks 2026-11-01 → 2026-11-16 (139 lines) rolled to [focus-archive-2026-H2.md](focus-archive-2026-H2.md); focus.md 92 KB → 53 KB. STANDING ×2, RETIRED STEERS, do-not-re-flag and the 11-23 steer kept.
