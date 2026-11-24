@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~11:35 AM PT · 📝 DOCS — inbox INDEX.md 734 KB → 193 KB: summaries of entries older than 30 days moved to inbox-index-archive.md (Cowork, Trevor: "Yes do it all", `e742773ad`)
+- 334 entries filed before 2026-10-25 are title + link only; full lines in [inbox-index-archive.md](inbox-index-archive.md) (same date headings, relative links re-based onto `inbox/`). Every filing still listed; counts unchanged (`inbox:index:check` clean); no filing moved; clobber detector 0. Verified with the inbox guard tests + md-link test on a cloud clone (npm ci + vitest, 34/34).
+- revert: git revert e742773ad
+
 ### 2026-11-24 ~11:32 AM PT · 📝 DOCS — deep-audit register 570 KB → 102 KB: resolved rows' full text moved to deep-audit-register-archive.md (Cowork, Trevor: "Yes do it all", `c6ddaf5aa`)
 - 187 RESOLVED rows now one-line stubs (same id, 5 columns, resolved date) pointing at [deep-audit-register-archive.md](../audits/deep-audit-register-archive.md); `check-register-integrity --before <parent>`: 192 rows, 0 vanished, 0 malformed. Other sections untouched.
 - revert: git revert c6ddaf5aa
