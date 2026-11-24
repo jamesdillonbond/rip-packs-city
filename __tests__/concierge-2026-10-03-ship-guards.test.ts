@@ -132,8 +132,13 @@ describe("get_team_checklist reads the same API the public team page renders", (
   it("fetches /api/entity/team-checklist-full-editions, resolves the franchise, and never fabricates a zero FMV", () => {
     const start = ROUTE.indexOf('if (toolName === "get_team_checklist") {')
     expect(start).toBeGreaterThan(0)
-    const body = ROUTE.slice(start, start + 6000)
+    // RE-PINNED 2026-11-23: a fixed 6,000-char window fell short when the tool gained the Series Checklists
+    // read — the body is the whole branch, up to the next tool.
+    const end = ROUTE.indexOf('if (toolName === "get_team_intel") {', start)
+    expect(end).toBeGreaterThan(start)
+    const body = ROUTE.slice(start, end)
     expect(body).toContain("/api/entity/team-checklist-full-editions?")
+    expect(body).toContain("/api/entity/team-series-checklists?")
     expect(body).toContain("await resolveTeamName(uuid, teamIn)")
     expect(body).toContain('fmv: typeof e.fmv_usd === "number" && e.fmv_usd > 0 ? e.fmv_usd : null')
     expect(body).toContain("0 = Series 1")
