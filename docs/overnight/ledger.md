@@ -12,6 +12,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~5:50 PM PT · 🔧 FIX — Disney Pinnacle probe pass: duplicate franchise checklist + its $1.83M cost, RPC Index headlining a day in progress, squeeze "0%" beside "3 listed", pin-page holder copy (Claude Code cloud; Trevor: "Keep probing … not leaving anything unresolved")
+- `get_team_checklist_progress` (`20261124015000`, applied ~5:48 PM PT): the Pinnacle arm summed the RAW floor ask; now ask ≤ 3× FMV, else FMV, no FMV → unpriced (every other arm's rule since 10-03). Mickey & Friends $1,828,613 → $25,733; Star Wars $15,871 → $14,921 — now equal to `get_pinnacle_checklist('franchise')`. Top Shot Blazers unchanged ($17,259.69). DB test extended (planted defect: old body → 1,000,005).
+- `/disney-pinnacle/team/<slug>` showed TWO checklists (pass 2's mount duplicated the existing TeamChecklist): the duplicate mount removed; the API + concierge franchise kind stay.
+- `fetchMarketIndexRows` drops the UTC day still in progress (every collection's RPC Index page, `/api/public/insights/market`, OG cards, concierge): Pinnacle's page read OPEN median $33 / +3,200 % 30d from ONE sale at 5 PM PT.
+- `get_pinnacle_listed_squeeze` (`20261124013500`, applied ~5:35 PM PT) orders by the exact listed share, not the 0.1 %-rounded one; the page prints "<0.1%" for a listed pin that rounds to 0.
+- Pin page: "1 collector holds"; the Tracked holders card says "of the wallets RPC indexes — not every holder".
+- Revert: re-apply `get_team_checklist_progress` from `20261028141531` and `get_pinnacle_listed_squeeze` from `20261123224000`; revert the commit.
+
 ### 2026-11-23 ~5:30 PM PT · 🔎 READ — Sentinel "Panini Ingest" unrecognised-key WARN clears from the 6:04 PM PT sweep; cause was the 24 h window, not a live drop (Claude Code cloud scheduled task; inbox 2026-11-23T1545Z §6 row 1)
 - 5:04 PM PT email still WARN (40 keys, `packcard-850147_111938_2-2_5_*_79`): `sentinel_panini_health()` sums `extra.sales_history_unrecognised_keys` over 24 h, and that sweep's window started 5:04 PM 11-22 — 5 min before the only non-zero run (5:09:29 PM PT 11-22, 40). All 5,559 runs since: sum 0, max 0; the function returns 0 at 5:30 PM PT. Cadence Collapse is NOT clean: it flags `topshot-buyer-backfill-historical` at 25 % — the 11-23 pause itself (0 pipeline_runs since 7:50 AM PT; last 7:42 AM). Docs-only; revert: drop this entry.
 
