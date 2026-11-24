@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~7:30 PM PT · ✅ SHIPPED — /insights/top-sales og:image carries today's PT date: X showed the Monday 2/2 card as a blank grey placeholder (Cowork cloud, attended; Trevor: "Why does this keep happening?")
+- Cause: X caches a card by its og:image URL too, and top-sales' og:image was the same bare `/api/og/insights/top-sales` every week, so `?w=` on the page link could not refresh it (the route itself renders fine: 200, ~0.5–1.5 s, 57 KB). Same fix drops got 11-15: `?d=<PT YYYYMMDD>` via new shared `lib/og/card-day-key.ts` (drops' private copy now uses it). Other boards still carry bare og:image URLs.
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-23 ~7:06 PM PT · ✅ APPLIED (DB, SQL editor) — merged two players split across a Jr./no-Jr. spelling; 3 scheduled checks created (Cowork cloud, attended; Trevor: "Can you do any sql work that needs chrome?", then "Approve and proceed with all")
 - Ran `docs/proposals/merge-two-split-suffix-players-STAGED.sql` unchanged in the Supabase SQL editor (fetched at `7d4b225c`, SHA-256 checked in page). Candy "Luis Robert Jr." folded into "Luis Robert" (now 21 editions); Panini "Andre Jackson" into "Andre Jackson Jr." (now 17). Aliases `luis-robert-jr-`, `luis-robert-jr`, `andre-jackson` — all three old URLs 308 live. Backups `audit_20261123_suffix_merge_{players,editions}_backup` (2 / 6 rows). No migration file (SQL-editor parity rule in the filing).
 - Scheduled one-shot tasks from `2026-11-24T0252Z` items 1–3 (Supabase connector, fresh session each): `trig_01QRQpDVVWLhUfSgMCpvEX97` (Tue 11-24 7:40 AM PT), `trig_01BaNKB1iFhDC7zHPXsZWm7M` (Wed 11-25 8:20 AM PT), `trig_01QqtQFuJLBVEwKjbjkVZDYK` (Mon 12-07 5:25 AM PT). Item 4 (UFC enrich fix) still open for Claude Code.
