@@ -320,7 +320,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
 
       {/* ── Team / Franchise Checklist (headline feature) ─────────────────── */}
       <Section title={`${labels.team} Checklist`}>
-        <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} />
+        <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} teamLabel={detail.team_name} />
       </Section>
 
       {/* ── Top Editions ─────────────────────────────────────────────────── */}

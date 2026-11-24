@@ -141,6 +141,8 @@ interface Props {
    * with `entity=player` (lib/entity/checklist-entity.ts picks the RPC pair server-side).
    */
   entity?: ChecklistEntity
+  /** Display name for the Series Checklists copy ("every player on the Dallas Mavericks"). Optional. */
+  teamLabel?: string
 }
 
 const PAGE_SIZE = 24
@@ -156,7 +158,7 @@ function seriesChipLabel(collectionUrlSlug: string, n: number): string {
   return `Series ${n}`
 }
 
-export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptions: seriesProp, entity = "team" }: Props) {
+export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptions: seriesProp, entity = "team", teamLabel }: Props) {
   const isTopShot = collectionUrlSlug === "nba-top-shot"
   // Disney Pinnacle pins cannot be locked: no "N locked", no locked legend or state.
   const hasLocking = collectionHasLocking(collectionUrlSlug)
@@ -550,6 +552,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         <TeamSeriesChecklists
           collectionUrlSlug={collectionUrlSlug}
           teamSlug={teamSlug}
+          teamLabel={teamLabel ? `the ${teamLabel}` : undefined}
           wallet={wallet}
           onOpenSeries={n => {
             setScope(`series_${n}`)

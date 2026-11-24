@@ -168,7 +168,9 @@ describe("franchise kind (pass 2)", () => {
     const page = readFileSync(join(process.cwd(), "app/(collections)/[collection]/team/[slug]/page.tsx"), "utf8")
     // 2026-11-23: two checklists with two costs on /disney-pinnacle/team/<slug> — the duplicate mount was removed.
     expect(page).not.toMatch(/<PinnacleCharacterChecklist/)
-    expect(page).toMatch(/<TeamChecklist collectionUrlSlug=\{collection\} teamSlug=\{slug\} \/>/)
+    // RE-PINNED 2026-11-23: the mount gained a teamLabel prop (Series Checklists copy) — the property is ONE mount.
+    expect(page.match(/<TeamChecklist\b[^>]*\/>/g) ?? []).toHaveLength(1)
+    expect(page).toMatch(/<TeamChecklist collectionUrlSlug=\{collection\} teamSlug=\{slug\}[^>]*\/>/)
     const route = readFileSync(join(process.cwd(), "app/api/entity/pinnacle-character-checklist/route.ts"), "utf8")
     expect(route).toMatch(/kind !== "character" && kind !== "franchise"[\s\S]*status: 400/)
     expect(route).toContain('"get_pinnacle_checklist"')
