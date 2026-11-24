@@ -361,7 +361,7 @@ async function handleIndex(req: NextRequest) {
         buyer: string | null | undefined,
         seller: string | null | undefined,
         // The venue written to `sales.marketplace`: magic_eden unless the queue row names another
-        // (2026-11-22: /api/ingest/candy-chain-sales parks off-Magic-Eden fills as solana_7aru).
+        // (2026-11-22: /api/ingest/candy-chain-sales parks off-Magic-Eden fills with their venue — `opensea` since 11-23).
         marketplace: string = "magic_eden"
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
         if (price == null || price <= 0) return { skip: "no_price" }
@@ -547,7 +547,7 @@ async function handleIndex(req: NextRequest) {
             price_native: price,
             currency: "SOL",
             // ⓘ 2026-11-22: `marketplace` is now the queue row's venue — magic_eden for every
-            // Magic Eden lane, `solana_7aru` for fills /api/ingest/candy-chain-sales decodes from
+            // Magic Eden lane, `opensea` (was `solana_7aru` until 11-23) for fills /api/ingest/candy-chain-sales decodes from
             // the chain. The paragraphs below describe the Magic Eden rows.
             // ⚠ BOTH OF THESE ARE NARROWER THAN THEY LOOK. Read this before drawing
             // any conclusion about Candy market coverage from a `sales` row.

@@ -2,7 +2,7 @@
 //
 // Candy sales that settle OFF Magic Eden, read from the Solana chain (lib/candy/chain-sales.ts;
 // 2026-11-22). Hourly: walks every Candy collection account's new signatures (oldest-walked first),
-// decodes fills on program 7Aru… (marketplace `solana_7aru`) and offers them to the same drain queue
+// decodes fills on program 7Aru… (OpenSea's Solana program; marketplace `opensea`, `solana_7aru` until 11-23) and offers them to the same drain queue
 // the Magic Eden lanes use; candy-sales-indexer (:20) writes them into `sales`.
 // Vercel cron (GET, CRON_SECRET) or an operator (INGEST_SECRET_TOKEN).
 

@@ -6,7 +6,7 @@ import path from "node:path"
 // census found 16 fills on program 7Aru…, ~12.9 SOL, none in `sales`). Properties pinned, on REAL
 // transactions: a 7Aru BuyCore decodes to the asset, the buyer's full payment (7.5 SOL), the buyer
 // and the seller; a listing and a Magic Eden transaction decode to NOTHING; a fill is offered with
-// its venue (solana_7aru); a signature already in `sales` or the queue is never fetched; the cursor
+// its venue (opensea — 7Aru… is OpenSea's Solana program); a signature already in `sales` or the queue is never fetched; the cursor
 // advances only behind a complete walk and never on a failed read; a failure fails the run.
 
 import { decodeChainFills, runCandyChainSales, CHAIN_MARKETPLACE, CHAIN_QUEUE_REASON, CHAIN_FLOOR_ISO } from "@/lib/candy/chain-sales"
@@ -67,7 +67,7 @@ describe("decodeChainFills (real transactions)", () => {
     const logs = BUY.tx.meta.logMessages.map((l: string) => (l === "Program log: Instruction: BuyCore" ? "Program log: Instruction: BuyCoreSpl" : l))
     const d = decodeChainFills(BUY.signature, { ...BUY.tx, meta: { ...BUY.tx.meta, logMessages: logs } })
     expect(d.fills).toEqual([])
-    expect(d.unknownIx).toEqual(["solana_7aru:BuyCoreSpl"])
+    expect(d.unknownIx).toEqual(["opensea:BuyCoreSpl"])
   })
 })
 

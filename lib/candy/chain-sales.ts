@@ -7,8 +7,10 @@
 // other venue was invisible. An on-chain census of all 398 Candy collection accounts, 11-06 → 11-22,
 // found 16 fills on program 7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V (Tensor marketplace code
 // at a non-Tensor address — known-issues #256's falsifier), all on 11-20 / 11-21 PT, ~12.9 SOL with
-// one 7.5 SOL card; none were in `sales`. The program is NOT attributed to a named marketplace (no
-// official source names it), so its sales carry marketplace `solana_7aru`. Tensor's own program
+// one 7.5 SOL card; none were in `sales`. 2026-11-23: the program IS OpenSea's Solana Marketplace
+// Program (named in OpenSea's own Bugcrowd bounty scope), so its sales carry marketplace `opensea` —
+// the key OpenSea sales already used — and the 117 rows first written as `solana_7aru` were relabelled
+// (migration audit_20261123_candy_7aru_sales_are_opensea). Tensor's own program
 // (TCMPhJ…, the code 7Aru… is built from) is decoded the same way, as marketplace `tensor`.
 //
 // What it does. Every Metaplex Core transfer of a Candy asset passes its collection account, so
@@ -36,7 +38,7 @@ import type { FetchFn } from "@/lib/candy/sale-buyer-paid"
 type Db = any
 
 export const CHAIN_MARKET_PROGRAM = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V"
-export const CHAIN_MARKETPLACE = "solana_7aru"
+export const CHAIN_MARKETPLACE = "opensea"
 // Tensor's own marketplace program (the code 7Aru… is built from); Candy listings were seen on it
 // (11-06 → 11-22: 3 ListCore, 3 DelistCore, 0 fills). Decoded the same way.
 export const TENSOR_PROGRAM = "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp"

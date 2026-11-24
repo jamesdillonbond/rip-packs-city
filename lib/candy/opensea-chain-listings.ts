@@ -4,7 +4,7 @@
 // now", i.e. the key-free route over requesting a permanent OpenSea key).
 //
 // Why. Program 7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V — the one the candy-chain-sales lane has decoded fills on
-// since 11-22 as `solana_7aru` — is OpenSea's Solana Marketplace Program (named in OpenSea's own Bugcrowd bounty scope,
+// since 11-22 (as `solana_7aru`, relabelled `opensea` 11-23) — is OpenSea's Solana Marketplace Program (named in OpenSea's own Bugcrowd bounty scope,
 // found 11-23). Its fills were ~half of Candy's sale dollars in the week to 11-23 (98 sales / $4,376 vs Magic Eden
 // 182 / $4,670), yet RPC held none of its ASKS: every ask in candy_listings came from Magic Eden's API. So OpenSea-only
 // asks never reached the confirmed floor, the FMV ask cap, "% listed" or the squeeze boards.
