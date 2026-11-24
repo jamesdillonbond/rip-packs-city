@@ -7,6 +7,8 @@ import {
   rowLabel,
   shapeRow,
   type MarketCapRow,
+  groupLabelFor,
+  drillNoteFor,
 } from "@/lib/insights/market-cap-board"
 
 const base: MarketCapRow = {
@@ -72,5 +74,26 @@ describe("market-cap formatters", () => {
     expect(fmtUsdCompact(null)).toBe("—")
     expect(fmtCount(null)).toBe("—")
     expect(fmtCount(33_699_893)).toBe("33,699,893")
+  })
+})
+
+describe("market-cap grain labels per collection", () => {
+  it("names Pinnacle's player / team grains characters / franchises and leaves the rest alone", () => {
+    expect(groupLabelFor("player", "disney_pinnacle")).toBe("Characters")
+    expect(groupLabelFor("team", "disney_pinnacle")).toBe("Franchises")
+    expect(groupLabelFor("set", "disney_pinnacle")).toBe("Sets")
+    expect(groupLabelFor("player", "nba_top_shot")).toBe("Players")
+    expect(groupLabelFor("team", null)).toBe("Teams")
+  })
+  it("notes the multi-character double count on Pinnacle only", () => {
+    expect(drillNoteFor("player", "disney_pinnacle")).toMatch(/more than one character/)
+    expect(drillNoteFor("team", "disney_pinnacle")).toMatch(/more than one franchise/)
+    expect(drillNoteFor("set", "disney_pinnacle")).toBeNull()
+    expect(drillNoteFor("player", "nba_top_shot")).toBeNull()
+  })
+  it("links a Pinnacle character row to its character page and a franchise row to its franchise page", () => {
+    const r = { collection_slug: "disney_pinnacle", group_label: "Mickey & Friends" } as Parameters<typeof rowHref>[0]
+    expect(rowHref({ ...r, group_label: "Mickey Mouse" }, "player")).toBe("/disney-pinnacle/character/mickey-mouse")
+    expect(rowHref(r, "team")).toBe("/disney-pinnacle/team/mickey-friends")
   })
 })

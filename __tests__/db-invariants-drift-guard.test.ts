@@ -290,8 +290,8 @@ const PINS = [
     // an unknown collection → zero rows, and known caps ranking ahead of unknown.
     fn: "get_market_cap_board",
     test: "supabase/tests/get_market_cap_board.sql",
-    // Re-pointed 2026-11-04 (#233): the 7-day baseline is restated to today's pricing rules.
-    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
+    // Re-pointed 2026-11-23: Disney Pinnacle's player / team grains are its characters / franchises (traits).
+    migration: "supabase/migrations/20261124005000_audit_20261123_market_cap_board_pinnacle_characters_and_franchises.sql",
   },
   {
     // Added 2026-10-03. The ONE per-edition supply x FMV row set the board, the

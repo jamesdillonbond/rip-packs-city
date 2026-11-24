@@ -15,7 +15,8 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import {
-  GROUP_LABELS,
+  groupLabelFor,
+  drillNoteFor,
   METHOD_NOTE,
   collectionDisplayName,
   fmtCount,
@@ -141,14 +142,14 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
   )
 }
 
-function DrillTable({ rows, group }: { rows: MarketCapRow[]; group: MarketCapGroup }) {
+function DrillTable({ rows, group, collection }: { rows: MarketCapRow[]; group: MarketCapGroup; collection: string | null }) {
   return (
     <div className="rpc-scroll-x" {...scrollRegion("Market cap leaderboard")} style={{ marginTop: 14, overflowX: "auto" }}>
       <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse" }}>
         <thead>
           <tr>
             <th scope="col" style={thStyle("right")}>#</th>
-            <th scope="col" style={thStyle("left")}>{GROUP_LABELS[group].replace(/s$/, "")}</th>
+            <th scope="col" style={thStyle("left")}>{groupLabelFor(group, collection).replace(/s$/, "")}</th>
             <th scope="col" style={thStyle("right")}>Market cap</th>
             <th scope="col" style={thStyle("right")}>Collector-held</th>
             <th scope="col" style={thStyle("right")}>Editions</th>
@@ -274,7 +275,7 @@ export default function MarketCapBoardClient({
       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
         {DRILL_GROUPS.map((g) => (
           <button key={g} type="button" onClick={() => load(collection, g)} disabled={loading} className="rpc-mono" style={pillStyle(group === g)}>
-            {GROUP_LABELS[g]}
+            {groupLabelFor(g, collection)}
           </button>
         ))}
       </div>
@@ -287,12 +288,19 @@ export default function MarketCapBoardClient({
         <div className="rpc-card" style={{ marginTop: 14, padding: 24, textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 13 }}>
           {sectionEmptyCopy(
             !drillFailed,
-            `${GROUP_LABELS[drill.group]} market caps`,
-            `No ${GROUP_LABELS[drill.group].toLowerCase()} carry this field in ${collectionDisplayName(drill.collection ?? collection)}.`,
+            `${groupLabelFor(drill.group, drill.collection ?? collection)} market caps`,
+            `No ${groupLabelFor(drill.group, drill.collection ?? collection).toLowerCase()} carry this field in ${collectionDisplayName(drill.collection ?? collection)}.`,
           )}
         </div>
       ) : (
-        <DrillTable rows={drill.rows} group={drill.group} />
+        <>
+          <DrillTable rows={drill.rows} group={drill.group} collection={drill.collection ?? collection} />
+          {drillNoteFor(drill.group, drill.collection ?? collection) && (
+            <p className="rpc-mono" style={{ marginTop: 8, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+              {drillNoteFor(drill.group, drill.collection ?? collection)}
+            </p>
+          )}
+        </>
       )}
 
       <p className="rpc-mono" style={{ marginTop: 24, maxWidth: 820, fontSize: 11, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>

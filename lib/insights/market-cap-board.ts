@@ -42,6 +42,27 @@ export const GROUP_LABELS: Record<MarketCapGroup, string> = {
   badge: "Badges",
 }
 
+/**
+ * A grain's label for one collection (2026-11-23). Disney Pinnacle's player grain is its CHARACTERS and its team
+ * grain its FRANCHISES (Trevor 10-31: Pinnacle assets are characters, never players) — the board reads the pin's
+ * `characters` / `franchises` traits for those two grains (migration 20261124005000).
+ */
+export function groupLabelFor(group: MarketCapGroup, collectionDbSlug: string | null | undefined): string {
+  if (collectionDbSlug === "disney_pinnacle") {
+    if (group === "player") return "Characters"
+    if (group === "team") return "Franchises"
+  }
+  return GROUP_LABELS[group]
+}
+
+/** A note under a drill table, or null. A Pinnacle pin with two characters counts toward both. */
+export function drillNoteFor(group: MarketCapGroup, collectionDbSlug: string | null | undefined): string | null {
+  if (collectionDbSlug !== "disney_pinnacle") return null
+  if (group === "player") return "A pin featuring more than one character counts toward each of them, so these rows add up to more than the collection."
+  if (group === "team") return "A pin tagged with more than one franchise counts toward each of them."
+  return null
+}
+
 export const MAX_LIMIT = 500
 export const DEFAULT_LIMIT = 100
 

@@ -322,6 +322,25 @@ BEGIN
     FROM keyed k
     CROSS JOIN LATERAL unnest(k.badges) AS bt(title)
     WHERE p_group = 'badge'
+    UNION ALL
+    -- 2026-11-23: Disney Pinnacle's character / franchise grains. A character is the `characters` TRAIT and a
+    -- franchise the `franchises` trait with ™/®/© stripped (never character_name), keyed exactly as
+    -- refresh_market_cap_current keys the entity rows. A pin with two characters counts toward both, so the
+    -- character (or franchise) rows do not sum to the collection.
+    SELECT k.coll, t.gk,
+           CASE WHEN p_group = 'player' THEN t.lbl END, CASE WHEN p_group = 'team' THEN t.lbl END,
+           NULL, NULL, NULL, NULL, NULL,
+           k.minted, k.burned, k.issuer_held, k.collector_held, k.fmv_usd, k.confidence
+    FROM keyed k
+    JOIN public.pinnacle_catalog pc ON pc.render_id = k.ext_id
+    CROSS JOIN LATERAL (
+      SELECT regexp_replace(lower(btrim(x.v)), '[^a-z0-9]+', '-', 'g') AS gk, min(btrim(x.v)) AS lbl
+        FROM unnest(CASE WHEN p_group = 'player' THEN pc.characters ELSE pc.franchises END) AS u(raw)
+        CROSS JOIN LATERAL (SELECT CASE WHEN p_group = 'team' THEN regexp_replace(u.raw, '[™®©]', '', 'g') ELSE u.raw END AS v) x
+       WHERE btrim(coalesce(x.v, '')) <> ''
+       GROUP BY 1
+    ) t
+    WHERE p_group IN ('player', 'team') AND k.coll = 'disney_pinnacle'
   ),
   agg AS (
     SELECT r.coll,
@@ -769,6 +788,14 @@ SELECT _assert_eq((SELECT group_label || '=' || mcap_usd FROM get_market_cap_ent
   'a duo pin counts for both characters');
 SELECT _assert_eq((SELECT group_label || '=' || mcap_usd FROM get_market_cap_entity('team', 'disney_pinnacle', 'star-wars')), 'Star Wars=350.00',
   'a franchise is keyed with the trademark sign removed, like pinnacleFranchiseHref');
+-- 2026-11-23: the BOARD's player / team drill-downs on Disney Pinnacle are characters / franchises, keyed like the
+-- entity rows above (they read 0 rows before 20261124005000).
+SELECT _assert_eq((SELECT string_agg(group_key || '=' || group_label || '=' || mcap_usd, ',' ORDER BY group_key) FROM get_market_cap_board('player', 'disney_pinnacle')),
+  'daisy-duck=Daisy Duck=350.00,minnie-mouse=Minnie Mouse=350.00', 'the board lists each Pinnacle character; a duo pin counts for both');
+SELECT _assert_eq((SELECT string_agg(group_key || '=' || group_label || '=' || mcap_usd, ',') FROM get_market_cap_board('team', 'disney_pinnacle')),
+  'star-wars=Star Wars=350.00', 'the board lists Pinnacle franchises with the trademark sign removed');
+SELECT _assert_eq((SELECT count(*)::text FROM get_market_cap_board('player', NULL, 500) WHERE collection_slug = 'disney_pinnacle'), '2',
+  'the all-collections player grain carries the Pinnacle characters too');
 
 -- The daily history is written for collection/player/team/set — never for editions.
 SELECT _assert_eq((SELECT string_agg(DISTINCT grain, ',' ORDER BY grain) FROM market_cap_daily WHERE snapshot_date = (now() AT TIME ZONE 'America/Los_Angeles')::date),

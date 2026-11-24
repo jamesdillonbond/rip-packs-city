@@ -97,4 +97,32 @@ describe("MarketCapBoardClient", () => {
     )
     expect(container.textContent).toMatch(/No players carry this field in NBA Top Shot\./)
   })
+
+  it("labels Disney Pinnacle's grains Characters / Franchises, links characters to their pages, and notes the double count", () => {
+    const pinnacleDrill: MarketCapBoard = {
+      group: "player",
+      collection: "disney_pinnacle",
+      rows: [row({ collection_slug: "disney_pinnacle", group_key: "mickey-mouse", group_label: "Mickey Mouse", mcap_usd: 450_954.4 })],
+    }
+    const { container } = render(
+      <MarketCapBoardClient initialCollections={collections} initialDrill={pinnacleDrill} initialFetchedAt="2026-11-23T20:00:00Z" />,
+    )
+    const text = container.textContent ?? ""
+    expect(text).toContain("Characters")
+    expect(text).toContain("Franchises")
+    expect(text).not.toMatch(/Players|Teams/)
+    expect(container.querySelector('a[href="/disney-pinnacle/character/mickey-mouse"]')).not.toBeNull()
+    expect(text).toContain("counts toward each of them")
+  })
+
+  it("keeps Players / Teams and no note for every other collection", () => {
+    const { container } = render(
+      <MarketCapBoardClient initialCollections={collections} initialDrill={emptyDrill} initialFetchedAt="2026-11-23T20:00:00Z" />,
+    )
+    const text = container.textContent ?? ""
+    expect(text).toContain("Players")
+    expect(text).toContain("Teams")
+    expect(text).not.toContain("Characters")
+    expect(text).not.toContain("counts toward each of them")
+  })
 })
