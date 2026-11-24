@@ -156,3 +156,12 @@ Everything below is in the ledger with a revert path.
   - database.md: VACUUM over 120 s → `cron_heavy` + MAINTAIN.
   - testing-and-ci.md: a clock-sweep verdict on an intermittent test.
   - tooling-gotchas.md: a scheduled task made from here carries no connectors.
+
+## Archive state (11-23 ~8:30 PM PT)
+
+- **Every dated check from this thread is a standalone scheduled task WITH the Supabase connector.** Cowork created the three the Claude Code session could not (11-24 VACUUM verify, 11-25 Top Shot lag, 12-07 gate week 4); IDs are in focus.md. The rest were already scheduled: 11-25 fmv-recalc and job 901, 11-27 offer backtests, 11-30 gate week 3 and FMV week-2, 12-06 Panini backtest, 12-13 #190, 12-14 UFC Aptos link.
+- **Closed after handoff, verified live 8:26 PM PT:**
+  - The UFC enrichment fix (`f04a8cd`, edge v66, plus trust arm `20261124035113`): 0 UFC wmc rows without an edition_key, down from 155.
+  - The split-player merge: 0 drop rows, Luis Robert 21 / Andre Jackson Jr. 17 editions, 3 aliases.
+- **Nothing open is owned by this thread.**
+
