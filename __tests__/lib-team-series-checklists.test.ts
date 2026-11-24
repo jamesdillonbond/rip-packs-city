@@ -43,5 +43,10 @@ describe("team series checklists", () => {
     // a fully priced tie beats one with an unlisted player
     expect(closestSeries([row({ series_num: 9, to_go: 2, cost_to_go_usd: 1, unlisted: 1 }), row({ series_num: 2, to_go: 2, cost_to_go_usd: 50 })], true)).toBe(2)
     expect(closestSeries([row({ series_num: 1, to_go: 0, complete: true })], true)).toBeNull()
+    // a full tie (same to-go, both priced, same cost) goes to the NEWER series, in either input order
+    const a = row({ series_num: 5, to_go: 3, cost_to_go_usd: 20 })
+    const b = row({ series_num: 7, to_go: 3, cost_to_go_usd: 20 })
+    expect(closestSeries([a, b], true)).toBe(7)
+    expect(closestSeries([b, a], true)).toBe(7)
   })
 })
