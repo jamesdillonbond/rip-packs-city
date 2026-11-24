@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~8:45 PM PT · ✅ SHIPPED (code) — Series Checklists name the team + component test; one Pinnacle wiring test re-pinned (Cowork cloud, attended; Trevor: "Keep going")
+- The team page passes `teamLabel={detail.team_name}` through TeamChecklist, so the copy reads "every player on the Dallas Mavericks". New `component-TeamSeriesChecklists.test.tsx` (5 cases: anonymous, wallet + Closest + unlisted lower bound, expand/links, failed read, empty).
+- `pinnacle-character-checklist.test.tsx` pinned the mount's exact spelling. Re-pinned to the property: exactly ONE `<TeamChecklist …/>` mount. All 333 component test files pass locally.
+- Revert: `git revert` the commit "Series Checklists name the team".
+
 ### 2026-11-23 ~8:05 PM PT · ✅ SHIPPED (test) — `main` red on a coverage flake: one timing-dependent line put merged statements 0.01 under the 91.8 floor; the line is now covered on purpose (Claude Code, local box; Trevor: "Keep going")
 - CI run 45322902554 (`4e8b0e6bb`, migration + docs only) failed "Unit tests — merge + coverage ratchet": statements 91.79 vs floor 91.8; the green run before it (`f04a8cd`, same TypeScript) read exactly 91.80.
 - Per-file diff of the two coverage tables: the ONLY change was `lib/hooks/useModalA11y.ts` line 72 (`if (!root) return` in the rAF focus callback), reached only when some other component test fired a frame with a detached ref.
