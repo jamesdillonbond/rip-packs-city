@@ -232,7 +232,7 @@ function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: Franchi
             >
               <span>
                 <strong style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>{hub.team_name} checklist</strong>
-                <span style={{ color: "var(--rpc-text-secondary)" }}> · every edition, what you own, cost to complete</span>
+                <span style={{ color: "var(--rpc-text-secondary)" }}> · series checklists, every edition, what you own, cost to complete</span>
               </span>
               <span aria-hidden="true">→</span>
             </Link>
