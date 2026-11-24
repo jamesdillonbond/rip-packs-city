@@ -60,6 +60,7 @@ import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } fr
 import { editionRouteHref } from "@/lib/entity-href"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import ExplainButton from "@/components/ExplainButton"
+import TeamSeriesChecklists from "./TeamSeriesChecklists"
 import {
   CHECKLIST_OWN_STATES,
   computeFullEditionProgress,
@@ -202,6 +203,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   const ownWallet = ownParsed?.ok ? ownParsed.wallet : null
 
   const reqIdRef = useRef(0)
+  const scopeTabsRef = useRef<HTMLDivElement | null>(null)
   const indexFiredRef = useRef<Set<string>>(new Set())
   const pollCountRef = useRef(0)
 
@@ -543,8 +545,21 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
   return (
     <div>
+      {/* ── Series checklists (2026-11-23): one Moment of every player, per series ── */}
+      {entity === "team" && (
+        <TeamSeriesChecklists
+          collectionUrlSlug={collectionUrlSlug}
+          teamSlug={teamSlug}
+          wallet={wallet}
+          onOpenSeries={n => {
+            setScope(`series_${n}`)
+            try { scopeTabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }) } catch { /* ignore */ }
+          }}
+        />
+      )}
+
       {/* ── Scope tabs + series chips ─────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+      <div ref={scopeTabsRef} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, scrollMarginTop: 80 }}>
         {scopeTabs.map(t => (
           <ScopeChip key={t.key} active={scope === t.key} onClick={() => setScope(t.key)}>{t.label}</ScopeChip>
         ))}

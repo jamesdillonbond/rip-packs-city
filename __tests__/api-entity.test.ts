@@ -23,6 +23,7 @@ import { GET as teamChecklistProgress } from "@/app/api/entity/team-checklist-pr
 import { GET as teamEditions } from "@/app/api/entity/team-editions/route"
 import { GET as teamSets } from "@/app/api/entity/team-sets/route"
 import { GET as teamSqueeze } from "@/app/api/entity/team-squeeze/route"
+import { GET as teamSeriesChecklists } from "@/app/api/entity/team-series-checklists/route"
 
 const r = (path: string, qs: string) => new Request(`https://t/api/entity/${path}?${qs}`)
 
@@ -40,6 +41,7 @@ const ROUTES: Array<[string, (req: Request) => Promise<Response>, string, string
   ["team-editions", teamEditions as any, "team-editions", "slug"],
   ["team-sets", teamSets as any, "team-sets", "slug"],
   ["team-squeeze", teamSqueeze as any, "team-squeeze", "slug"],
+  ["team-series-checklists", teamSeriesChecklists as any, "team-series-checklists", "slug"],
 ]
 
 beforeEach(() => {
