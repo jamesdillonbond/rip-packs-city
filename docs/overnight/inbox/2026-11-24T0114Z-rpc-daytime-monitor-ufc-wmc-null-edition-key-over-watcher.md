@@ -48,3 +48,9 @@ LOW / read-only symptom. The only user-visible failure mode is if either of the 
   - Give the caller a timeout above one page (≤ 140 s, under the edge wall), keeping `wallet-backfill-ufc`'s 300 s `maxDuration` in mind.
   - Optionally, a UFC arm in `v_rpc_trust_health` (budget-neutral view edit, template `20261110230853`).
   - Not shipped tonight: impact is two non-member wallets on the legacy Flow UFC collection, and the paging contract change needs an edge deploy plus a caller change together.
+
+
+## 🔧 FIX SHIPPED 2026-11-23 ~7:37 PM PT (`f04a8cd`, Claude Code) — drain verify owed
+
+- Unkeyed-only keyset pages, 140 s page timeout, deadline inside the 300 s `maxDuration`. Edge deploy run `45320889742` succeeded ~7:40 PM PT.
+- Read ~7:50 PM PT (Cowork, MCP): still 149 + 6 unkeyed; neither wallet walked since the deploy. Mark RESOLVED once both read 0 after a walk.

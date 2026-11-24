@@ -114,3 +114,9 @@ Split-player merge (Luis Robert, Andre Jackson Jr.): [2026-11-23T2145Z](2026-11-
 - All three: standalone one-shot tasks (fresh session, not this thread), Supabase connector attached, prompts verbatim from above.
 - ⏳ Item 4 (UFC enrichment fix): still open — needs code + edge deploy (Claude Code).
 - ✅ Item 5: split-player merge applied ~7:06 PM PT (see 2145Z).
+
+
+## ↪ 2026-11-23 ~7:55 PM PT — Cowork cloud: item 4 shipped by Claude Code
+
+- ✅ Item 4: shipped as `f04a8cd` (Claude Code, local box, ~7:37 PM PT; ledger entry "UFC enrichment chain drains NULL edition_key rows"). Edge deploy run `45320889742` succeeded ~7:40 PM PT. A parallel Cowork draft of the same fix was dropped unpushed.
+- ⏳ Verify still owed: at ~7:50 PM PT the two wallets still held 155 unkeyed rows (`0xfd6debe3815415c3` 149/249, last walked 11-23 3:48 PM PT; `0xe5492c968fb5d358` 6/106, last walked 11-19 1:11 AM PT) — neither walked since the deploy. Closes when their next walk (or one manual `wallet-backfill-ufc` call) leaves 0. Tracked on 0114Z.

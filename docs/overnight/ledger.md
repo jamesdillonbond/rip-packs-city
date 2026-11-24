@@ -13,6 +13,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~7:55 PM PT · 📝 DOCS — inbox 0252Z items all done; 0114Z UFC fix shipped, drain verify owed (Cowork cloud, attended; Trevor: "ensuring nothing is left unresolved")
+- `f04a8cd` (Claude Code) + edge deploy run `45320889742` (success ~7:40 PM PT) closed 0252Z item 4; a parallel Cowork draft of the same fix was dropped unpushed. At ~7:50 PM PT the two wallets still read 149 + 6 unkeyed — not walked since the deploy; 0114Z stays open until they read 0. **Revert:** `git revert` this commit (docs only).
+
 ### 2026-11-23 ~7:37 PM PT · ✅ SHIPPED (code + edge fn) — UFC enrichment chain drains NULL edition_key rows: unkeyed-only keyset pages, 140 s page timeout, deadline-aware (Claude Code, local box; Trevor: "process everything in the tree")
 - Closes inbox `2026-11-24T0252Z` item 4 / `2026-11-24T0114Z`. 155 UFC wmc rows (`0xfd6debe3815415c3` 149, `0xe5492c968fb5d358` 6) sat NULL: the chain's 45 s timeout < one 100-NFT page, every run restarted at start=0 over all rows, and the fallback drain has had no caller since 10-18.
 - `enrich-ufc-wallet`: new `unkeyed=1&after=<moment_id>` mode — only `edition_key IS NULL` rows, keyset on moment_id, 50/page, `ok` derived from whether every upsert landed. Default offset mode (ufc-wallet-scan's whole-wallet re-enrich) unchanged.
