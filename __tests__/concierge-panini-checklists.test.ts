@@ -149,3 +149,47 @@ describe("readPaniniRookiesForConcierge (get_insight_board 'panini_rookies', 202
     expect(out.board_url).toBe(`${BASE}/insights/panini-squeeze?tab=rookies`)
   })
 })
+
+describe("Panini autographs + Scarcer for less on get_insight_board (2026-11-24)", () => {
+  function q(res: { data: unknown; error: unknown }, calls: string[]) {
+    const b: Record<string, unknown> = {}
+    for (const m of ["select", "order", "limit", "not"]) b[m] = (...a: unknown[]) => { calls.push(`${m}:${String(a[0])}`); return b }
+    b.ilike = (c: string, v: string) => { calls.push(`ilike:${c}=${v}`); return b }
+    b.then = (f: (v: unknown) => unknown) => Promise.resolve(res).then(f)
+    return b
+  }
+  it("autographs: a failed read is a failed check, never 'no autographs'", async () => {
+    const { readPaniniAutographsForConcierge } = await import("@/lib/concierge/panini-boards")
+    const out = JSON.parse(await readPaniniAutographsForConcierge({ from: () => q({ data: null, error: { message: "x" } }, []) }, BASE, 10))
+    expect(out.status).toBe("error")
+    expect(out.message).toMatch(/never that Panini has no autograph cards/)
+  })
+  it("autographs: listed only, cheapest first, sport-narrowed, no premium field, says there is no unsigned pairing", async () => {
+    const { readPaniniAutographsForConcierge } = await import("@/lib/concierge/panini-boards")
+    const calls: string[] = []
+    const out = JSON.parse(await readPaniniAutographsForConcierge({ from: () => q({ data: [{ external_id: "packcard-1_2_3_4", player_name: "AJ Griffin", low_ask: 12, median_90d: null }], error: null }, calls) }, BASE, 10, "Basketball"))
+    expect(calls).toContain("not:low_ask")
+    expect(calls).toContain("order:low_ask")
+    expect(calls).toContain("ilike:sport=Basketball")
+    expect(out.rows[0]).not.toHaveProperty("premium_x")
+    expect(out.rows[0].median_90d_usd).toBeNull()
+    expect(out.how_to_read).toMatch(/no autograph premium/i)
+    expect(out.rows[0].edition_url).toBe(`${BASE}/panini-blockchain/edition/packcard-1_2_3_4`)
+  })
+  it("scarcer for less: biggest gap first, both printings linked, own sales carried, never a buy call", async () => {
+    const { readPaniniScarcerForConcierge } = await import("@/lib/concierge/panini-boards")
+    const calls: string[] = []
+    const out = JSON.parse(await readPaniniScarcerForConcierge({ from: () => q({ data: [{ external_id: "packcard-a", common_external_id: "packcard-b", low_ask_usd: 275, own_sales_90d: 8, own_median_90d_usd: 280, common_median_90d_usd: 515, gap_usd: 240 }], error: null }, calls) }, BASE, 10))
+    expect(calls[1]).toBe("order:gap_usd")
+    expect(out.rows[0].own_median_90d_usd).toBe(280)
+    expect(out.rows[0].more_common_url).toBe(`${BASE}/panini-blockchain/edition/packcard-b`)
+    expect(out.how_to_read).toMatch(/NOT a buy call/)
+    expect(out.board_url).toBe(`${BASE}/insights/panini-squeeze?tab=scarcer`)
+  })
+  it("both boards are wired into get_insight_board", () => {
+    const route = readFileSync(join(process.cwd(), "app/api/support-chat/route.ts"), "utf8")
+    expect(route).toContain('if (toolInput.board === "panini_autographs") return readPaniniAutographsForConcierge(')
+    expect(route).toContain('if (toolInput.board === "panini_scarcer_for_less") return readPaniniScarcerForConcierge(')
+    expect(route).toMatch(/"panini_rookies", "panini_autographs", "panini_scarcer_for_less", "candy_mlb"/)
+  })
+})

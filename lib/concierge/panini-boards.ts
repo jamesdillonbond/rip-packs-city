@@ -1032,3 +1032,90 @@ export async function readPaniniRookiesForConcierge(db: Db, base: string, limit:
     return JSON.stringify({ status: "error", board: "panini_rookies", message: "The Panini rookie board read failed — say the check failed; never that there are no rookie cards." })
   }
 }
+
+// ── Panini autographs + Scarcer for less (2026-11-23 night boards) ───────────────────────────────────────────────
+// Both are service-role matviews (mv_panini_autographs hourly, mv_panini_scarcer_for_less every 2 h). Market facts only:
+// asks and realised sales, never FMV or a confidence tier. A failed read says so — never "none".
+
+function clampLimit(limit: number): number {
+  return Math.min(Math.max(Math.trunc(limit) || 20, 1), 50)
+}
+
+export async function readPaniniAutographsForConcierge(db: Db, base: string, limit: number, sport: string | null = null): Promise<string> {
+  const fail = JSON.stringify({ status: "error", board: "panini_autographs", message: "The Panini autographs read failed — say the check failed; never that Panini has no autograph cards." })
+  try {
+    let q = db.from("mv_panini_autographs")
+      .select("external_id,player_name,set_name,circulation_count,product_name,sport,low_ask,sales_90d,median_90d,last_sale_usd,last_sale_at,computed_at")
+      .not("low_ask", "is", null)
+    if (sport) q = q.ilike("sport", sport.trim())
+    const { data, error } = await q
+      .order("low_ask", { ascending: true })
+      .order("edition_id", { ascending: true })
+      .limit(clampLimit(limit))
+    if (error || !Array.isArray(data)) return fail
+    const rows = data as Record<string, unknown>[]
+    return JSON.stringify({
+      status: rows.length ? "ok" : "no_results",
+      board: "panini_autographs",
+      board_url: `${base}/insights/autographs`,
+      computed_at: rows[0]?.computed_at ?? null,
+      how_to_read: "Panini on-chain autograph cards (an insert named Signature(s) / Autograph(s)) that have a listing, cheapest first. low_ask_usd was re-confirmed in the last 7 days. Panini prints autographs as their own cards, so there is NO unsigned printing to compare and no autograph premium — never quote one. Sales reach RPC days late. Never quote FMV or a confidence tier from this board. The board's Panini tab is on /insights/autographs.",
+      rows: rows.map((r) => ({
+        player: r.player_name ?? null,
+        card: r.set_name ?? null,
+        minted: num(r.circulation_count),
+        product: r.product_name ?? null,
+        sport: r.sport ?? null,
+        low_ask_usd: num(r.low_ask),
+        sales_90d_on_record: num(r.sales_90d),
+        median_90d_usd: num(r.median_90d),
+        last_sale_usd: num(r.last_sale_usd),
+        last_sale_at: r.last_sale_at ?? null,
+        edition_url: typeof r.external_id === "string" ? `${base}/panini-blockchain/edition/${encodeURIComponent(r.external_id)}` : null,
+      })),
+    })
+  } catch {
+    return fail
+  }
+}
+
+export async function readPaniniScarcerForConcierge(db: Db, base: string, limit: number, sport: string | null = null): Promise<string> {
+  const fail = JSON.stringify({ status: "error", board: "panini_scarcer_for_less", message: "The Scarcer for less read failed — say the check failed; never that no such listings exist." })
+  try {
+    let q = db.from("mv_panini_scarcer_for_less")
+      .select("external_id,player_name,set_name,mint_cap,product_name,sport,low_ask_usd,own_sales_90d,own_median_90d_usd,common_external_id,common_set_name,common_mint_cap,common_sales_90d,common_median_90d_usd,gap_usd,gap_pct,computed_at")
+    if (sport) q = q.ilike("sport", sport.trim())
+    const { data, error } = await q
+      .order("gap_usd", { ascending: false })
+      .order("external_id", { ascending: true })
+      .limit(clampLimit(limit))
+    if (error || !Array.isArray(data)) return fail
+    const rows = data as Record<string, unknown>[]
+    return JSON.stringify({
+      status: rows.length ? "ok" : "no_results",
+      board: "panini_scarcer_for_less",
+      board_url: `${base}/insights/panini-squeeze?tab=scarcer`,
+      computed_at: rows[0]?.computed_at ?? null,
+      how_to_read: "Each row: a Panini printing whose cheapest listing (re-confirmed in the last 7 days) is below the 90-day median sale of a MORE COMMON printing of the same card (same product, player, card number and parallel line, more copies minted); when several more common printings have 3+ sales, the comparison is the one that sells for the least. These are market facts, NOT a buy call — some parallels sell above scarcer ones on looks alone; always mention the scarcer printing's own sales (own_*) beside the gap. Sales reach RPC days late. Never quote FMV or a confidence tier.",
+      rows: rows.map((r) => ({
+        player: r.player_name ?? null,
+        printing: r.set_name ?? null,
+        minted: num(r.mint_cap),
+        product: r.product_name ?? null,
+        listed_at_usd: num(r.low_ask_usd),
+        own_sales_90d: num(r.own_sales_90d),
+        own_median_90d_usd: num(r.own_median_90d_usd),
+        more_common_printing: r.common_set_name ?? null,
+        more_common_minted: num(r.common_mint_cap),
+        more_common_sales_90d: num(r.common_sales_90d),
+        more_common_median_90d_usd: num(r.common_median_90d_usd),
+        gap_usd: num(r.gap_usd),
+        gap_pct: num(r.gap_pct),
+        edition_url: typeof r.external_id === "string" ? `${base}/panini-blockchain/edition/${encodeURIComponent(r.external_id)}` : null,
+        more_common_url: typeof r.common_external_id === "string" ? `${base}/panini-blockchain/edition/${encodeURIComponent(r.common_external_id)}` : null,
+      })),
+    })
+  } catch {
+    return fail
+  }
+}
