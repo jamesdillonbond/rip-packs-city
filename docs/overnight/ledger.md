@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:45 AM PT · 🧹 DOCS — biweekly context hygiene (Cowork scheduled, laptop VM clone, `ea7b5fe47`) [ledger-roll]
+- **Ledger:** entries 2026-10-25 → 2026-11-09 (2,125 lines) rolled verbatim to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md); ledger 8,191 → 6,066 lines (still ~1.86 MB — entries are long). Header pointer now "older than 2026-11-10". Swallowed-heading awk unchanged, future-dated headings 0.
+- **Focus:** dated STEER blocks 2026-11-01 → 2026-11-16 (139 lines) rolled to [focus-archive-2026-H2.md](focus-archive-2026-H2.md); focus.md 92 KB → 53 KB. STANDING ×2, RETIRED STEERS, do-not-re-flag and the 11-23 steer kept.
+- **Handoffs:** 81 dated candidates (before 11-17); 53 still named by live files (fixed point, 2 iterations) stay; 28 (10-25 → 11-14) `git mv`'d to docs/archive/handoffs/, no collisions. Link-guard port: 1,325 path links, 0 live broken, 187 frozen broken.
+- **Flags (report-only):** CLAUDE.md is 39,997 / 40,000 chars — 3 chars of headroom. docs/ over 50 KB outside frozen roots: known-issues.md 1.99 MB, ledger.md 1.86 MB, inbox/INDEX.md 717 KB, deep-audit-register.md 557 KB, reference/database.md 456 KB (+30 more). 18+ fired one-off scheduled tasks sit disabled.
+- revert: git revert ea7b5fe47
+
 ### 2026-11-24 ~8:10 AM PT · 📝 DOCS — Candy thread close-out: OpenSea-on-Solana lessons promoted, #256 updated, parity doc + session log (Claude Code cloud; Trevor: "work through anything still unresolved … update any relevant documentation")
 
 - Verified live first: asks lane 10/11 ok in 12 h (the miss is the pre-fix 429), offers lane 2/2, chain sales 10/12 (2 transient RPC long-term-storage errors); `/insights/candy-mlb` Floor movers tab and `/insights/candy-squeeze` copy in rendered DOM; a Candy moment page reads "Listed · OpenSea". Docs: `chain-strategy.md` new section (ListState ≠ live listing; adding a venue breaks holder/absence retirers; venue join = change point), known-issues #256 update appended (index unchanged), `feature-parity-2026-11-09.md`, `docs/sessions/2026-11.md`. Revert: revert the commit (docs only).
