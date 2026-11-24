@@ -273,6 +273,17 @@ Magic Eden kept serving Candy asks placed BEFORE the 10-12 lock, after Candy mov
 - ⚠ **A one-off UPDATE against a lane that re-upserts the same rows is not a fix** — fix the writer (the 4 bids came back within 6 h).
 - ⚠ **"No holder row → retire" is NOT safe for asks**: a listed card in ME escrow loses the seller's row on a wallet walk (#145) until the next collection walk re-attributes it; such a rule would flap real listings.
 
+## Candy MLB — OpenSea on Solana, read from the chain (2026-11-23/24)
+
+Program `7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V` is **OpenSea's Solana Marketplace Program** (named in OpenSea's Bugcrowd scope; a fork of Tensor's marketplace). Its sales carry `sales.marketplace = 'opensea'`; its asks and single-card offers are read key-free hourly (`lib/candy/opensea-chain-listings.ts`, `lib/candy/opensea-chain-bids.ts`). Anchor discriminators: ListState `ECt8xkbczt2` (base64 `TvJZiqHdsEs=`), BidState `T4AJW1shazA` (`m8UFYb08CLc=`). Layouts are in each module's header.
+
+- ⛔ **A ListState ACCOUNT IS NOT A LIVE LISTING.** The program escrows the card: a live ask's Core asset is OWNED by its ListState. Delisting does not always close the account, so 908 of 2,153 Candy ListStates on 11-23 were orphans (card back in a wallet, in ME's escrow, or burned). Confirm every candidate by reading the asset (owner at bytes [1..33]) — the census holder cannot answer it.
+- ⛔ **Adding a VENUE breaks every absence- or holder-based retirer written for the old one.** `candy_retire_listings_owner_moved()` retired an ask when the census holder ≠ seller — true of EVERY escrowed OpenSea ask — and would have retired them all hourly; it is now `venue = 'magic_eden'` (`20261124044913`). The ME offers lane had already been venue-scoped (10-10). Before a new venue's rows land, grep every writer that UPDATEs `is_active` on the table.
+- ⚠ **A bid is real only if its SOL is there.** OpenSea's BidState holds the bid's lamports; the lane writes a bid only when the account covers amount × remaining (a margin-funded bid cannot be confirmed and is skipped). Collection-wide (whitelist) bids are counted, never written — `candy_offers` is one row per card.
+- ⚠ **Public RPC from Vercel rate-limits bursts:** the first run 429'd on `getMultipleAccounts`; reads are paced and fall through to publicnode, which caps `getMultipleAccounts` at **10** accounts per call.
+- ⚠ **A venue joining the book is a CHANGE POINT for every time comparison over it** — it doubled the Candy editions with a floor (664 → 1,249), so `mv_candy_floor_movers` returns no rows until its window starts on/after 2026-11-24.
+- **Not read:** Tensor's own book (`TCMPhJ…`, ~106k ListStates) — measured and declined 11-24 (docs/strategy/collections/candy-mlb.md).
+
 ## Displaced from CLAUDE.md 2026-09-26 (verbatim) — the tagline rule
 
 Moved to pay for the Disney Pinnacle grain rule in CLAUDE.md's quick-reference facts; CLAUDE.md keeps a pointer here.

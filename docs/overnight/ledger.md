@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:10 AM PT · 📝 DOCS — Candy thread close-out: OpenSea-on-Solana lessons promoted, #256 updated, parity doc + session log (Claude Code cloud; Trevor: "work through anything still unresolved … update any relevant documentation")
+
+- Verified live first: asks lane 10/11 ok in 12 h (the miss is the pre-fix 429), offers lane 2/2, chain sales 10/12 (2 transient RPC long-term-storage errors); `/insights/candy-mlb` Floor movers tab and `/insights/candy-squeeze` copy in rendered DOM; a Candy moment page reads "Listed · OpenSea". Docs: `chain-strategy.md` new section (ListState ≠ live listing; adding a venue breaks holder/absence retirers; venue join = change point), known-issues #256 update appended (index unchanged), `feature-parity-2026-11-09.md`, `docs/sessions/2026-11.md`. Revert: revert the commit (docs only).
+
 ### 2026-11-24 ~7:58 AM PT · ✅ SHIPPED — Candy "Floor movers · 7 days" tab on /insights/candy-mlb, gated past the OpenSea change point; Tensor asks measured and declined (Claude Code cloud; Trevor: "Do it all")
 
 - **DB:** `20261124153644_audit_20261124_candy_floor_movers` — `mv_candy_floor_movers` off the daily lane `candy_edition_market_daily`: confirmed floor 7 lane-days apart, both $2+, different; **no rows until day_then ≥ 2026-11-24** (OpenSea asks joined the book 11-23 and doubled the editions with a floor, 664 → 1,249). `refresh_candy_floor_movers()` (SECDEF, anon EXECUTE false — verified) on pg_cron `candy-floor-movers` (jobid 925, `53 13 * * *` UTC = 5:53 AM PST), logs pipeline `candy-floor-movers`. 0 rows today by design; first rows 12-01.
