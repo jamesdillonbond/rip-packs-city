@@ -9,6 +9,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/set-completers`,
+        url: `${SITE_URL}/api/og/insights/set-completers?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Set Completers — 2025 Rookie Sets — Rip Packs City",
@@ -53,7 +54,7 @@ export const metadata: Metadata = {
     title: "Set Completers — Who's Completed the 2025 Rookie Sets",
     description:
       "Base-play completion for each 2025 Top Shot rookie set, from the indexed on-chain ownership graph.",
-    images: [`${SITE_URL}/api/og/insights/set-completers`],
+    images: [`${SITE_URL}/api/og/insights/set-completers?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

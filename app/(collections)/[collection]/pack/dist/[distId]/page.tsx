@@ -105,6 +105,7 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { accentText } from "@/lib/accent-text"
 import { marketWalletHref } from "@/lib/analytics/wallet-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { ogCardDayKey } from "@/lib/og/card-day-key"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -257,7 +258,9 @@ export async function generateMetadata(
     "Pack EV vs live secondary ask, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]
   const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
-  const ogImage = `${BASE_URL}/api/og/pack?distId=${encodeURIComponent(distId)}&collection=${encodeURIComponent(collection)}`
+  // &d= (PT day, lib/og/card-day-key.ts): X caches a card by its og:image URL and keeps a failed fetch
+  // as a blank card; a new URL each day means a reminder post never inherits one.
+  const ogImage = `${BASE_URL}/api/og/pack?distId=${encodeURIComponent(distId)}&collection=${encodeURIComponent(collection)}&d=${ogCardDayKey()}`
   return {
     // `absolute`: this title already carries the brand, and the collection
     // subtree now re-declares the `%s | Rip Packs City` template (R31).

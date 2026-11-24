@@ -795,4 +795,65 @@ if (slot !== "sun") {
     out.warnings.push(`drops: missed-drop probe failed (${e.message})`)
   }
 }
+// ---------- link cards (2026-11-23) ----------
+// X keeps a link's card ~7 days keyed by the PAGE url AND the og:image url, and keeps a failed image
+// fetch as a blank grey card (11-23: the top-sales 2/2 reply). So: (1) every rippackscity.com link in
+// every post carries ?w=<MMDD> (PT), a page URL X has not cached this week; (2) the card is checked
+// the way X fetches it — page as Twitterbot, its og:image, the image itself — which also warms the CDN
+// for that exact image URL before Trevor pastes the link. A failure is a warning, never silent.
+const W_KEY = mdPT(now).split("/").map((x) => x.padStart(2, "0")).join("")
+const LINK_RE = /https:\/\/www\.rippackscity\.com\/[^\s)]*/g
+function keyLink(u) {
+  if (/[?&]w=/.test(u)) return u
+  return `${u}${u.includes("?") ? "&" : "?"}w=${W_KEY}`
+}
+const keyText = (t) => (typeof t === "string" ? t.replace(LINK_RE, keyLink) : t)
+function keyPost(p) {
+  if (!p) return
+  if (p.draft) {
+    p.draft = keyText(p.draft)
+    p.intent_url = intent(p.draft)
+  }
+  for (const r of p.reply ?? []) r.text = keyText(r.text)
+  for (const t of p.thread ?? []) t.text = keyText(t.text)
+  for (const t of p.thread_fallback ?? []) t.text = keyText(t.text)
+}
+keyPost(out)
+if (out.link) out.link = keyLink(out.link)
+for (const b of out.breaking ?? []) keyPost(b)
+for (const a of out.drop_alerts ?? []) keyPost(a)
+
+async function checkCard(pageUrl) {
+  const ua = { "user-agent": "Twitterbot/1.0" }
+  const t0 = Date.now()
+  const page = await fetch(pageUrl, { headers: ua, signal: AbortSignal.timeout(15000) })
+  if (!page.ok) return `link card: ${pageUrl} answered HTTP ${page.status} — X will show no card`
+  const html = await page.text()
+  const img = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&")
+  if (!img) return `link card: ${pageUrl} has no og:image — X will show a bare link`
+  const r = await fetch(img, { headers: ua, signal: AbortSignal.timeout(15000) })
+  const ms = Date.now() - t0
+  const type = r.headers.get("content-type") ?? ""
+  const bytes = (await r.arrayBuffer()).byteLength
+  if (!r.ok || !type.startsWith("image/") || bytes < 5000)
+    return `link card: ${pageUrl} → og:image ${img} answered HTTP ${r.status} ${type} ${bytes} B — X will cache a blank card; do not post the link until this is fixed`
+  if (ms > 8000) return `link card: ${pageUrl} took ${ms} ms (page + og:image) — X may time out and cache a blank card; re-run, then post`
+  if (!/[?&](d|v)=/.test(img)) return `link card: ${pageUrl}'s og:image (${img}) carries no ?d=/?v= key — if X cached a blank card for it before, it will keep showing it`
+  return null
+}
+const cardLinks = new Set()
+for (const t of [out.draft, ...(out.reply ?? []).map((r) => r.text), ...(out.thread ?? []).map((r) => r.text)])
+  for (const m of String(t ?? "").match(LINK_RE) ?? []) cardLinks.add(m)
+for (const b of out.breaking ?? []) for (const r of b.reply ?? []) for (const m of r.text.match(LINK_RE) ?? []) cardLinks.add(m)
+for (const a of out.drop_alerts ?? []) for (const m of String(a.draft ?? "").match(LINK_RE) ?? []) cardLinks.add(m)
+for (const u of cardLinks) {
+  try {
+    const w = await checkCard(u)
+    if (w) out.warnings.push(w)
+  } catch (e) {
+    out.warnings.push(`link card: could not check ${u} (${e.message}) — open it in the composer and confirm the card shows before posting`)
+  }
+}
+out.cards_checked = [...cardLinks]
+
 console.log(JSON.stringify(out, null, 2))

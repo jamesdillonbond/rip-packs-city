@@ -5,6 +5,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/allday-pack-reality`,
+        url: `${SITE_URL}/api/og/insights/allday-pack-reality?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "NFL All Day Pack Reality — Rip Packs City",
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
     title: "NFL All Day Pack Reality",
     description:
       "Modeled EV vs realized pulls for NFL All Day packs. Honest model-vs-reality check, free.",
-    images: [`${SITE_URL}/api/og/insights/allday-pack-reality`],
+    images: [`${SITE_URL}/api/og/insights/allday-pack-reality?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

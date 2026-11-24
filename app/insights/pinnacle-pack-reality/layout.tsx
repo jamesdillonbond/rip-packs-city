@@ -6,6 +6,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -29,7 +30,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/pinnacle-pack-reality`,
+        url: `${SITE_URL}/api/og/insights/pinnacle-pack-reality?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Disney Pinnacle Pack Reality — Rip Packs City",
@@ -43,7 +44,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Disney Pinnacle Pack Reality",
     description: "Did Disney Pinnacle packs pay? Price vs pulls, at open and today.",
-    images: [`${SITE_URL}/api/og/insights/pinnacle-pack-reality`],
+    images: [`${SITE_URL}/api/og/insights/pinnacle-pack-reality?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

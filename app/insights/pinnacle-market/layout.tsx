@@ -7,9 +7,10 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
-const OG_IMAGE = `${SITE_URL}/api/og/insights/pinnacle-market`
+const OG_IMAGE = `${SITE_URL}/api/og/insights/pinnacle-market?v=${OG_CARD_VERSION}`
 
 export const metadata: Metadata = {
   // The root metadata template appends " | Rip Packs City".

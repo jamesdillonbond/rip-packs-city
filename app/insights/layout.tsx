@@ -13,6 +13,7 @@ import { PageContentAnchor } from "@/components/SkipToContent"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import WalletSearchBand from "@/components/WalletSearchBand"
 import { TWITTER_INHERITED, BRAND_TITLE_TEMPLATE } from "@/lib/seo"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights`,
+        url: `${SITE_URL}/api/og/insights?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Public Insights — Rip Packs City",
@@ -53,7 +54,7 @@ export const metadata: Metadata = {
     title: "Public Insights — Rip Packs City",
     description:
       "Free, no-signup market intelligence for digital collectors.",
-    images: [`${SITE_URL}/api/og/insights`],
+    images: [`${SITE_URL}/api/og/insights?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

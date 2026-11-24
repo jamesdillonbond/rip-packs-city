@@ -162,7 +162,11 @@ Learn more about this week's drops here 👇
 https://www.rippackscity.com/insights/drops
 ```
 
-**X caches a link's preview card for about 7 days** from the first time the URL is shared, and there is no longer a way to force a refresh. X caches **twice**: by the page URL *and* by the og:image URL. On 11-15 `?w=1115` on the page link still showed the 11-08 card because og:image was the same bare URL. Fixed on both sides: the drops page's og:image now carries `?d=<PT date>` (`app/insights/drops/layout.tsx`), and the script's 2/2 link carries `?w=<MMDD>` (PT) automatically. If the composer still shows an old card, the page URL with that `?w=` was already fetched with the old card — add a letter (`?w=1115b`) and re-paste the link.
+**X caches a link's preview card for about 7 days**, keyed by the page URL **and** by the og:image URL, and it keeps a failed image fetch as a **blank grey card** (11-23: the top-sales 2/2 reply; 11-15: last week's drops card). Everything is now keyed on both sides (11-23):
+- **og:image** — `/insights/drops`, `/insights/top-sales` and pack-dist pages carry `?d=<PT YYYYMMDD>` (a new image URL every day); every other `/insights/*` board carries `?v=<deploy sha>` (a new one every deploy). Both from `lib/og/card-day-key.ts`; the OG routes ignore the param.
+- **page link** — `x-draft.mjs` appends `?w=<MMDD>` (PT) to every rippackscity.com link in every post it drafts (slot, 2/2 reply, threads, big-sale and drop-reminder extras).
+- **pre-check** — `x-draft.mjs` then fetches each link as Twitterbot, reads its og:image and fetches that image (which also warms the CDN for it); a non-200, a non-image, a slow (> 8 s) card or an unkeyed og:image is a `warnings[]` line — do not send the link until it clears.
+- If the composer still shows a stale or blank card, that exact page URL was fetched before: add a letter (`?w=1123c`) and re-paste.
 
 **Top Shot This trade-in packs are REWARD dists in the book, so the calendar never lists them** (11-22): one with no `MANUAL_DROPS` entry reached no report (Stephen Curry, 11-16). The calendar API now names them in `meta.needs_hand_entry` and the draft warns on each, so it is hand-entered from its official page. **Overtime packs** (Top Shot, $10, one rookie or a Trio, one day each) follow each drop ("After each drop, Overtime Packs bring that drop's biggest hits back", blog 10-14): seven ran 11-12 → 11-20 after Rookie Debut. They reach the book ~a day ahead, so the daily drop reminder, not the Sunday report, is where they show.
 

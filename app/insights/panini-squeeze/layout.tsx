@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PANINI_PUBLIC } from "@/lib/launch-flags";
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com";
 
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/panini-squeeze`,
+        url: `${SITE_URL}/api/og/insights/panini-squeeze?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Panini WC Prizm Squeeze — Rip Packs City",
@@ -63,7 +64,7 @@ export const metadata: Metadata = {
     title: "Panini WC Prizm Squeeze — Rip Packs City",
     description:
       "Which 2026 Prizm World Cup cards are still sealed in packs — remaining supply, rip %, FMV and sealed-dollar exposure by player and parallel.",
-    images: [`${SITE_URL}/api/og/insights/panini-squeeze`],
+    images: [`${SITE_URL}/api/og/insights/panini-squeeze?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
   ...(PANINI_PUBLIC ? {} : { robots: { index: false, follow: false } }),

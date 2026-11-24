@@ -2,6 +2,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
     description: "Every collection's secondary-market health in one view — volume, buyers, sellers across 24h/7d/30d.",
     url: `${SITE_URL}/insights/market-pulse`,
     siteName: "Rip Packs City",
-    images: [{ url: `${SITE_URL}/api/og/insights/market-pulse`, width: 1200, height: 630, alt: "Market Pulse — Rip Packs City" }],
+    images: [{ url: `${SITE_URL}/api/og/insights/market-pulse?v=${OG_CARD_VERSION}`, width: 1200, height: 630, alt: "Market Pulse — Rip Packs City" }],
     locale: "en_US",
     type: "website",
   },
@@ -34,7 +35,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Market Pulse — Digital Collectibles Volume, Buyers & Sellers",
     description: "Every collection's secondary-market health in one view.",
-    images: [`${SITE_URL}/api/og/insights/market-pulse`],
+    images: [`${SITE_URL}/api/og/insights/market-pulse?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

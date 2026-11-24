@@ -6,6 +6,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -28,7 +29,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/candy-squeeze`,
+        url: `${SITE_URL}/api/og/insights/candy-squeeze?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Candy Squeeze Board — Rip Packs City",
@@ -42,7 +43,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Candy Squeeze Board",
     description: "Which Candy ICONs are collectors not selling? Listed share of collector-held supply.",
-    images: [`${SITE_URL}/api/og/insights/candy-squeeze`],
+    images: [`${SITE_URL}/api/og/insights/candy-squeeze?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

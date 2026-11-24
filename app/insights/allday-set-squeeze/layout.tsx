@@ -9,9 +9,10 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
-const OG_IMAGE = `${SITE_URL}/api/og/insights/allday-set-squeeze`
+const OG_IMAGE = `${SITE_URL}/api/og/insights/allday-set-squeeze?v=${OG_CARD_VERSION}`
 
 export const metadata: Metadata = {
   title: "NFL All Day Set Squeeze Leaderboard",

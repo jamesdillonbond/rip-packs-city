@@ -5,6 +5,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/first-mint`,
+        url: `${SITE_URL}/api/og/insights/first-mint?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Top Shot First-Mint Trophy Tracker — Rip Packs City",
@@ -51,7 +52,7 @@ export const metadata: Metadata = {
     title: "Top Shot First-Mint Trophy Tracker",
     description:
       "Trophies aren't a vibe — they're math. Every serial #1 sale, last 90d.",
-    images: [`${SITE_URL}/api/og/insights/first-mint`],
+    images: [`${SITE_URL}/api/og/insights/first-mint?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

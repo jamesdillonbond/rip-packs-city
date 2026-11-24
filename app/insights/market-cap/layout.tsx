@@ -8,6 +8,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/market-cap`,
+        url: `${SITE_URL}/api/og/insights/market-cap?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Market Cap — Rip Packs City",
@@ -54,7 +55,7 @@ export const metadata: Metadata = {
     title: TITLE,
     description:
       "FMV x collector-held supply — burned Moments and unopened packs excluded — by collection, player, team, set and badge.",
-    images: [`${SITE_URL}/api/og/insights/market-cap`],
+    images: [`${SITE_URL}/api/og/insights/market-cap?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

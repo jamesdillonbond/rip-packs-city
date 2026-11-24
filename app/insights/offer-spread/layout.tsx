@@ -8,6 +8,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/offer-spread`,
+        url: `${SITE_URL}/api/og/insights/offer-spread?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Bid vs Floor — Top Shot Offer/Ask Spread — Rip Packs City",
@@ -51,7 +52,7 @@ export const metadata: Metadata = {
     title: "Bid vs Floor — Top Shot Offer/Ask Spread",
     description:
       "Top Shot editions where the top standing offer meets or approaches the floor ask.",
-    images: [`${SITE_URL}/api/og/insights/offer-spread`],
+    images: [`${SITE_URL}/api/og/insights/offer-spread?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

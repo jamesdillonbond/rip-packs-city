@@ -14,3 +14,11 @@ export function ogCardDayKey(now: Date = new Date()): string {
   )
   return `${p.year}${p.month}${p.day}`
 }
+
+/**
+ * The deploy's short commit sha, for a board whose metadata is STATIC (`export const metadata`):
+ * appended as ?v= it gives every deploy a new og:image URL, so a card X cached blank (or stale)
+ * never outlives the next deploy. Falls back to the build day when the sha is absent (local builds).
+ * Boards with generateMetadata use ogCardDayKey() instead (a new URL every PT day).
+ */
+export const OG_CARD_VERSION: string = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || ogCardDayKey()

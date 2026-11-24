@@ -9,6 +9,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/new-collectors`,
+        url: `${SITE_URL}/api/og/insights/new-collectors?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "New Collectors — Who's Entering Top Shot — Rip Packs City",
@@ -53,7 +54,7 @@ export const metadata: Metadata = {
     title: "New Collectors — Who's Entering Top Shot, and What They Buy First",
     description:
       "NBA Top Shot's acquisition funnel + cohort retention, from buyer-resolved on-chain sales.",
-    images: [`${SITE_URL}/api/og/insights/new-collectors`],
+    images: [`${SITE_URL}/api/og/insights/new-collectors?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

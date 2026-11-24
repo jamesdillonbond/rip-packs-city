@@ -9,6 +9,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -40,7 +41,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/rookie-board`,
+        url: `${SITE_URL}/api/og/insights/rookie-board?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Rookie Board — Per-Parallel FMV, Burn & Lock for the 2025 & 2026 Classes — Rip Packs City",
@@ -55,7 +56,7 @@ export const metadata: Metadata = {
     title: "Rookie Board — Per-Parallel FMV, Burn & Lock",
     description:
       "Every 2025 and 2026 Top Shot rookie edition by parallel, with per-parallel FMV priced from that printing's own sales, circulation, burn and lock rates.",
-    images: [`${SITE_URL}/api/og/insights/rookie-board`],
+    images: [`${SITE_URL}/api/og/insights/rookie-board?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

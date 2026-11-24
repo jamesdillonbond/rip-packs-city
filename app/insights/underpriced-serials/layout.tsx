@@ -10,6 +10,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/underpriced-serials`,
+        url: `${SITE_URL}/api/og/insights/underpriced-serials?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Underpriced #1s — Headline Serials Listed Below Value — Rip Packs City",
@@ -54,7 +55,7 @@ export const metadata: Metadata = {
     title: "Underpriced #1s — Headline Serials Listed Below Value",
     description:
       "Top Shot #1 mints & perfect mints listed below value right now — live deals, ranked by discount.",
-    images: [`${SITE_URL}/api/og/insights/underpriced-serials`],
+    images: [`${SITE_URL}/api/og/insights/underpriced-serials?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

@@ -9,6 +9,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/serial-premiums`,
+        url: `${SITE_URL}/api/og/insights/serial-premiums?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Serial Premiums — What the #1 Mint Really Sells For — Rip Packs City",
@@ -53,7 +54,7 @@ export const metadata: Metadata = {
     title: "Serial Premiums — What the #1 Mint Really Sells For",
     description:
       "The most extreme #1-mint premiums on NBA Top Shot — every row a real sale, not an estimate.",
-    images: [`${SITE_URL}/api/og/insights/serial-premiums`],
+    images: [`${SITE_URL}/api/og/insights/serial-premiums?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

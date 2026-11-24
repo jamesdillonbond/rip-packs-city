@@ -159,10 +159,12 @@ describe("SEO invariants — independent of the flag", () => {
     const ogUrl = (metadata.openGraph as any).images[0].url
     // The opengraph-image.tsx file convention renders 0 bytes in this app, so
     // dynamic OG must go through a route handler (memory: share-og-image-zero-bytes).
-    expect(ogUrl).toBe(`${BASE}/api/og/insights/candy-mlb`)
+    // The route path is the property; ?v=<deploy key> (lib/og/card-day-key.ts, 2026-11-23) is a cache
+    // key so X never keeps a blank card past a deploy — re-pinned, not loosened: the key must be there.
+    expect(ogUrl).toMatch(new RegExp(`^${BASE.replace(/[.]/g, "\\.")}/api/og/insights/candy-mlb\\?v=[0-9a-z]+$`))
     expect((metadata.openGraph as any).images[0].width).toBe(1200)
     expect((metadata.openGraph as any).images[0].height).toBe(630)
-    expect((metadata.twitter as any).images[0]).toBe(`${BASE}/api/og/insights/candy-mlb`)
+    expect((metadata.twitter as any).images[0]).toBe(ogUrl)
     expect((metadata.twitter as any).card).toBe("summary_large_image")
   })
 })

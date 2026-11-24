@@ -4,6 +4,7 @@ import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { readCrossCollectionCohortSize } from "@/lib/insights/cross-collection-cohort"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -55,7 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "Rip Packs City",
       images: [
         {
-          url: `${SITE_URL}/api/og/insights/cross-collection`,
+          url: `${SITE_URL}/api/og/insights/cross-collection?v=${OG_CARD_VERSION}`,
           width: 1200,
           height: 630,
           alt: "Cross-Collection Whale Map — Rip Packs City",
@@ -69,7 +70,7 @@ export async function generateMetadata(): Promise<Metadata> {
       card: "summary_large_image",
       title: "Cross-Collection Whale Map",
       description: `${lead} 3+ Flow collections — their cohort, broken down.`,
-      images: [`${SITE_URL}/api/og/insights/cross-collection`],
+      images: [`${SITE_URL}/api/og/insights/cross-collection?v=${OG_CARD_VERSION}`],
       creator: "@RipPacksCity",
     },
   }

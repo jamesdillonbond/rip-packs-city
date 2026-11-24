@@ -7,6 +7,7 @@
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights/pack-sniper`,
+        url: `${SITE_URL}/api/og/insights/pack-sniper?v=${OG_CARD_VERSION}`,
         width: 1200,
         height: 630,
         alt: "Pack Sniper — Rip Packs City",
@@ -51,7 +52,7 @@ export const metadata: Metadata = {
     title: "Pack Sniper — Sealed Pack Deals vs Expected Value",
     description:
       "Currently-listed Top Shot sealed packs ranked by live ask vs expected pull value. Lottery packs flagged.",
-    images: [`${SITE_URL}/api/og/insights/pack-sniper`],
+    images: [`${SITE_URL}/api/og/insights/pack-sniper?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },
 }

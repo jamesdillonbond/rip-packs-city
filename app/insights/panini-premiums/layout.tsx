@@ -10,6 +10,7 @@ import type { Metadata } from "next"
 import { PANINI_PUBLIC } from "@/lib/launch-flags"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { OG_CARD_VERSION } from "@/lib/og/card-day-key"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -18,7 +19,7 @@ const DESCRIPTION =
   "Panini digital cards across soccer, NBA, NFL, WNBA, MLB and NASCAR: what each numbered parallel's FMV commands over the player's common base, and what #1 and perfect-mint serials actually sold for against their edition's typical sale. Free. No signup."
 // 2026-10-11: the text-only default board card (app/api/og/insights/[slug]) — this
 // used to borrow Panini's COLLECTION card, so a share of the board previewed as the collection.
-const OG_IMAGE = `${SITE_URL}/api/og/insights/panini-premiums`
+const OG_IMAGE = `${SITE_URL}/api/og/insights/panini-premiums?v=${OG_CARD_VERSION}`
 
 export const metadata: Metadata = {
   title: { absolute: `${TITLE} | Rip Packs City` },
