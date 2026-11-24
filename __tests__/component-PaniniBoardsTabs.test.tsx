@@ -184,4 +184,11 @@ describe("PaniniBoardsTabs — Floor movers · 7 days (2026-11-04)", () => {
     fireEvent.click(getByText("Rookie cards"))
     expect(container.textContent).toContain("Rookie cards couldn't load right now")
   })
+
+  it("Rookie cards tab: a snapshot cached before the board existed is 'next refresh', not a failed read", () => {
+    const { container, getByText } = render(<PaniniBoardsTabs data={base} degraded={null} />)
+    fireEvent.click(getByText("Rookie cards"))
+    expect(container.textContent).toContain("next hourly refresh")
+    expect(container.textContent).not.toContain("Rookie cards couldn't load")
+  })
 })

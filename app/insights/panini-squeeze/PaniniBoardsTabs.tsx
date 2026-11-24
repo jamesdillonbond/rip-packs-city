@@ -516,7 +516,11 @@ export default function PaniniBoardsTabs({
         // Rookie cards (2026-11-23, Panini parity pass 3 — Top Shot's and All Day's rookie boards): every player whose
         // cards Panini flags "rookie card", busiest first. FMV total counts priced editions only (an unpriced one is
         // never summed as $0); sales are the ones ON RECORD, which reach RPC days late.
-        data.rookies_error || !data.rookies ? (
+        data.rookies === undefined && !data.rookies_error ? (
+          // A snapshot cached before this board existed carries no rookies key at all — that is not a failed read
+          // (live 11-23 ~8:20 PM PT: the hourly snapshot predated the tab and it read "couldn't load").
+          <Note>The rookie cards board joins this page&rsquo;s data with its next hourly refresh — check back shortly.</Note>
+        ) : data.rookies_error || !data.rookies ? (
           <Failed what="Rookie cards" />
         ) : data.rookies.length === 0 ? (
           <Note>No Panini card RPC has read is flagged as a rookie card yet.</Note>
