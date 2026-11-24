@@ -34,6 +34,7 @@ const jerseyRow = { ...serialRow, external_id: "aaron-judge", name: "Aaron Judge
 const ASG = "8608ae96-10c5-4bf6-aedf-b0d4dc0bfe66"
 const LEGACY = "68f966ca-5343-5cbf-8d52-7b7f7019564f"
 const TINY = "11111111-2222-4333-8444-555555555555"
+const BALLS = "5e0c2a11-0000-4000-8000-000000000b11"
 const squeezeRow = {
   external_id: "shohei-ohtani", player_name: "Shohei Ohtani", set_name: "2026 MLB Base Series ICONs", rarity_label: "Core",
   thumbnail_url: null, minted: 250, burned: null, issuer_held: 11, collector_held: 239, listed: 0, pct_listed: 0,
@@ -123,6 +124,7 @@ describe("pages", () => {
           { set_id: ASG, set_name: "2026 MLB All-Star Game ICONs", registry: true, ranked: 180, zero_listed: 71, asks: 509 },
           { set_id: LEGACY, set_name: "2025 All-Star ICONS", registry: false, ranked: 176, zero_listed: 157, asks: 20 },
           { set_id: TINY, set_name: "Tiny Set", registry: false, ranked: 2, zero_listed: 2, asks: 0 },
+          { set_id: BALLS, set_name: "2024 MLB Team Balls", registry: true, ranked: 12, zero_listed: 3, asks: 9 },
         ],
         rows: [squeezeRow, asg],
       },
@@ -133,6 +135,9 @@ describe("pages", () => {
     expect(html).toContain(`href="/insights/candy-squeeze/set/${LEGACY}"`)
     expect(html).toContain("2025 All-Star ICONS · 20 listed")
     expect(html).not.toContain("Tiny Set")
+    // A registry set outside the default 2026 view is still offered; the 2026 sets are not (the default ranks them).
+    expect(html).toContain(`href="/insights/candy-squeeze/set/${BALLS}"`)
+    expect(html).not.toContain(`href="/insights/candy-squeeze/set/${ASG}"`)
     expect(html).toContain("Rare · 2026 MLB All-Star Game ICONs")
     expect(html).toContain('href="/candy-mlb/edition/asg26%3Amatt-olson-rare"')
     expect(html).not.toContain("COMMON")

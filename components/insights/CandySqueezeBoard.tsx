@@ -49,8 +49,9 @@ export function pickerSets(sets: CandySqueezeSet[]): CandySqueezeSet[] {
 function SetPicker({ sets, activeSetId }: { sets: CandySqueezeSet[]; activeSetId: string | null }) {
   const offer = pickerSets(sets)
   if (offer.length === 0) return null
-  // Registry (2026) sets first, then the most-listed legacy sets; the rest by name behind a disclosure.
-  const legacy = offer.filter((s) => !s.registry)
+  // The default board already ranks the 2026 sets; every other set (legacy, and the 2024 Team Balls registry set)
+  // gets a chip by live asks, the rest by name behind a disclosure.
+  const legacy = offer.filter((s) => !(s.registry && s.set_name.startsWith("2026 ")))
   const chips = legacy.slice(0, PICKER_CHIPS)
   const rest = [...legacy.slice(PICKER_CHIPS)].sort((a, b) => a.set_name.localeCompare(b.set_name))
   return (
