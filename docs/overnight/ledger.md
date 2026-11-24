@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~11:32 AM PT · 📝 DOCS — deep-audit register 570 KB → 102 KB: resolved rows' full text moved to deep-audit-register-archive.md (Cowork, Trevor: "Yes do it all", `c6ddaf5aa`)
+- 187 RESOLVED rows now one-line stubs (same id, 5 columns, resolved date) pointing at [deep-audit-register-archive.md](../audits/deep-audit-register-archive.md); `check-register-integrity --before <parent>`: 192 rows, 0 vanished, 0 malformed. Other sections untouched.
+- revert: git revert c6ddaf5aa
+
 ### 2026-11-24 ~11:31 AM PT · 📝 DOCS + 🔧 SCRIPT — known-issues.md 2.04 MB → 143 KB: closed items' full text moved to known-issues-archive.md (Cowork, Trevor: "Yes do it all", `8132356c6`)
 - 254 of 255 closed items now hold a one-line stub in their numbered slot; full text verbatim in [known-issues-archive.md](../reference/known-issues-archive.md) under `## #NNN` (0 lines lost, multiset-checked). STATUS INDEX byte-identical (`gen-known-issues-index --check` green), so every `#NNN` citation still resolves.
 - #14 kept in place (the monolith-inventory test's suppression list) plus one line naming the 7 over-threshold files that were named only in moved items. Retired-rule allow comment moved with its quote; link guard 0 live broken; retired-rule guard clean.
