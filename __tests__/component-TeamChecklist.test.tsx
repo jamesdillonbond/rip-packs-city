@@ -53,6 +53,9 @@ function routeFetch(opts: { checklist: (url: string) => Promise<Response>; progr
     // never consumes a scripted checklist response. Toggle cases live in
     // component-TeamChecklist-full-editions.test.tsx.
     if (url.includes("team-checklist-full-editions")) return res(true, { has_parallels: false })
+    // The Series Checklists panel (2026-11-23, its own route and its own tests) — answered here so it never
+    // consumes a scripted checklist response; an empty series list renders nothing.
+    if (url.includes("team-series-checklists")) return res(true, { series: [] })
     if (url.includes("team-checklist-progress")) return opts.progress(url)
     return opts.checklist(url)
   })
