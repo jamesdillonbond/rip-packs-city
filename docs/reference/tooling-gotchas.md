@@ -88,6 +88,13 @@ Recover by hand only when ~6 h of red parity actually matters; otherwise let the
 bot's commits trigger NO workflows (GITHUB_TOKEN recursion guard), so parity turns green only on the
 next human push or its own schedule.
 
+⚠ **The bot can claim YOUR just-applied migration before your own commit (2026-11-23, `588f2b8`).** It
+committed `20261124064628_…panini_scarcer_for_less.sql` — body only, no header — minutes after the
+`apply_migration`, while the session's file (header + body) was still untracked. `git stash -u` + `git pull`
+then failed the pop ("already exists, no checkout"). **Restore yours with `git show 'stash@{0}^3':<file>`,
+diff the non-comment lines against the bot's copy (they should match), keep yours for the header, and drop the
+stash.** Committing the file in the same turn as the `apply_migration` avoids the race.
+
 ⚠ **Hand-written repo copies may carry richer header comments than the applied text** (comments are
 stripped from nothing, but a shorter header is often passed to the tool to save tokens). That
 divergence is comment-only and schema-identical — but say so where it happens rather than leaving
