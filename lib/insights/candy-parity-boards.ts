@@ -4,9 +4,10 @@
 // that afternoon), each shared by its server page and its public JSON route so the two cannot drift:
 //   /insights/candy-serial-premiums — get_candy_serial_premiums (20261124013201): #1, jersey-match and perfect-serial
 //                                     sales with the premium over the same edition's other serials (every Candy set);
-//   /insights/candy-squeeze         — get_candy_listed_squeeze (20261124013201; every 2026 set from 20261124023333):
-//                                     editions ranked by the share of collector-held copies with a confirmed Magic
-//                                     Eden listing.
+//   /insights/candy-squeeze         — get_candy_listed_squeeze (20261124013201; every 2026 set from 20261124023333;
+//                                     one board per eligible set, legacy included, from 20261124032031 — the per-set
+//                                     pages are /insights/candy-squeeze/set/<set id>): editions ranked by the share of
+//                                     collector-held copies with a confirmed Magic Eden listing.
 // Each fetcher THROWS on a failed read or a body that is not the function's shape (a failure, never "no rows");
 // NULLs stay null (`num`), so an unknown premium is never 1.0× and an unknown ask never $0.
 
@@ -110,13 +111,22 @@ export interface CandySqueezeRow {
 }
 
 export interface CandySqueezeSet {
+  set_id: string
   set_name: string
+  /** A registry set (2026 MLB ICONs, 2024 Team Balls) — asks from candy-listings-indexer. */
+  registry: boolean
   ranked: number
   zero_listed: number
+  /** Confirmed Magic Eden asks across the set's ranked editions. */
+  asks: number
 }
 
 export interface CandySqueezePayload {
   listings_seen_at: string | null
+  /** When mv_candy_edition_holders was last refreshed (holder counts are as of then). */
+  holders_counted_at: string | null
+  /** The set this payload ranks; null = the default 2026 view. */
+  set_id: string | null
   min_held: number
   editions_ranked: number
   editions_zero_listed: number
@@ -129,13 +139,18 @@ export function shapeCandySqueeze(raw: unknown): CandySqueezePayload {
   if (!r || !Array.isArray(r.rows)) throw new Error("candy squeeze: unexpected payload")
   return {
     listings_seen_at: typeof r.listings_seen_at === "string" ? r.listings_seen_at : null,
+    holders_counted_at: typeof r.holders_counted_at === "string" ? r.holders_counted_at : null,
+    set_id: typeof r.set_id === "string" ? r.set_id : null,
     min_held: Number(r.min_held ?? 0),
     editions_ranked: Number(r.editions_ranked ?? 0),
     editions_zero_listed: Number(r.editions_zero_listed ?? 0),
     sets: (Array.isArray(r.sets) ? (r.sets as Record<string, unknown>[]) : []).map((x) => ({
+      set_id: String(x.set_id ?? ""),
       set_name: String(x.set_name ?? ""),
+      registry: x.registry === true,
       ranked: Number(x.ranked ?? 0),
       zero_listed: Number(x.zero_listed ?? 0),
+      asks: Number(x.asks ?? 0),
     })),
     rows: (r.rows as Record<string, unknown>[]).map((x) => ({
       external_id: String(x.external_id ?? ""),
@@ -156,8 +171,22 @@ export function shapeCandySqueeze(raw: unknown): CandySqueezePayload {
   }
 }
 
-export async function fetchCandySqueeze(db: Db = supabaseAdmin, opts: { minHeld?: number; limit?: number } = {}): Promise<CandySqueezePayload> {
-  const { data, error } = await db.rpc("get_candy_listed_squeeze", { p_min_held: opts.minHeld ?? 25, p_limit: opts.limit ?? 300 })
+/** What a page renders under a failed read (the degraded notice explains it; nothing here is a measurement). */
+export const EMPTY_CANDY_SQUEEZE: CandySqueezePayload = {
+  listings_seen_at: null, holders_counted_at: null, set_id: null, sets: [],
+  min_held: 25, editions_ranked: 0, editions_zero_listed: 0, rows: [],
+}
+
+/** A set id is a UUID; anything else never reaches the database. */
+export const CANDY_SET_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+export async function fetchCandySqueeze(
+  db: Db = supabaseAdmin,
+  opts: { minHeld?: number; limit?: number; setId?: string | null } = {},
+): Promise<CandySqueezePayload> {
+  const setId = opts.setId ?? null
+  if (setId !== null && !CANDY_SET_ID_RE.test(setId)) throw new Error("candy squeeze: malformed set id")
+  const { data, error } = await db.rpc("get_candy_listed_squeeze", { p_min_held: opts.minHeld ?? 25, p_limit: opts.limit ?? 300, p_set: setId })
   if (error) throw new Error(error.message ?? "get_candy_listed_squeeze failed")
   return shapeCandySqueeze(data)
 }

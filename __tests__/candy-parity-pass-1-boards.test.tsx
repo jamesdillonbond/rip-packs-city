@@ -22,6 +22,7 @@ import { GET as serialGET } from "@/app/api/public/insights/candy-serial-premium
 import { GET as squeezeGET } from "@/app/api/public/insights/candy-squeeze/route"
 import SerialPage from "@/app/insights/candy-serial-premiums/page"
 import SqueezePage from "@/app/insights/candy-squeeze/page"
+import SqueezeSetPage from "@/app/insights/candy-squeeze/set/[setId]/page"
 import { getInsightsBoard } from "@/lib/insights/board-registry"
 
 const serialRow = {
@@ -30,6 +31,9 @@ const serialRow = {
   n_comps: 6, comp_median_usd: 0.42, multiplier: 55.38,
 }
 const jerseyRow = { ...serialRow, external_id: "aaron-judge", name: "Aaron Judge", serial_number: 99, band: "jersey", n_comps: 2, comp_median_usd: null, multiplier: null }
+const ASG = "8608ae96-10c5-4bf6-aedf-b0d4dc0bfe66"
+const LEGACY = "68f966ca-5343-5cbf-8d52-7b7f7019564f"
+const TINY = "11111111-2222-4333-8444-555555555555"
 const squeezeRow = {
   external_id: "shohei-ohtani", player_name: "Shohei Ohtani", set_name: "2026 MLB Base Series ICONs", rarity_label: "Core",
   thumbnail_url: null, minted: 250, burned: null, issuer_held: 11, collector_held: 239, listed: 0, pct_listed: 0,
@@ -71,7 +75,7 @@ describe("routes", () => {
     rpcResult = { data: { listings_seen_at: "2026-11-24T00:35:26Z", min_held: 50, editions_ranked: 1, editions_zero_listed: 1, rows: [squeezeRow] }, error: null }
     const ok = await squeezeGET(new NextRequest("https://t/api/public/insights/candy-squeeze?min_held=50&limit=10"))
     expect(ok.status).toBe(200)
-    expect(lastRpc).toEqual({ fn: "get_candy_listed_squeeze", args: { p_min_held: 50, p_limit: 10 } })
+    expect(lastRpc).toEqual({ fn: "get_candy_listed_squeeze", args: { p_min_held: 50, p_limit: 10, p_set: null } })
     const body = await ok.json()
     expect(body.meta.listings_seen_at).toBe("2026-11-24T00:35:26Z")
     expect(body.meta.editions_zero_listed).toBe(1)
@@ -115,13 +119,20 @@ describe("pages", () => {
     rpcResult = {
       data: {
         listings_seen_at: "2026-11-24T00:35:26Z", min_held: 25, editions_ranked: 2, editions_zero_listed: 1,
-        sets: [{ set_name: "2026 MLB All-Star Game ICONs", ranked: 1, zero_listed: 0 }, { set_name: "2026 MLB Base Series ICONs", ranked: 1, zero_listed: 1 }],
+        sets: [
+          { set_id: ASG, set_name: "2026 MLB All-Star Game ICONs", registry: true, ranked: 180, zero_listed: 71, asks: 509 },
+          { set_id: LEGACY, set_name: "2025 All-Star ICONS", registry: false, ranked: 176, zero_listed: 157, asks: 20 },
+          { set_id: TINY, set_name: "Tiny Set", registry: false, ranked: 2, zero_listed: 2, asks: 0 },
+        ],
         rows: [squeezeRow, asg],
       },
       error: null,
     }
     const html = renderToStaticMarkup(await SqueezePage())
-    expect(html).toContain("2026 MLB All-Star Game ICONs: 1 ranked, 0 unlisted")
+    // The picker offers legacy sets with enough cards, links each to its own board, and never offers a 2-card set.
+    expect(html).toContain(`href="/insights/candy-squeeze/set/${LEGACY}"`)
+    expect(html).toContain("2025 All-Star ICONS · 20 listed")
+    expect(html).not.toContain("Tiny Set")
     expect(html).toContain("Rare · 2026 MLB All-Star Game ICONs")
     expect(html).toContain('href="/candy-mlb/edition/asg26%3Amatt-olson-rare"')
     expect(html).not.toContain("COMMON")
@@ -152,5 +163,43 @@ describe("edition page entry points", () => {
     const chips = src.slice(src.indexOf("async function CandyInsightChips"), src.indexOf("async function CandyMarketHistorySection"))
     expect(chips).toContain('href="/insights/candy-serial-premiums"')
     expect(chips).toContain('href="/insights/candy-squeeze"')
+  })
+})
+
+describe("per-set squeeze pages", () => {
+  const params = (setId: string) => ({ params: Promise.resolve({ setId }) })
+  const payload = (sets: unknown[]) => ({
+    data: { listings_seen_at: "2026-11-24T00:35:26Z", holders_counted_at: "2026-11-24T03:20:31Z", set_id: LEGACY, min_held: 25,
+      editions_ranked: 1, editions_zero_listed: 1, sets, rows: [{ ...squeezeRow, set_name: "2025 All-Star ICONS" }] },
+    error: null,
+  })
+  it("a malformed set id never reaches the database: the route 400s, the page 404s", async () => {
+    const bad = await squeezeGET(new NextRequest("https://t/api/public/insights/candy-squeeze?set=1;drop"))
+    expect(bad.status).toBe(400)
+    lastRpc = null
+    await expect(SqueezeSetPage(params("not-a-uuid"))).rejects.toThrow()
+    expect(lastRpc).toBeNull()
+  })
+  it("an eligible set renders its own board and passes its id", async () => {
+    rpcResult = payload([{ set_id: LEGACY, set_name: "2025 All-Star ICONS", registry: false, ranked: 176, zero_listed: 157, asks: 20 }])
+    const html = renderToStaticMarkup(await SqueezeSetPage(params(LEGACY)))
+    expect(lastRpc).toEqual({ fn: "get_candy_listed_squeeze", args: { p_min_held: 25, p_limit: 300, p_set: LEGACY } })
+    expect(html).toContain("Candy Squeeze · 2025 All-Star ICONS")
+    expect(html).toContain("Listings as of Nov 23")
+  })
+  it("a set the board cannot vouch for is a 404, never a board reading '0 listed'", async () => {
+    rpcResult = payload([{ set_id: ASG, set_name: "2026 MLB All-Star Game ICONs", registry: true, ranked: 180, zero_listed: 71, asks: 509 }])
+    await expect(SqueezeSetPage(params(LEGACY))).rejects.toThrow()
+  })
+  it("a FAILED read is the degraded notice, never a 404 (an outage must not delete a page)", async () => {
+    rpcResult = { data: null, error: { message: "down" } }
+    const html = renderToStaticMarkup(await SqueezeSetPage(params(LEGACY)))
+    expect(html).not.toContain("Listings as of")
+    expect(html).not.toContain("collector-held copies.</p>")
+  })
+  it("the JSON route says when a requested set has no board", async () => {
+    rpcResult = payload([{ set_id: ASG, set_name: "2026 MLB All-Star Game ICONs", registry: true, ranked: 180, zero_listed: 71, asks: 509 }])
+    const res = await squeezeGET(new NextRequest(`https://t/api/public/insights/candy-squeeze?set=${LEGACY}`))
+    expect((await res.json()).meta.set_eligible).toBe(false)
   })
 })
