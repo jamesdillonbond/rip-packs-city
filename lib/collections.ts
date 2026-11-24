@@ -367,6 +367,9 @@ export const COLLECTIONS: Collection[] = [
     // 2026-11-23 (Panini parity pass): dated RPC changes, each in the ledger — the same rule as the other
     // collections' news (no coverage stats dressed as news).
     news: [
+      { title: "Rookie cards board", date: "2026-11-23", summary: "A new Rookie cards tab ranks every player whose Panini cards are flagged rookie card — across every product and sport — with their FMV total, cheapest live ask and last 30 days of sales.", url: "/insights/panini-squeeze?tab=rookies" },
+      { title: "Product pages: market cap and top players", date: "2026-11-23", summary: "Each product page now shows the product's market cap and its top players by FMV, and player pages show ESPN season stats.", url: "/panini-blockchain/product" },
+      { title: "Team checklists on franchise hubs", date: "2026-11-23", summary: "Each team hub's Panini panel now lists every card placed on that team. Enter your Panini username to see which you own and what the rest would cost.", url: "/teams/nba/blazers" },
       { title: "Player checklists", date: "2026-11-23", summary: "Every Panini player page now lists all of that player's cards. Enter your Panini username to see which you own, which you're missing, and what the rest would cost at today's confirmed asks.", url: "/panini-blockchain/player/damian-lillard" },
       { title: "Parallel printings on card pages", date: "2026-11-23", summary: "Each card page now lines up the card's other parallels with each one's mint count and FMV.", url: "/panini-blockchain/market" },
       { title: "Featured in Insights on card pages", date: "2026-11-23", summary: "Card pages now link the Panini boards a card is on: below FMV, still sealed in packs, a 7-day floor move, or a strong bid against the floor.", url: "/insights/panini-squeeze" },

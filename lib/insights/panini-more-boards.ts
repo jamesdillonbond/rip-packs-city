@@ -100,6 +100,15 @@ const FLOOR_MOVER_COLS =
   "external_id,player_name,set_name,parallel,mint_cap,product_name,sport,ask_then_usd,ask_now_usd,listed_now," +
   "change_usd,change_pct,direction,day_then,day_now,window_complete,computed_at"
 
+// ── ROOKIE CARDS (2026-11-23, Panini parity pass 3 — Top Shot / All Day rookie boards) ──────────────────────
+// mv_panini_rookie_board (audit_20261123_panini_rookie_board, daily 12:21 UTC): one row per player whose cards
+// Panini flags "rookie card" — rookie editions, FMV total of the priced ones, cheapest 7-day confirmed ask, 30-day
+// sales on record. Busiest first (30-day volume, then FMV total), capped, with the exact player count.
+export const ROOKIES_LIMIT = 100
+const ROOKIE_COLS =
+  "player_name,sport,rc_editions,rc_products,priced_editions,fmv_total_usd,cheapest_ask_usd,cheapest_ask_external_id," +
+  "sales_30d,volume_30d_usd,newest_sale_at,top_external_id,top_set_name,top_fmv_usd,computed_at"
+
 interface Read<T> {
   rows: T[] | null
   error: string | null
@@ -151,7 +160,7 @@ export async function fetchPaniniMoreBoards(
     )
     return [wc, all] as const
   })()
-  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount, rises, falls, moverCount] = await Promise.all([
+  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount, rises, falls, moverCount, rookies, rookieCount] = await Promise.all([
     dealsPair,
     // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
     // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
@@ -282,6 +291,23 @@ export async function fetchPaniniMoreBoards(
         return { rises: null, falls: null, error: err instanceof Error ? err.message : String(err) }
       }
     })(),
+    read(
+      db.from("mv_panini_rookie_board").select(ROOKIE_COLS)
+        .order("volume_30d_usd", { ascending: false })
+        .order("fmv_total_usd", { ascending: false, nullsFirst: false })
+        .order("player_name", { ascending: true })
+        .limit(ROOKIES_LIMIT),
+      "mv_panini_rookie_board",
+    ),
+    (async (): Promise<{ total: number | null; error: string | null }> => {
+      try {
+        const r = await db.from("mv_panini_rookie_board").select("player_name", { count: "exact", head: true })
+        if (r.error || r.count == null) return { total: null, error: r.error?.message ?? "count unavailable" }
+        return { total: r.count, error: null }
+      } catch (err) {
+        return { total: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
   ])
 
   const statuses: BoardStatus[] = [
@@ -293,12 +319,14 @@ export async function fetchPaniniMoreBoards(
     { label: "Holders", ok: holders.error === null, partial: false },
     { label: "Bid vs Floor", ok: spread.error === null, partial: false },
     { label: "Floor movers", ok: rises.error === null && falls.error === null, partial: false },
+    { label: "Rookie cards", ok: rookies.error === null, partial: false },
   ]
-  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread, rises, falls].map((r) => r.error).filter(Boolean) as string[]
+  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread, rises, falls, rookies].map((r) => r.error).filter(Boolean) as string[]
   if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
   if (holderCount.error) errors.push(`holder counts: ${holderCount.error}`)
   if (spreadCount.error) errors.push(`bid vs floor counts: ${spreadCount.error}`)
   if (moverCount.error) errors.push(`floor mover counts: ${moverCount.error}`)
+  if (rookieCount.error) errors.push(`rookie counts: ${rookieCount.error}`)
 
   return {
     payload: {
@@ -336,6 +364,9 @@ export async function fetchPaniniMoreBoards(
       floor_movers_error: rises.error !== null || falls.error !== null,
       floor_rises_total: moverCount.rises,
       floor_falls_total: moverCount.falls,
+      rookies: rookies.rows,
+      rookies_error: rookies.error !== null,
+      rookies_total: rookieCount.total,
       coverage: coverage.rows?.[0] ?? null,
       degraded: summarizeDegraded(statuses),
       fetchedAt: new Date().toISOString(),

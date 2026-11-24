@@ -16,7 +16,8 @@ import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { PaniniProductPacksSection } from "@/components/entity/PaniniEditionExtras"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { serialLabelOfSku } from "@/lib/panini/product-url"
-import type { PaniniProduct, PaniniProductPlayer, PaniniProductRead } from "@/lib/panini/product"
+import type { PaniniProduct, PaniniProductMarketCap, PaniniProductPlayer, PaniniProductRead } from "@/lib/panini/product"
+import { fmtUsdCompact } from "@/lib/insights/market-cap-format"
 import { slugifyPlayerName } from "@/lib/entity-labels"
 import type { PaniniProductPack } from "@/lib/panini/edition-extras"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
@@ -49,6 +50,7 @@ export default function PaniniProductBody({
   product: p,
   packs,
   topPlayers,
+  marketCap,
 }: {
   collection: string
   collectionLabel: string
@@ -56,6 +58,8 @@ export default function PaniniProductBody({
   packs: { packs: PaniniProductPack[] | null; productName: string | null }
   /** Top Players (2026-11-23, Top Shot's "Top Players in this Series"); absent = not read (older callers). */
   topPlayers?: { ok: boolean; players: PaniniProductPlayer[] }
+  /** Market cap (2026-11-23, the series page's tile); absent = not read. */
+  marketCap?: { ok: boolean; cap: PaniniProductMarketCap | null }
 }) {
   const unpriced = p.editions - p.priced_editions
   return (
@@ -135,6 +139,8 @@ export default function PaniniProductBody({
           </div>
         )}
       </Section>
+
+      {marketCap && (!marketCap.ok || marketCap.cap) && <PaniniProductMarketCapTile res={marketCap} />}
 
       <Section title="Most Valuable Editions">
         <div className="rpc-mono" style={sub}>Highest FMV among the editions RPC has priced.</div>
@@ -245,3 +251,55 @@ export default function PaniniProductBody({
 }
 
 export type { PaniniProductRead }
+
+/**
+ * The product's Market Cap (2026-11-23, Panini parity pass 3) — Top Shot's series-page tile for a Panini product:
+ * the sum of its editions' market caps (collector-held × FMV; burned and issuer-held stock out), from the same rows
+ * every Panini edition page's tile shows. Coverage is said when not every edition has a price or a supply split
+ * (never summed as $0). No rank: products are not ranked anywhere, so the tile does not claim one.
+ */
+export function PaniniProductMarketCapTile({ res }: { res: { ok: boolean; cap: PaniniProductMarketCap | null } }) {
+  if (!res.ok) {
+    return (
+      <Section title="Market Cap">
+        <div className="rpc-mono" data-testid="panini-product-mcap-unavailable" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
+          The market cap couldn&rsquo;t load right now.
+        </div>
+      </Section>
+    )
+  }
+  const c = res.cap
+  if (!c) return null
+  const unpriced = c.editions - c.editions_priced
+  const partialSupply = c.editions_supply_known < c.editions
+  return (
+    <Section title="Market Cap">
+      <div data-testid="panini-product-mcap" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        <StatCell
+          label="Market Cap"
+          value={c.mcap_usd != null ? fmtUsdCompact(c.mcap_usd) : "Unknown"}
+          sub={c.mcap_usd != null ? "collector-held × FMV" : c.mcap_minted_usd != null ? `≤ ${fmtUsdCompact(c.mcap_minted_usd)} on minted supply` : "no priced edition yet"}
+        />
+        <StatCell
+          label="Collector-held"
+          value={c.editions_supply_known === 0 || c.collector_held == null ? "—" : fmtCount(c.collector_held)}
+          sub={c.editions_supply_known === 0 ? "holder split not known yet" : c.minted != null ? `of ${fmtCount(c.minted)} minted` : undefined}
+        />
+        <StatCell label="Burned" value={c.burned != null ? fmtCount(c.burned) : "—"} sub={c.issuer_held != null ? `${fmtCount(c.issuer_held)} still with Panini` : undefined} />
+      </div>
+      {c.stale && (
+        <div className="rpc-mono" role="status" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--rpc-red-text)" }}>
+          {c.stale === "unknown"
+            ? "When these figures were computed is not recorded — treat them as possibly out of date."
+            : `These figures are from ${c.stale} — the market-cap refresh is behind, so they may be out of date.`}
+        </div>
+      )}
+      <div className="rpc-mono" data-testid="panini-product-mcap-note" style={{ marginTop: 10, fontSize: 10, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>
+        The sum of this product&rsquo;s edition market caps — FMV × collector-held supply, burned cards and Panini&rsquo;s unopened stock taken out.
+        {unpriced > 0 ? ` ${fmtCount(unpriced)} of ${fmtCount(c.editions)} editions have no price yet and are not in it.` : ""}
+        {partialSupply ? ` ${fmtCount(c.editions - c.editions_supply_known)} editions have no supply split yet.` : ""}{" "}
+        <Link href="/insights/market-cap" style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline", textUnderlineOffset: 3 }}>All market caps →</Link>
+      </div>
+    </Section>
+  )
+}

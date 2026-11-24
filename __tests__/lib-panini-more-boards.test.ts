@@ -30,6 +30,7 @@ function db(over: Record<string, Res> = {}) {
     mv_panini_holder_concentration: { data: [{ external_id: "packcard-1", top1_share: 0.4, top3_share: 0.6 }], count: 7 },
     mv_panini_offer_spread: { data: [{ external_id: "packcard-2", ask_usd: 21, best_offer_usd: 19, offer_pct_of_ask: 90.5 }], count: 4575 },
     mv_panini_floor_movers: { data: [{ external_id: "packcard-3", direction: "rise", change_pct: 12.5 }], count: 382 },
+    mv_panini_rookie_board: { data: [{ player_name: "Victor Wembanyama", volume_30d_usd: 21934 }], count: 1917 },
     ...over,
   }
   return {
@@ -289,5 +290,23 @@ describe("fetchPaniniMoreBoards — Floor movers · 7 days (2026-11-04)", () => 
     const d = db({ mv_panini_floor_movers: { data: rows, count: 1 } }) as any
     await fetchPaniniMoreBoards(d)
     expect((d.selects.mv_panini_floor_movers ?? []).join(",")).not.toMatch(/owner/)
+  })
+
+  it("reads the rookie board busiest first, capped, with the exact player count (2026-11-23)", async () => {
+    const d = db()
+    const r = await fetchPaniniMoreBoards(d as any)
+    const p = r.payload as any
+    expect(p.rookies).toHaveLength(1)
+    expect(p.rookies_error).toBe(false)
+    expect(p.rookies_total).toBe(1917)
+    expect(d.orders["mv_panini_rookie_board"]?.slice(0, 3)).toEqual(["volume_30d_usd", "fmv_total_usd", "player_name"])
+    expect(r.ok).toBe(true)
+  })
+  it("a failed rookie read is flagged — never an empty board — and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_rookie_board: { data: null, error: { message: "timeout" } } }) as any)
+    const p = r.payload as any
+    expect(p.rookies).toBeNull()
+    expect(p.rookies_error).toBe(true)
+    expect(r.ok).toBe(false)
   })
 })

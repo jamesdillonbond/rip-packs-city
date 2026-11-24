@@ -986,3 +986,49 @@ export async function readPaniniChecklistToolForConcierge(
   }
   return readPaniniTeamForConcierge(db, base, typed, Number(input.limit ?? input.missingLimit ?? 10) || 10, uname)
 }
+
+/**
+ * get_insight_board 'panini_rookies' (2026-11-23): the Rookie cards tab of /insights/panini-squeeze —
+ * mv_panini_rookie_board, busiest first. A failed read says so (never "no rookies"); FMV totals cover priced
+ * editions only; sales are on record and lag days.
+ */
+export async function readPaniniRookiesForConcierge(db: Db, base: string, limit: number, sport: string | null = null): Promise<string> {
+  try {
+    let q = db.from("mv_panini_rookie_board")
+      .select("player_name,sport,rc_editions,rc_products,priced_editions,fmv_total_usd,cheapest_ask_usd,cheapest_ask_external_id,sales_30d,volume_30d_usd,top_external_id,top_set_name,top_fmv_usd,computed_at")
+    if (sport) q = q.ilike("sport", sport.trim())
+    const { data, error } = await q
+      .order("volume_30d_usd", { ascending: false })
+      .order("fmv_total_usd", { ascending: false, nullsFirst: false })
+      .order("player_name", { ascending: true })
+      .limit(Math.min(Math.max(Math.trunc(limit) || 20, 1), 50))
+    if (error || !Array.isArray(data)) {
+      return JSON.stringify({ status: "error", board: "panini_rookies", message: "The Panini rookie board read failed — say the check failed; never that there are no rookie cards." })
+    }
+    const rows = data as Record<string, unknown>[]
+    return JSON.stringify({
+      status: rows.length ? "ok" : "no_results",
+      board: "panini_rookies",
+      board_url: `${base}/insights/panini-squeeze?tab=rookies`,
+      computed_at: rows[0]?.computed_at ?? null,
+      how_to_read: "One row per player whose Panini cards are flagged 'rookie card', busiest first by sales in the last 30 days. fmv_total_usd covers priced_editions of rc_editions (null = none priced — never $0). cheapest_ask_usd was re-confirmed in the last 7 days. Panini sales reach RPC days late, so the newest days are under-counted — say so. Never quote an FMV confidence tier.",
+      rows: rows.map((r) => ({
+        player: r.player_name,
+        sport: r.sport ?? null,
+        rookie_editions: num(r.rc_editions),
+        products: num(r.rc_products),
+        priced_editions: num(r.priced_editions),
+        fmv_total_usd: num(r.fmv_total_usd),
+        cheapest_ask_usd: num(r.cheapest_ask_usd),
+        cheapest_ask_url: typeof r.cheapest_ask_external_id === "string" ? `${base}/panini-blockchain/edition/${encodeURIComponent(r.cheapest_ask_external_id)}` : null,
+        sales_30d_on_record: num(r.sales_30d),
+        volume_30d_usd_on_record: num(r.volume_30d_usd),
+        top_card: r.top_set_name ?? null,
+        top_card_fmv_usd: num(r.top_fmv_usd),
+        player_url: typeof r.player_name === "string" ? `${base}/panini-blockchain/player/${encodeURIComponent(slugifyPlayerName(r.player_name))}` : null,
+      })),
+    })
+  } catch {
+    return JSON.stringify({ status: "error", board: "panini_rookies", message: "The Panini rookie board read failed — say the check failed; never that there are no rookie cards." })
+  }
+}

@@ -162,3 +162,37 @@ describe("readPaniniProductTopPlayers", () => {
     expect(r).toEqual({ ok: true, players: [{ player_name: "A", editions: 2, priced_editions: 0, fmv_total_usd: null }] })
   })
 })
+
+describe("PaniniProductMarketCapTile (2026-11-23)", () => {
+  const cap = {
+    editions: 5362, editions_with_cap_row: 5361, editions_supply_known: 5361, editions_priced: 5289,
+    minted: 276186, burned: 11634, issuer_held: 27948, collector_held: 236604,
+    mcap_usd: 5042419.63, mcap_minted_usd: 5690436.79, refreshed_at: "2026-11-24T02:41:00Z", stale: null,
+  }
+  it("shows the cap, says how many editions it leaves out, and claims no rank", () => {
+    const c = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap }} />).container
+    const tile = c.querySelector('[data-testid="panini-product-mcap"]')?.textContent ?? ""
+    expect(tile).toContain("$5.04M")
+    expect(tile).toContain("of 276,186 minted")
+    expect(c.querySelector('[data-testid="panini-product-mcap-note"]')?.textContent).toContain("73 of 5,362 editions have no price yet")
+    expect(tile).not.toMatch(/Rank|#\d/)
+  })
+  it("an unknown cap is Unknown, never $0; a failed read says so; no row hides the tile", () => {
+    const u = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap: { ...cap, mcap_usd: null, editions_priced: 0 } }} />).container
+    expect(u.querySelector('[data-testid="panini-product-mcap"]')?.textContent).toContain("Unknown")
+    expect(u.querySelector('[data-testid="panini-product-mcap"]')?.textContent).not.toContain("$0")
+    cleanup()
+    const f = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: false, cap: null }} />).container
+    expect(f.querySelector('[data-testid="panini-product-mcap-unavailable"]')).not.toBeNull()
+    cleanup()
+    const n = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap: null }} />).container
+    expect(n.textContent).not.toContain("Market Cap")
+  })
+  it("readPaniniProductMarketCap: a failed read is ok:false; an old stamp is stale in PT", async () => {
+    const { readPaniniProductMarketCap } = await import("@/lib/panini/product")
+    const db = (res: { data: unknown; error: unknown }) => ({ rpc: () => Promise.resolve(res) })
+    expect(await readPaniniProductMarketCap("x", db({ data: null, error: { message: "t" } }))).toEqual({ ok: false, cap: null })
+    const r = await readPaniniProductMarketCap("x", db({ data: { ...cap, refreshed_at: "2026-11-20T02:41:00Z" }, error: null }), Date.parse("2026-11-24T03:00:00Z"))
+    expect(r.cap?.stale).toMatch(/PT$/)
+  })
+})

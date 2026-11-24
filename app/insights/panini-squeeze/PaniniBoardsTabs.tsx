@@ -22,6 +22,8 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
+import { slugifyPlayerName } from "@/lib/entity-labels";
+import { paniniSportLabel } from "@/lib/panini/sport-label";
 
 type Num = number | null;
 
@@ -141,6 +143,24 @@ export interface MoverRow {
   window_complete: boolean | null;
   computed_at: string | null;
 }
+/** One player's rookie cards (mv_panini_rookie_board, 2026-11-23). */
+export interface RookieRow {
+  player_name: string;
+  sport: string | null;
+  rc_editions: Num;
+  rc_products: Num;
+  priced_editions: Num;
+  fmv_total_usd: Num;
+  cheapest_ask_usd: Num;
+  cheapest_ask_external_id: string | null;
+  sales_30d: Num;
+  volume_30d_usd: Num;
+  newest_sale_at: string | null;
+  top_external_id: string | null;
+  top_set_name: string | null;
+  top_fmv_usd: Num;
+  computed_at: string | null;
+}
 export interface PaniniBoardsPayload {
   deals?: DealRow[] | null;
   deals_error?: boolean;
@@ -165,6 +185,9 @@ export interface PaniniBoardsPayload {
   offer_spread_capped?: boolean;
   offer_spread_total?: Num;
   offer_spread_tight?: Num;
+  rookies?: RookieRow[] | null;
+  rookies_error?: boolean;
+  rookies_total?: Num;
   floor_rises?: MoverRow[] | null;
   floor_falls?: MoverRow[] | null;
   floor_movers_error?: boolean;
@@ -173,7 +196,7 @@ export interface PaniniBoardsPayload {
   coverage?: { total_editions?: Num; pct_trustworthy?: Num } | null;
 }
 
-type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread" | "movers";
+type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread" | "movers" | "rookies";
 const TABS: { k: Tab; label: string }[] = [
   { k: "deals", label: "Deals" },
   { k: "packs", label: "Pack EV" },
@@ -182,6 +205,7 @@ const TABS: { k: Tab; label: string }[] = [
   { k: "holders", label: "Holders" },
   { k: "spread", label: "Bid vs Floor" },
   { k: "movers", label: "Floor movers · 7 days" },
+  { k: "rookies", label: "Rookie cards" },
 ];
 
 function noopSubscribe(): () => void {
@@ -486,6 +510,57 @@ export default function PaniniBoardsTabs({
               ))}
             </Table>
             {data.offer_spread_capped ? <Note>Showing the {int(data.offer_spread.length)} tightest; more floors carry an offer.</Note> : null}
+          </>
+        )
+      ) : tab === "rookies" ? (
+        // Rookie cards (2026-11-23, Panini parity pass 3 — Top Shot's and All Day's rookie boards): every player whose
+        // cards Panini flags "rookie card", busiest first. FMV total counts priced editions only (an unpriced one is
+        // never summed as $0); sales are the ones ON RECORD, which reach RPC days late.
+        data.rookies_error || !data.rookies ? (
+          <Failed what="Rookie cards" />
+        ) : data.rookies.length === 0 ? (
+          <Note>No Panini card RPC has read is flagged as a rookie card yet.</Note>
+        ) : (
+          <>
+            <Note>
+              Every player whose Panini cards are flagged <b>rookie card</b> on Panini&rsquo;s marketplace, across all products and sports,
+              busiest first by sales in the last 30 days.{" "}
+              {data.rookies_total != null && data.rookies_total > data.rookies.length ? `Top ${int(data.rookies.length)} of ${int(data.rookies_total)} players. ` : ""}
+              FMV total covers the rookie editions RPC has priced (the count beside it); the cheapest ask was re-confirmed in the last 7 days.
+              Panini sales reach RPC a few days late, so the newest days are under-counted.
+              {data.rookies[0]?.computed_at ? ` Updated ${ptDate(data.rookies[0].computed_at)}.` : ""}
+            </Note>
+            <Table head={["Player", "Sport", "Rookie editions", "FMV total", "Cheapest ask", "Sales · 30d", "Volume · 30d", "Top rookie card"]}>
+              {data.rookies.map((r) => (
+                <tr key={r.player_name}>
+                  <td style={td}>
+                    <Link href={`/panini-blockchain/player/${encodeURIComponent(slugifyPlayerName(r.player_name))}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                      {r.player_name}
+                    </Link>
+                  </td>
+                  <td style={td}>{r.sport ? paniniSportLabel(r.sport) : "—"}</td>
+                  <td style={td}>{int(r.rc_editions)}{r.rc_products != null && r.rc_products > 1 ? ` · ${int(r.rc_products)} products` : ""}</td>
+                  <td style={td}>
+                    {r.fmv_total_usd != null ? usd(r.fmv_total_usd) : "no FMV yet"}
+                    {r.fmv_total_usd != null && r.priced_editions != null && r.rc_editions != null && r.priced_editions < r.rc_editions ? ` (${int(r.priced_editions)} priced)` : ""}
+                  </td>
+                  <td style={td}>
+                    {r.cheapest_ask_usd != null && r.cheapest_ask_external_id ? (
+                      <Link href={`/panini-blockchain/edition/${encodeURIComponent(r.cheapest_ask_external_id)}`} style={{ color: "inherit" }}>{usd(r.cheapest_ask_usd)}</Link>
+                    ) : "none listed"}
+                  </td>
+                  <td style={td}>{int(r.sales_30d)}</td>
+                  <td style={td}>{usd(r.volume_30d_usd)}</td>
+                  <td style={td}>
+                    {r.top_external_id ? (
+                      <Link href={`/panini-blockchain/edition/${encodeURIComponent(r.top_external_id)}`} style={{ color: "inherit" }}>
+                        {r.top_set_name ?? "card"}{r.top_fmv_usd != null ? ` · ${usd(r.top_fmv_usd)}` : ""}
+                      </Link>
+                    ) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </Table>
           </>
         )
       ) : tab === "movers" ? (

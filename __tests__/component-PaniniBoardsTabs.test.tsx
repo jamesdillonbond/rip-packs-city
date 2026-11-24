@@ -158,4 +158,30 @@ describe("PaniniBoardsTabs — Floor movers · 7 days (2026-11-04)", () => {
     expect(t).toMatch(/missed a day of ask readings/)
     expect(t).toContain("No floor fell")
   })
+
+  it("Rookie cards tab (2026-11-23): links player + edition pages, never sums an unpriced player as $0, says the lag", () => {
+    const data: PaniniBoardsPayload = {
+      ...base,
+      rookies_total: 1917,
+      rookies: [
+        { player_name: "Victor Wembanyama", sport: "Basketball", rc_editions: 112, rc_products: 6, priced_editions: 100, fmv_total_usd: 91937.53, cheapest_ask_usd: 78, cheapest_ask_external_id: "packcard-9_1_1_1", sales_30d: 49, volume_30d_usd: 21934, newest_sale_at: null, top_external_id: "packcard-9_2_2_1", top_set_name: "Kaboom", top_fmv_usd: 9000, computed_at: "2026-11-24T03:42:00Z" },
+        { player_name: "Unpriced Rookie", sport: null, rc_editions: 2, rc_products: 1, priced_editions: 0, fmv_total_usd: null, cheapest_ask_usd: null, cheapest_ask_external_id: null, sales_30d: 0, volume_30d_usd: 0, newest_sale_at: null, top_external_id: null, top_set_name: null, top_fmv_usd: null, computed_at: "2026-11-24T03:42:00Z" },
+      ],
+    }
+    const { container, getByText } = render(<PaniniBoardsTabs data={data} degraded={null} />)
+    fireEvent.click(getByText("Rookie cards"))
+    expect(container.querySelector('a[href="/panini-blockchain/player/victor-wembanyama"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/panini-blockchain/edition/packcard-9_1_1_1"]')).not.toBeNull()
+    expect(container.textContent).toContain("Top 2 of 1,917 players")
+    expect(container.textContent).toContain("(100 priced)")
+    const unpriced = Array.from(container.querySelectorAll("tbody tr")).find((r) => r.textContent?.includes("Unpriced Rookie"))?.textContent ?? ""
+    expect(unpriced).toContain("no FMV yet")
+    expect(unpriced).toContain("none listed")
+    expect(container.textContent).toContain("a few days late")
+  })
+  it("Rookie cards tab: a failed read is a failed read, not an empty board", () => {
+    const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, rookies: null, rookies_error: true }} degraded={null} />)
+    fireEvent.click(getByText("Rookie cards"))
+    expect(container.textContent).toContain("Rookie cards couldn't load right now")
+  })
 })

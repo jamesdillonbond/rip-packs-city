@@ -125,3 +125,27 @@ describe("support-chat wiring", () => {
     expect(route).not.toContain("Golazos and Candy MLB — not on Panini")
   })
 })
+
+describe("readPaniniRookiesForConcierge (get_insight_board 'panini_rookies', 2026-11-23)", () => {
+  function q(res: { data: unknown; error: unknown }, calls: string[]) {
+    const b: Record<string, unknown> = {}
+    for (const m of ["select", "order", "limit"]) b[m] = (...a: unknown[]) => { calls.push(`${m}:${String(a[0])}`); return b }
+    b.ilike = (c: string, v: string) => { calls.push(`ilike:${c}=${v}`); return b }
+    b.then = (f: (v: unknown) => unknown) => Promise.resolve(res).then(f)
+    return b
+  }
+  it("a failed read says the check failed — never 'no rookies'", async () => {
+    const { readPaniniRookiesForConcierge } = await import("@/lib/concierge/panini-boards")
+    const out = JSON.parse(await readPaniniRookiesForConcierge({ from: () => q({ data: null, error: { message: "x" } }, []) }, BASE, 10))
+    expect(out.status).toBe("error")
+  })
+  it("narrows by sport, keeps a null FMV total null and links the player page", async () => {
+    const { readPaniniRookiesForConcierge } = await import("@/lib/concierge/panini-boards")
+    const calls: string[] = []
+    const out = JSON.parse(await readPaniniRookiesForConcierge({ from: () => q({ data: [{ player_name: "Cooper Flagg", fmv_total_usd: null, rc_editions: 13 }], error: null }, calls) }, BASE, 10, "Basketball"))
+    expect(calls).toContain("ilike:sport=Basketball")
+    expect(out.rows[0].fmv_total_usd).toBeNull()
+    expect(out.rows[0].player_url).toBe(`${BASE}/panini-blockchain/player/cooper-flagg`)
+    expect(out.board_url).toBe(`${BASE}/insights/panini-squeeze?tab=rookies`)
+  })
+})

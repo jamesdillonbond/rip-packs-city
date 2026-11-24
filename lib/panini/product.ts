@@ -14,6 +14,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { apiReadTimeoutMs } from "@/lib/api/bounded-read"
 import { withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
 import type { PaniniProductIndexRow } from "@/components/entity/PaniniProductIndex"
+import { staleSince } from "@/lib/insights/market-cap-board"
 
 export interface PaniniProductEdition {
   external_id: string
@@ -163,6 +164,59 @@ export async function readPaniniProductTopPlayers(slug: string, db: any = supaba
     return { ok: true, players }
   } catch {
     return { ok: false, players: [] }
+  }
+}
+
+/** A Panini product's market cap: its edition rows in market_cap_current, summed (get_panini_product_market_cap). */
+export interface PaniniProductMarketCap {
+  editions: number
+  editions_with_cap_row: number
+  editions_supply_known: number
+  editions_priced: number
+  minted: number | null
+  burned: number | null
+  issuer_held: number | null
+  collector_held: number | null
+  mcap_usd: number | null
+  mcap_minted_usd: number | null
+  refreshed_at: string | null
+  /** staleSince(): null = fresh, "unknown" = no stamp, else the PT time the figures are from. */
+  stale: string | null
+}
+
+/** ok:false = the read failed (the tile says so); ok:true + null = no row (the tile hides). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readPaniniProductMarketCap(slug: string, db: any = supabaseAdmin, now: number = Date.now()): Promise<{ ok: boolean; cap: PaniniProductMarketCap | null }> {
+  try {
+    const { data, error } = await withQueryDeadline<unknown>(
+      db.rpc("get_panini_product_market_cap", { p_slug: slug }),
+      "panini/product-market-cap",
+      apiReadTimeoutMs(),
+    )
+    if (error) return { ok: false, cap: null }
+    if (data == null) return { ok: true, cap: null }
+    if (typeof data !== "object" || Array.isArray(data)) return { ok: false, cap: null }
+    const r = data as Record<string, unknown>
+    const refreshed = typeof r.refreshed_at === "string" ? r.refreshed_at : null
+    return {
+      ok: true,
+      cap: {
+        editions: num(r.editions) ?? 0,
+        editions_with_cap_row: num(r.editions_with_cap_row) ?? 0,
+        editions_supply_known: num(r.editions_supply_known) ?? 0,
+        editions_priced: num(r.editions_priced) ?? 0,
+        minted: num(r.minted),
+        burned: num(r.burned),
+        issuer_held: num(r.issuer_held),
+        collector_held: num(r.collector_held),
+        mcap_usd: num(r.mcap_usd),
+        mcap_minted_usd: num(r.mcap_minted_usd),
+        refreshed_at: refreshed,
+        stale: staleSince(refreshed, now),
+      },
+    }
+  } catch {
+    return { ok: false, cap: null }
   }
 }
 
