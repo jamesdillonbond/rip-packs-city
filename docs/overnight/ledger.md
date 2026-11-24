@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-23 ~4:55 PM PT · ✅ SHIPPED — Market Cap board: Disney Pinnacle's Players / Teams drill-downs (0 rows) are now Characters / Franchises (Claude Code cloud; Trevor: "Keep going")
+- `get_market_cap_board` (`20261124005000`, applied ~4:50 PM PT): a Pinnacle-only arm reads the pin's `characters` / `franchises` traits (™/®/© stripped), keyed exactly like `refresh_market_cap_current`'s entity rows — live top rows match `market_cap_current` (Mickey Mouse $450,954 vs tile $450,940; Star Wars $2,187,600 = tile). Every other collection/grain unchanged. Base verified: live prosrc md5 = 20261105043000 body.
+- Board pills / header / empty copy read Characters / Franchises on Pinnacle; a note says a multi-character pin counts toward each. DB invariant test extended (planted defect: old body fails the new assertion), drift guard re-pointed.
+- Measured, not built: Pinnacle "underpriced #1s" — 1 qualifying live listing. Checked, not a defect: 206 ASK_ONLY pins priced > 2× last sale — backtest (55 d) shows the ask-based FMV still beats the last sale on the next sale (2–3× bucket n 86: ±25 % 55.8 vs 15.1), so no cap: disney-pinnacle.md.
+- Revert: re-apply `get_market_cap_board` from `20261105043000`; revert the commit.
+
 ### 2026-11-23 ~4:54 PM PT · 🔧 SHIPPED (code) — `detect-league-drift` + `refresh-error-triage` write invocation markers first (E5 23 → 21) (Claude Code cloud; Trevor: "work through anything unresolved from this thread")
 - **Why:** highest margin-used left against each route's own 60 s wall (18 % / 17 %), both `after()`-only.
 - **What:** marker first in each `after()`; terminal `log_pipeline_run` errors read (R123); `refresh-error-triage`'s always-0 `rows_*` (it counts nothing) → NULL — its only reader, the zero-yield arm, keys on a fall from a non-zero baseline, so no detector changes. Ordering pins + unauthorized control, mutation-verified; ratchet BUDGET 21. Remaining E5 queue: every route ≤ 11 % of its wall.
