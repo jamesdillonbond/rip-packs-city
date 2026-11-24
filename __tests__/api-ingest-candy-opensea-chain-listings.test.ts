@@ -54,6 +54,13 @@ describe("/api/ingest/candy-opensea-chain-listings", () => {
     expect(state.opts.previousAccounts).toBeNull()
   })
 
+  it("a run that reports not-ok answers 207 and logs ok=false with its error", async () => {
+    state.result = { ...base, ok: false, error: "partial" }
+    const res = await GET(req(AUTH))
+    expect(res.status).toBe(207)
+    expect(state.logged[0]).toMatchObject({ p_ok: false, p_error: "partial" })
+  })
+
   it("a thrown run (RPC down) is logged NOT ok with NULL counts — never as a clean zero", async () => {
     state.throws = "getProgramAccounts HTTP 429"
     const res = await GET(req(AUTH))

@@ -13,6 +13,7 @@ import {
   decodeListState,
   encodeBase58,
   fetchAssetOwners,
+  fetchOpenSeaListStates,
   gmaBatchSize,
   runOpenSeaChainListings,
 } from "@/lib/candy/opensea-chain-listings"
@@ -240,5 +241,32 @@ describe("runOpenSeaChainListings", () => {
 
   it("reads the census scoped to the Candy collection", () => {
     expect(CANDY_COLLECTION_UUID).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
+  })
+})
+
+describe("fetchOpenSeaListStates", () => {
+  it("falls through every failure shape to the next RPC, and names the last one when all fail", async () => {
+    const shapes: Record<string, () => Response> = {
+      "https://http": () => new Response("x", { status: 503 }),
+      "https://rpcerr": () => new Response(JSON.stringify({ error: { message: "busy" } })),
+      "https://noarray": () => new Response(JSON.stringify({ result: {} })),
+      "https://ok": () => new Response(JSON.stringify({ result: [] })),
+    }
+    const f = async (url: string) => {
+      if (url === "https://throw") throw new Error("socket hang up")
+      return shapes[url]()
+    }
+    expect(await fetchOpenSeaListStates(f, ["https://throw", "https://http", "https://rpcerr", "https://noarray", "https://ok"])).toEqual({ accounts: [], url: "https://ok" })
+    await expect(fetchOpenSeaListStates(f, ["https://rpcerr"])).rejects.toThrow(/busy/)
+    await expect(fetchOpenSeaListStates(f, ["https://throw"])).rejects.toThrow(/socket hang up/)
+  })
+
+  it("asset reads: a JSON-RPC error, a short answer or a thrown fetch on every RPC fails the run", async () => {
+    const f = async (url: string) => {
+      if (url === "https://t") throw new Error("reset")
+      if (url === "https://e") return new Response(JSON.stringify({ error: { message: "nope" } }))
+      return new Response(JSON.stringify({ result: { value: [] } }))
+    }
+    await expect(fetchAssetOwners(f, ["A1"], ["https://t", "https://e", "https://short"], { sleep: async () => {} })).rejects.toThrow(/malformed result/)
   })
 })

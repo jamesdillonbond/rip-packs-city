@@ -9,6 +9,7 @@ import {
   BID_STATE_DISCRIMINATOR_B58,
   MIN_PLAUSIBLE_BID_ACCOUNTS,
   decodeBidState,
+  fetchOpenSeaBidStates,
   runOpenSeaChainBids,
 } from "@/lib/candy/opensea-chain-bids"
 import { OPENSEA_SOLANA_PROGRAM, encodeBase58 } from "@/lib/candy/opensea-chain-listings"
@@ -155,5 +156,47 @@ describe("runOpenSeaChainBids", () => {
     await runOpenSeaChainBids(db, { fetchImpl: fakeRpc(accounts), now: () => NOW, solUsd: async () => null })
     expect(upserts[0].price_usd).toBeNull()
     expect(upserts[0].price_sol).toBe(1)
+  })
+})
+
+describe("fetchOpenSeaBidStates", () => {
+  it("falls through every failure shape to the next RPC, and names the last one when all fail", async () => {
+    const seen: string[] = []
+    const shapes: Record<string, () => Response> = {
+      "https://http": () => new Response("x", { status: 503 }),
+      "https://rpcerr": () => new Response(JSON.stringify({ error: { message: "busy" } })),
+      "https://noarray": () => new Response(JSON.stringify({ result: { nope: 1 } })),
+      "https://ok": () => new Response(JSON.stringify({ result: [] })),
+    }
+    const f = async (url: string) => {
+      seen.push(url)
+      if (url === "https://throw") throw new Error("socket hang up")
+      return shapes[url]()
+    }
+    const got = await fetchOpenSeaBidStates(f, ["https://throw", "https://http", "https://rpcerr", "https://noarray", "https://ok"])
+    expect(got).toEqual({ accounts: [], url: "https://ok" })
+    expect(seen).toHaveLength(5)
+    await expect(fetchOpenSeaBidStates(f, ["https://http", "https://noarray"])).rejects.toThrow(/no result array/)
+    await expect(fetchOpenSeaBidStates(f, ["https://rpcerr"])).rejects.toThrow(/busy/)
+    await expect(fetchOpenSeaBidStates(f, ["https://throw"])).rejects.toThrow(/socket hang up/)
+  })
+
+  it("an account missing its key, data or lamports counts as a decode failure, never a bid", async () => {
+    const f = async () => new Response(JSON.stringify({ result: [{ pubkey: "P" }, { account: { data: ["", "base64"] } }] }))
+    const rep = await runOpenSeaChainBids(fakeDb({ wmc }).db, { fetchImpl: f, now: () => NOW })
+    expect(rep.decode_failed).toBe(2)
+    expect(rep.written).toBe(0)
+    expect(rep.retire_skipped).toMatch(/decode_failed 2 of 2/)
+  })
+
+  it("a failed census or edition read throws", async () => {
+    const accounts = [{ pda: 51, data: bidState({ owner: 1, targetId: 11, amount: SOL }), lamports: SOL * BigInt(2) }]
+    const broken = {
+      from: (t: string) => {
+        const q: any = { select: () => q, eq: () => q, in: () => q, then: (res: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { message: `${t} down` } }).then(res) }
+        return q
+      },
+    }
+    await expect(runOpenSeaChainBids(broken, { fetchImpl: fakeRpc(accounts), now: () => NOW })).rejects.toThrow(/wmc read: wallet_moments_cache down/)
   })
 })
