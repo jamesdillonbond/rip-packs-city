@@ -27,7 +27,10 @@ const EMPTY: PaniniPremiumsPayload = { parallels: [], parallelsCapped: false, se
 // "couldn't load" around the clock (deep audit 2026-11-15, D2). Hourly ISR regenerates in the
 // BACKGROUND, so a slow read delays nobody; 25 s stays under service_role's 30 s statement_timeout
 // and well under Next's 60 s prerender limit (the build-integrity reason the 8 s bound exists).
-// The structural fix is a precomputed matview for the serial board; when it lands, drop this.
+// ✅ 2026-11-23: the structural fix landed — mv_panini_serial_premiums (hourly at :20,
+// 20261124051857) now backs panini_serial_premiums; the serial read is 0.3 ms (was 5.2 s mean).
+// The 25 s budget STAYS on purpose: the parallel half (panini_parallel_premiums) still reads FMV
+// live — pgss mean 0.36 s but max 6.0 s, too close to 8 s for a board ISR would cache on failure.
 const PANINI_PREMIUMS_READ_BUDGET_MS = 25_000
 
 export default async function PaniniPremiumsPage() {
