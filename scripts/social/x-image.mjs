@@ -229,7 +229,7 @@ function buyerOf(r) {
 }
 const shortSet = (s) => String(s ?? "").split(" • ").pop()
 // Confirmed X handles for buyers (marketplace username, lowercase -> handle). Same list as x-draft.mjs.
-const X_HANDLES = { themecca: "THEMECCA212", hichi: "chrisschlei", lions_for_breakfast: "FollowJay", jason3555: "jason3555", karso: "orangekarso" }
+const X_HANDLES = { themecca: "THEMECCA212", hichi: "chrisschlei", lions_for_breakfast: "FollowJay", jason3555: "jason3555", karso: "orangekarso", incog8: "incog_eth", spinotron: "spinotron" }
 
 async function getJson(path) {
   const r = await fetch(`${API}/${path}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })

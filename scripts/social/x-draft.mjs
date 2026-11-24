@@ -209,6 +209,9 @@ export const X_HANDLES = {
   // Trevor, 11-16 (from the 11-16 top-10 draft):
   jason3555: "jason3555",
   karso: "orangekarso",
+  // Trevor, 11-23 (from the 11-23 top-10 draft):
+  incog8: "incog_eth",
+  spinotron: "spinotron",
 }
 function buyerLabel(name) {
   const h = X_HANDLES[String(name).toLowerCase()]
