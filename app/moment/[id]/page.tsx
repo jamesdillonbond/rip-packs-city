@@ -1388,7 +1388,12 @@ export default async function MomentPage(
                 when there's no open listing. Top Shot reads ts_listings instead
                 (2026-10-25) — no TS rows exist in cached_listings_v2. See
                 fetchActiveListingAsk. */}
-            <StatCell label="Listed" value={fmtUsd(activeListingAsk)} />
+            {/* Candy (2026-11-24): name the venue when this serial's ask is on OpenSea — the CTA below opens Magic
+                Eden, where an OpenSea-escrowed card shows as unlisted. */}
+            <StatCell
+              label={isCandyColl && candyAsks?.serialAskVenue === "opensea" && activeListingAsk != null ? "Listed · OpenSea" : "Listed"}
+              value={fmtUsd(activeListingAsk)}
+            />
             <StatCell
               label="Last sale"
               value={

@@ -529,6 +529,8 @@ export const CANDY_ASK_CONFIRMED_HOURS = 12
 export interface CandyAsks {
   floorUsd: number | null
   serialAskUsd: number | null
+  /** Where that ask is listed: 'magic_eden' | 'opensea' (2026-11-24 — OpenSea asks come from the chain since 11-23). */
+  serialAskVenue: string | null
 }
 
 export async function fetchCandyAsks(
@@ -555,7 +557,7 @@ export async function fetchCandyAsks(
             Promise.resolve(
               db
                 .from("candy_listings")
-                .select("price_usd")
+                .select("price_usd, venue")
                 .eq("token_mint", tokenMint)
                 .eq("is_active", true)
                 .gt("last_seen_at", since)
@@ -572,7 +574,14 @@ export async function fetchCandyAsks(
     }
     const floorRow = Array.isArray(floorRes.data) ? floorRes.data[0] : null
     const serialRow = Array.isArray(serialRes.data) ? serialRes.data[0] : null
-    return { data: { floorUsd: num(floorRow?.confirmed_floor_usd), serialAskUsd: num(serialRow?.price_usd) }, ok: true }
+    return {
+      data: {
+        floorUsd: num(floorRow?.confirmed_floor_usd),
+        serialAskUsd: num(serialRow?.price_usd),
+        serialAskVenue: typeof serialRow?.venue === "string" ? serialRow.venue : null,
+      },
+      ok: true,
+    }
   } catch (err) {
     console.warn(`[moment-page] candy asks threw: ${err instanceof Error ? err.message : String(err)}`)
     return { data: null, ok: false }

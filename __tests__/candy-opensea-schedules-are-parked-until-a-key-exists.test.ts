@@ -25,6 +25,8 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // ⚠ 2026-11-23: Candy OpenSea ASKS now come key-free from the chain (/api/ingest/candy-opensea-chain-listings,
 // hourly). It writes venue 'opensea' and retires every OpenSea ask it did not confirm on-chain, so the key-based
 // LISTINGS route must not be scheduled beside it — restore only sales/offers, or unschedule the chain lane first.
+// ⚠ 2026-11-24: the same now holds for OFFERS — /api/ingest/candy-opensea-chain-bids (hourly) writes candy_offers
+// venue 'opensea' and retires what it did not confirm, so the key-based OFFERS route must not run beside it either.
 //
 // Like the other *-schedule-is-retired guards, this pins three things, not one:
 // the absence, the siblings that must SURVIVE (so an emptied vercel.json cannot

@@ -60,7 +60,7 @@ const SLICE_LENGTH = 200
 export const MIN_PLAUSIBLE_ACCOUNTS = 1000
 // mainnet-beta answered this census from Supabase on 11-23; publicnode is the fallback.
 export const CENSUS_RPC_URLS = ["https://api.mainnet-beta.solana.com", "https://solana-rpc.publicnode.com"]
-const RPC_TIMEOUT_MS = 60_000
+export const RPC_TIMEOUT_MS = 60_000
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -126,7 +126,7 @@ export function decodeListState(pda: string, data: Uint8Array): DecodedListState
   }
 }
 
-function b64(s: string): Uint8Array {
+export function b64(s: string): Uint8Array {
   return Uint8Array.from(Buffer.from(s, "base64"))
 }
 
@@ -162,7 +162,7 @@ export async function fetchOpenSeaListStates(doFetch: FetchFn, urls = CENSUS_RPC
   throw new Error(last)
 }
 
-const chunk = <T,>(xs: T[], n: number): T[][] => {
+export const chunk = <T,>(xs: T[], n: number): T[][] => {
   const out: T[][] = []
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n))
   return out

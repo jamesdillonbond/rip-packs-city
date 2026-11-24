@@ -31,9 +31,10 @@ describe("fetchCandyAsks", () => {
   it("returns the confirmed floor and this mint's own ask", async () => {
     const { db } = makeDb({
       candy_listing_floor: { data: [{ confirmed_floor_usd: "4.84" }], error: null },
-      candy_listings: { data: [{ price_usd: 6.1 }], error: null },
+      candy_listings: { data: [{ price_usd: 6.1, venue: "opensea" }], error: null },
     })
-    expect(await fetchCandyAsks("ed-1", MINT, db, NOW)).toEqual({ data: { floorUsd: 4.84, serialAskUsd: 6.1 }, ok: true })
+    // 2026-11-24: the venue rides along so the page can say "Listed · OpenSea" (its CTA opens Magic Eden).
+    expect(await fetchCandyAsks("ed-1", MINT, db, NOW)).toEqual({ data: { floorUsd: 4.84, serialAskUsd: 6.1, serialAskVenue: "opensea" }, ok: true })
   })
 
   it("matches the mint VERBATIM and only asks SEEN inside the confirmation window", async () => {
@@ -49,12 +50,12 @@ describe("fetchCandyAsks", () => {
 
   it("an edition with no confirmed ask is an absence (null), not a zero", async () => {
     const { db } = makeDb({ candy_listing_floor: { data: [{ confirmed_floor_usd: null }], error: null } })
-    expect(await fetchCandyAsks("ed-1", MINT, db, NOW)).toEqual({ data: { floorUsd: null, serialAskUsd: null }, ok: true })
+    expect(await fetchCandyAsks("ed-1", MINT, db, NOW)).toEqual({ data: { floorUsd: null, serialAskUsd: null, serialAskVenue: null }, ok: true })
   })
 
   it("an edition-level page (no mint) never queries a serial ask", async () => {
     const { db, filters } = makeDb({ candy_listing_floor: { data: [{ confirmed_floor_usd: 2 }], error: null } })
-    expect(await fetchCandyAsks("ed-1", null, db, NOW)).toEqual({ data: { floorUsd: 2, serialAskUsd: null }, ok: true })
+    expect(await fetchCandyAsks("ed-1", null, db, NOW)).toEqual({ data: { floorUsd: 2, serialAskUsd: null, serialAskVenue: null }, ok: true })
     expect(filters.some(([t]) => t === "candy_listings")).toBe(false)
   })
 
