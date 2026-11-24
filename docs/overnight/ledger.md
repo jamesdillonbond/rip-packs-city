@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~11:31 AM PT · 📝 DOCS + 🔧 SCRIPT — known-issues.md 2.04 MB → 143 KB: closed items' full text moved to known-issues-archive.md (Cowork, Trevor: "Yes do it all", `8132356c6`)
+- 254 of 255 closed items now hold a one-line stub in their numbered slot; full text verbatim in [known-issues-archive.md](../reference/known-issues-archive.md) under `## #NNN` (0 lines lost, multiset-checked). STATUS INDEX byte-identical (`gen-known-issues-index --check` green), so every `#NNN` citation still resolves.
+- #14 kept in place (the monolith-inventory test's suppression list) plus one line naming the 7 over-threshold files that were named only in moved items. Retired-rule allow comment moved with its quote; link guard 0 live broken; retired-rule guard clean.
+- `scripts/archive-closed-known-issues.mjs` repeats the move for newly closed items (idempotent, refuses if the index would change); recipe in [session-and-archive-conventions.md](../reference/session-and-archive-conventions.md).
+- revert: git revert 8132356c6
+
 ### 2026-11-24 ~10:53 AM PT · 📝 DOCS — CLAUDE.md headroom 3 → 132 chars (Cowork, hygiene follow-up, `25d4356c1`)
 - The Code-patterns brand-token bullet condensed to a pointer at [brand-auth-proxy.md](../reference/brand-auth-proxy.md), which already carries all three facts (web `#E03A2F` vs email `#E55A4C`, why email hardcodes, theme-aware `--rpc-black` / `--rpc-text-primary`). The `#E03A2F` / `'Barlow Condensed'` ban stays. Verbatim original kept in [claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md) (topic-specificity test). CLAUDE.md 39,997 → 39,868 (`node -e` .length). Link guard 0 live broken; retired-rule + brand-token guards clean.
 - revert: git revert 25d4356c1
