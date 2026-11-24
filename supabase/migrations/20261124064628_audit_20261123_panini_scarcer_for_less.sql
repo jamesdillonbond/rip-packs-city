@@ -1,3 +1,34 @@
+-- audit_20261123_panini_scarcer_for_less
+--
+-- anon-exec: revoked (refresh_panini_scarcer_for_less) — new fn; REVOKE FROM PUBLIC, anon, authenticated below; postgres + service_role only.
+--
+-- 2026-11-23 (Claude Code cloud; Trevor: "Keep going" — enhance Panini on the site).
+--
+-- WHAT. A "Scarcer for less" board for /insights/panini-squeeze: a Panini printing LISTED BELOW what a MORE COMMON
+-- printing of the same card has been SELLING for. A Panini card's parallels are separate editions of one product +
+-- player + card number + parallel family (the ladder lib/panini/edition-printings.ts draws on edition pages); a /25
+-- listed under the 90-day median sale of the same card's /99 is a market fact a collector can act on.
+--
+-- Built from facts only — no FMV, no confidence:
+--   low_ask        the printing's cheapest listed serial re-read in the last 7 days (the FMV ask-cap's 7-day rule)
+--   common_*       the more-common sibling (higher mint cap, same family) with the LOWEST 90-day median sale among those
+--                  with >= 3 sales in 90 days — the most conservative comparison available, so a single high sale or an
+--                  absurd ask on the common printing can never make the gap
+--   own_*          the printing's own 90-day sales, shown beside it (a printing that has itself sold for less says so)
+-- Only rows where low_ask < common_median and common_median >= $2 (dust excluded).
+--
+-- FAMILY (SQL mirror of paniniParallelFamily): "<card> [Preferred|Choice] Prizms …" → "<card>"; else the longest
+-- sibling set name (same product + player + card number) that the name extends by a word ("Base" for "Base Green");
+-- else the name itself. Card number = the external id's last `_` segment (packcard-<product>_<cardset>_<card>_<n>).
+--
+-- MEASURED 11-23: 1,301 rows; the build is 9.4 s / ~143k buffers (the 90-day sales aggregate is most of it) — so every
+-- 2 hours at :08, not hourly. A read is a PK / sort scan of ~1.3k rows.
+--
+-- REVERT:
+--   SELECT cron.unschedule('panini-scarcer-for-less');
+--   DROP FUNCTION public.refresh_panini_scarcer_for_less(); DROP MATERIALIZED VIEW public.mv_panini_scarcer_for_less;
+--   DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'panini-scarcer-for-less';
+
 CREATE MATERIALIZED VIEW public.mv_panini_scarcer_for_less AS
 WITH ask AS (
   SELECT s.edition_external_id, min(s.price_usd) AS low_ask

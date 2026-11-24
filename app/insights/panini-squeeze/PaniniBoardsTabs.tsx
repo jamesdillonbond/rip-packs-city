@@ -161,6 +161,26 @@ export interface RookieRow {
   top_fmv_usd: Num;
   computed_at: string | null;
 }
+/** A printing listed below a more common printing's 90-day median sale (mv_panini_scarcer_for_less, 2026-11-23). */
+export interface ScarcerRow {
+  external_id: string;
+  player_name: string | null;
+  set_name: string | null;
+  mint_cap: Num;
+  product_name: string | null;
+  sport: string | null;
+  low_ask_usd: Num;
+  own_sales_90d: Num;
+  own_median_90d_usd: Num;
+  common_external_id: string | null;
+  common_set_name: string | null;
+  common_mint_cap: Num;
+  common_sales_90d: Num;
+  common_median_90d_usd: Num;
+  gap_usd: Num;
+  gap_pct: Num;
+  computed_at: string | null;
+}
 export interface PaniniBoardsPayload {
   deals?: DealRow[] | null;
   deals_error?: boolean;
@@ -188,6 +208,9 @@ export interface PaniniBoardsPayload {
   rookies?: RookieRow[] | null;
   rookies_error?: boolean;
   rookies_total?: Num;
+  scarcer?: ScarcerRow[] | null;
+  scarcer_error?: boolean;
+  scarcer_total?: Num;
   floor_rises?: MoverRow[] | null;
   floor_falls?: MoverRow[] | null;
   floor_movers_error?: boolean;
@@ -196,7 +219,7 @@ export interface PaniniBoardsPayload {
   coverage?: { total_editions?: Num; pct_trustworthy?: Num } | null;
 }
 
-type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread" | "movers" | "rookies";
+type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread" | "movers" | "rookies" | "scarcer";
 const TABS: { k: Tab; label: string }[] = [
   { k: "deals", label: "Deals" },
   { k: "packs", label: "Pack EV" },
@@ -206,6 +229,7 @@ const TABS: { k: Tab; label: string }[] = [
   { k: "spread", label: "Bid vs Floor" },
   { k: "movers", label: "Floor movers · 7 days" },
   { k: "rookies", label: "Rookie cards" },
+  { k: "scarcer", label: "Scarcer for less" },
 ];
 
 function noopSubscribe(): () => void {
@@ -562,6 +586,60 @@ export default function PaniniBoardsTabs({
                       </Link>
                     ) : "—"}
                   </td>
+                </tr>
+              ))}
+            </Table>
+          </>
+        )
+      ) : tab === "scarcer" ? (
+        // Scarcer for less (2026-11-23): a printing LISTED below what a MORE COMMON printing of the same card has been
+        // SELLING for. Market facts only (an ask and realised sales), never a verdict: collectors pay up for some
+        // parallels whatever their mint, so the row says what the market did and lets the reader judge.
+        data.scarcer === undefined && !data.scarcer_error ? (
+          // A snapshot cached before this board existed carries no key at all — not a failed read (the 11-23 rookies lesson).
+          <Note>The Scarcer for less board joins this page&rsquo;s data with its next hourly refresh — check back shortly.</Note>
+        ) : data.scarcer_error || !data.scarcer ? (
+          <Failed what="Scarcer for less" />
+        ) : data.scarcer.length === 0 ? (
+          <Note>No Panini printing is listed below what a more common printing of the same card has been selling for.</Note>
+        ) : (
+          <>
+            <Note>
+              Each row is a printing whose cheapest listing (re-confirmed in the last 7 days) is <b>below the 90-day median sale of a more
+              common printing of the same card</b> — same product, player, card number and parallel line, more copies minted. When several
+              more common printings have 3+ sales, the comparison is the one that sells for the least. Some parallels sell above scarcer
+              ones on looks alone, so this is a list to look at, not a call; each row also shows what the scarcer printing itself has sold for.{" "}
+              {data.scarcer_total != null && data.scarcer_total > data.scarcer.length ? `Biggest ${int(data.scarcer.length)} of ${int(data.scarcer_total)} gaps. ` : ""}
+              Panini sales reach RPC a few days late.
+              {data.scarcer[0]?.computed_at ? ` Updated ${ptDate(data.scarcer[0].computed_at)}.` : ""}
+            </Note>
+            <Table head={["Player", "Printing", "Listed at", "Its own sales · 90d", "More common printing", "It sells for · 90d", "Gap"]}>
+              {data.scarcer.map((r) => (
+                <tr key={r.external_id}>
+                  <td style={td}>
+                    {r.player_name ? (
+                      <Link href={`/panini-blockchain/player/${encodeURIComponent(slugifyPlayerName(r.player_name))}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                        {r.player_name}
+                      </Link>
+                    ) : "—"}
+                    {r.product_name ? <div style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>{r.product_name}</div> : null}
+                  </td>
+                  <td style={td}>
+                    <Link href={`/panini-blockchain/edition/${encodeURIComponent(r.external_id)}`} style={{ color: "inherit" }}>
+                      {r.set_name ?? "card"}{r.mint_cap != null ? ` /${int(r.mint_cap)}` : ""}
+                    </Link>
+                  </td>
+                  <td style={td}>{usd(r.low_ask_usd)}</td>
+                  <td style={td}>{Number(r.own_sales_90d ?? 0) > 0 ? `${int(r.own_sales_90d)} · median ${usd(r.own_median_90d_usd)}` : "no sales"}</td>
+                  <td style={td}>
+                    {r.common_external_id ? (
+                      <Link href={`/panini-blockchain/edition/${encodeURIComponent(r.common_external_id)}`} style={{ color: "inherit" }}>
+                        {r.common_set_name ?? "card"}{r.common_mint_cap != null ? ` /${int(r.common_mint_cap)}` : ""}
+                      </Link>
+                    ) : "—"}
+                  </td>
+                  <td style={td}>{`${int(r.common_sales_90d)} · median ${usd(r.common_median_90d_usd)}`}</td>
+                  <td style={td}>{r.gap_usd != null ? `${usd(r.gap_usd)}${r.gap_pct != null ? ` (${Math.round(Number(r.gap_pct))}%)` : ""}` : "—"}</td>
                 </tr>
               ))}
             </Table>

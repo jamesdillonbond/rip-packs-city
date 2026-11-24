@@ -109,6 +109,15 @@ const ROOKIE_COLS =
   "player_name,sport,rc_editions,rc_products,priced_editions,fmv_total_usd,cheapest_ask_usd,cheapest_ask_external_id," +
   "sales_30d,volume_30d_usd,newest_sale_at,top_external_id,top_set_name,top_fmv_usd,computed_at"
 
+// ── SCARCER FOR LESS (2026-11-23) ────────────────────────────────────────────────────────────────────────────
+// mv_panini_scarcer_for_less (audit_20261123_panini_scarcer_for_less, every 2 h at :08): a printing LISTED below the
+// lowest 90-day median sale of a MORE COMMON printing of the same card (product + player + card number + family).
+// Biggest dollar gap first, capped, with the exact row count.
+export const SCARCER_LIMIT = 100
+const SCARCER_COLS =
+  "external_id,player_name,set_name,mint_cap,product_name,sport,low_ask_usd,own_sales_90d,own_median_90d_usd," +
+  "common_external_id,common_set_name,common_mint_cap,common_sales_90d,common_median_90d_usd,gap_usd,gap_pct,computed_at"
+
 interface Read<T> {
   rows: T[] | null
   error: string | null
@@ -160,7 +169,7 @@ export async function fetchPaniniMoreBoards(
     )
     return [wc, all] as const
   })()
-  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount, rises, falls, moverCount, rookies, rookieCount] = await Promise.all([
+  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount, rises, falls, moverCount, rookies, rookieCount, scarcer, scarcerCount] = await Promise.all([
     dealsPair,
     // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
     // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
@@ -308,6 +317,22 @@ export async function fetchPaniniMoreBoards(
         return { total: null, error: err instanceof Error ? err.message : String(err) }
       }
     })(),
+    read(
+      db.from("mv_panini_scarcer_for_less").select(SCARCER_COLS)
+        .order("gap_usd", { ascending: false })
+        .order("external_id", { ascending: true })
+        .limit(SCARCER_LIMIT),
+      "mv_panini_scarcer_for_less",
+    ),
+    (async (): Promise<{ total: number | null; error: string | null }> => {
+      try {
+        const r = await db.from("mv_panini_scarcer_for_less").select("external_id", { count: "exact", head: true })
+        if (r.error || r.count == null) return { total: null, error: r.error?.message ?? "count unavailable" }
+        return { total: r.count, error: null }
+      } catch (err) {
+        return { total: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
   ])
 
   const statuses: BoardStatus[] = [
@@ -320,13 +345,15 @@ export async function fetchPaniniMoreBoards(
     { label: "Bid vs Floor", ok: spread.error === null, partial: false },
     { label: "Floor movers", ok: rises.error === null && falls.error === null, partial: false },
     { label: "Rookie cards", ok: rookies.error === null, partial: false },
+    { label: "Scarcer for less", ok: scarcer.error === null, partial: false },
   ]
-  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread, rises, falls, rookies].map((r) => r.error).filter(Boolean) as string[]
+  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread, rises, falls, rookies, scarcer].map((r) => r.error).filter(Boolean) as string[]
   if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
   if (holderCount.error) errors.push(`holder counts: ${holderCount.error}`)
   if (spreadCount.error) errors.push(`bid vs floor counts: ${spreadCount.error}`)
   if (moverCount.error) errors.push(`floor mover counts: ${moverCount.error}`)
   if (rookieCount.error) errors.push(`rookie counts: ${rookieCount.error}`)
+  if (scarcerCount.error) errors.push(`scarcer-for-less counts: ${scarcerCount.error}`)
 
   return {
     payload: {
@@ -367,6 +394,9 @@ export async function fetchPaniniMoreBoards(
       rookies: rookies.rows,
       rookies_error: rookies.error !== null,
       rookies_total: rookieCount.total,
+      scarcer: scarcer.rows,
+      scarcer_error: scarcer.error !== null,
+      scarcer_total: scarcerCount.total,
       coverage: coverage.rows?.[0] ?? null,
       degraded: summarizeDegraded(statuses),
       fetchedAt: new Date().toISOString(),

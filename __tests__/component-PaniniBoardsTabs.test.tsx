@@ -185,6 +185,40 @@ describe("PaniniBoardsTabs — Floor movers · 7 days (2026-11-04)", () => {
     expect(container.textContent).toContain("Rookie cards couldn't load right now")
   })
 
+  it("Scarcer for less tab (2026-11-23): links both printings, shows the scarcer one's own sales, never a verdict", () => {
+    const data: PaniniBoardsPayload = {
+      ...base,
+      scarcer_total: 1292,
+      scarcer: [
+        { external_id: "packcard-1_2_3_9", player_name: "Victor Wembanyama", set_name: "Base Prizms Pulsar", mint_cap: 235, product_name: "2023-24 Panini NFT Prizm Basketball", sport: "Basketball", low_ask_usd: 275, own_sales_90d: 8, own_median_90d_usd: 280, common_external_id: "packcard-1_2_4_9", common_set_name: "Base", common_mint_cap: 424, common_sales_90d: 23, common_median_90d_usd: 515, gap_usd: 240, gap_pct: 46.6, computed_at: "2026-11-24T06:46:00Z" },
+        { external_id: "packcard-1_5_6_7", player_name: "No Sales", set_name: "Gold", mint_cap: 10, product_name: null, sport: null, low_ask_usd: 5, own_sales_90d: 0, own_median_90d_usd: null, common_external_id: "packcard-1_5_7_7", common_set_name: "Silver", common_mint_cap: 49, common_sales_90d: 3, common_median_90d_usd: 9, gap_usd: 4, gap_pct: 44.4, computed_at: "2026-11-24T06:46:00Z" },
+      ],
+    }
+    const { container, getByText } = render(<PaniniBoardsTabs data={data} degraded={null} />)
+    fireEvent.click(getByText("Scarcer for less"))
+    expect(container.querySelector('a[href="/panini-blockchain/edition/packcard-1_2_3_9"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/panini-blockchain/edition/packcard-1_2_4_9"]')).not.toBeNull()
+    expect(container.textContent).toContain("Base Prizms Pulsar /235")
+    expect(container.textContent).toContain("Biggest 2 of 1,292 gaps")
+    expect(container.textContent).toContain("8 · median $280")
+    expect(container.textContent).toContain("$240 (47%)")
+    const noSales = Array.from(container.querySelectorAll("tbody tr")).find((r) => r.textContent?.includes("No Sales"))?.textContent ?? ""
+    expect(noSales).toContain("no sales")
+    expect(noSales).not.toContain("$0")
+    // a list to look at, never a buy call or FMV/confidence vocabulary
+    expect(container.textContent ?? "").not.toMatch(/\bbuy\b|underpriced|\bFMV\b|confidence/i)
+  })
+  it("Scarcer for less tab: a failed read is a failed read; a pre-board snapshot is 'next refresh'", () => {
+    const failed = render(<PaniniBoardsTabs data={{ ...base, scarcer: null, scarcer_error: true }} degraded={null} />)
+    fireEvent.click(failed.getByText("Scarcer for less"))
+    expect(failed.container.textContent).toContain("Scarcer for less couldn't load right now")
+    cleanup()
+    const stale = render(<PaniniBoardsTabs data={base} degraded={null} />)
+    fireEvent.click(stale.getByText("Scarcer for less"))
+    expect(stale.container.textContent).toContain("next hourly refresh")
+    expect(stale.container.textContent).not.toContain("couldn't load")
+  })
+
   it("Rookie cards tab: a snapshot cached before the board existed is 'next refresh', not a failed read", () => {
     const { container, getByText } = render(<PaniniBoardsTabs data={base} degraded={null} />)
     fireEvent.click(getByText("Rookie cards"))
