@@ -42,6 +42,31 @@ describe("useModalA11y", () => {
     expect(document.activeElement).toBe(getByTestId("first"))
   })
 
+  // 2026-11-23: the `if (!root) return` guard in the rAF focus callback was only
+  // reached when some OTHER component's test happened to fire a frame while its
+  // ref was detached — timing-dependent coverage that flipped one line and put
+  // the merged statements total 0.01 under its floor (CI run 45322902554, same
+  // source as the green run before it). This reaches it on purpose.
+  it("an open modal whose container has not mounted yet moves no focus and does not throw", () => {
+    withSyncRaf()
+    function LoadingModal({ isOpen }: { isOpen: boolean }) {
+      // Opens, but the content (and the ref's element) is not rendered yet.
+      useModalA11y<HTMLDivElement>(isOpen, () => {})
+      return <button data-testid="outside">outside</button>
+    }
+    const raf = vi.mocked(window.requestAnimationFrame)
+    const { getByTestId, rerender } = render(<LoadingModal isOpen={false} />)
+    getByTestId("outside").focus()
+    rerender(<LoadingModal isOpen />)
+    // The focus callback DID run (synchronously) with no container …
+    expect(raf).toHaveBeenCalled()
+    // … and left focus where it was instead of moving it or throwing.
+    expect(document.activeElement).toBe(getByTestId("outside"))
+    // Tab with no container: the trap has nothing to wrap and must not throw.
+    expect(() => fireEvent.keyDown(window, { key: "Tab" })).not.toThrow()
+    expect(document.activeElement).toBe(getByTestId("outside"))
+  })
+
   it("closes on Escape", () => {
     withSyncRaf()
     const onClose = vi.fn()

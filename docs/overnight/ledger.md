@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~8:05 PM PT · ✅ SHIPPED (test) — `main` red on a coverage flake: one timing-dependent line put merged statements 0.01 under the 91.8 floor; the line is now covered on purpose (Claude Code, local box; Trevor: "Keep going")
+- CI run 45322902554 (`4e8b0e6bb`, migration + docs only) failed "Unit tests — merge + coverage ratchet": statements 91.79 vs floor 91.8; the green run before it (`f04a8cd`, same TypeScript) read exactly 91.80.
+- Per-file diff of the two coverage tables: the ONLY change was `lib/hooks/useModalA11y.ts` line 72 (`if (!root) return` in the rAF focus callback), reached only when some other component test fired a frame with a detached ref.
+- Fix: `__tests__/useModalA11y.test.tsx` reaches it deterministically (open modal, container not mounted yet: no focus move, no throw). Planted defect (guard removed) → that test red. Floor NOT lowered.
+- Revert: delete that one test.
+
 ### 2026-11-23 ~8:35 PM PT · 🔧 FIX (test) — `main` CI red since `5664e68` (Team Series Checklists): TeamChecklist harness now answers the new series-checklists fetch (Claude Code cloud; Trevor: "Do it all")
 - `Unit tests — shard 3/4` and `Component coverage — shard 2/2` red on every push since `5664e68`: 4 cases in `__tests__/component-TeamChecklist.test.tsx` (`expected 2 to be 1`). The new `TeamSeriesChecklists` panel fetches `/api/entity/team-series-checklists`; the test's `routeFetch` did not know that URL, so it fell through to the scripted checklist responses and consumed them. Fixed in the harness the way the full-editions probe already is (its own route → `{ series: [] }`); no component change. 4 TeamChecklist suites, 36 tests green.
 - **Revert:** `git revert` the commit "test(team-checklist): harness answers the series-checklists fetch".
