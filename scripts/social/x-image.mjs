@@ -229,7 +229,9 @@ function buyerOf(r) {
 }
 const shortSet = (s) => String(s ?? "").split(" • ").pop()
 // Confirmed X handles for buyers (marketplace username, lowercase -> handle). Same list as x-draft.mjs.
-const X_HANDLES = { themecca: "THEMECCA212", hichi: "chrisschlei", lions_for_breakfast: "FollowJay", jason3555: "jason3555", karso: "orangekarso", incog8: "incog_eth", spinotron: "spinotron" }
+// Images name the buyer by MARKETPLACE USERNAME, never the X handle (Trevor, 11-23: "don't edit the
+// image with their Twitter handle, leave it as we had it, just tag them in the Twitter post").
+// X handles live only in x-draft.mjs's X_HANDLES and only reach the post text.
 
 async function getJson(path) {
   const r = await fetch(`${API}/${path}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
@@ -346,7 +348,7 @@ async function topSalesItems(warnings) {
       title: r.player_name || shortSet(r.set_name),
       set: [shortSet(r.set_name), r.subedition_name, serial].filter(Boolean).join(" · "),
       price: usd(r.price_usd),
-      buyer: buyerOf(r) && (X_HANDLES[buyerOf(r).toLowerCase()] ? `@${X_HANDLES[buyerOf(r).toLowerCase()].replace(/^@/, "")}` : buyerOf(r)),
+      buyer: buyerOf(r) || null,
       img: imgs[i] ? String(imgs[i]) : null,
       padded: !!imgs[i]?.padded,
     }
@@ -603,7 +605,7 @@ async function wedMain(out, outDir) {
 // Ultimate #1/1, $2,000 — "This season's first Rookie Ultimate sale"). One sale, large: the asset on
 // the left (Top Shot: its own moment VIDEO with --video, else its hero still), and on the right the
 // headline, player, set · team, the edition's badges and special serials as ICONS ONLY, the price,
-// when it sold (PT) and the buyer (same naming rule as Monday: X_HANDLES or the username, untagged).
+// when it sold (PT) and the buyer (same naming rule as Monday: the marketplace username, never an X handle).
 //
 // Badge rules, Trevor 11-14: "We don't need to name out each badge"; "the point of the triple badge
 // is that we don't need to then show each of those three badges individually"; "We also don't need
@@ -720,7 +722,7 @@ async function bigSaleItem(warnings) {
     serial: sn ? `#${sn}${r.circulation_count ? `/${Number(r.circulation_count).toLocaleString("en-US")}` : ""}` : "",
     price: usd(r.price_usd),
     sold: `Sold ${p.weekday} ${p.month}/${p.day} · ${p.hour}:${p.minute} ${p.dayPeriod} PT`,
-    buyer: buyer && (X_HANDLES[buyer.toLowerCase()] ? `@${X_HANDLES[buyer.toLowerCase()].replace(/^@/, "")}` : buyer),
+    buyer: buyer || null,
     img: img ? String(img) : null,
     // A Top Shot hero is the moment on black: blended + feathered into the page. Anything else is a
     // card or pin with its own edges, shown whole.

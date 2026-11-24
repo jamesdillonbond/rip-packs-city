@@ -13,6 +13,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-23 ~7:20 PM PT · ✅ SHIPPED (scripts) — X images name buyers by marketplace username, never the X handle (Cowork cloud, attended; Trevor: "don't edit the image with their Twitter handle … just tag them in the Twitter post")
+- `scripts/social/x-image.mjs` (Monday + big-sale cards) no longer maps `X_HANDLES`; the post text still tags. `docs/social/x-calendar.md` rule updated. Site untouched. **Revert:** `git revert` this commit.
+
 ### 2026-11-23 ~7:05 PM PT · ✅ SHIPPED (scripts) — X draft: Trevor confirmed two buyer handles (Cowork cloud, attended)
 - `X_HANDLES` in `scripts/social/x-draft.mjs` + `x-image.mjs`, and `docs/social/x-calendar.md`: Incog8 → @incog_eth, spinotron → @spinotron. Site untouched. **Revert:** `git revert aed54d7b7`.
 
