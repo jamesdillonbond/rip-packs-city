@@ -370,7 +370,7 @@ export default async function PinnacleMomentPage({
         <div className="rpc-pm-card">
           <div className="rpc-pm-card-label">Tracked holders</div>
           <div className="rpc-pm-card-val">{fmtInt(holders)}</div>
-          <div className="rpc-pm-card-sub">{copies != null && copies !== holders ? `wallets · ${fmtInt(copies)} copies in RPC wallet cache` : "wallets in RPC wallet cache"}</div>
+          <div className="rpc-pm-card-sub">{copies != null && copies !== holders ? `of the wallets RPC indexes · ${fmtInt(copies)} copies — not every holder` : "of the wallets RPC indexes — not every holder"}</div>
         </div>
       </section>
 
@@ -714,7 +714,7 @@ function TopOwnersSection({ data }: { data: TopOwnersData | null }) {
     <section className="rpc-pm-detail" data-testid="pin-top-owners">
       <h2 className="rpc-pm-h2">Top owners</h2>
       <div className="rpc-pm-ladder-note">
-        {fmtInt(data.holders)} collectors hold this pin.
+        {fmtInt(data.holders)} {data.holders === 1 ? "collector holds" : "collectors hold"} this pin.
         {data.systemCopies > 0 ? ` ${fmtInt(data.systemCopies)} copies sit with Disney Pinnacle's own accounts (unsold stock or locked pins) and are not ranked.` : ""}
         {" "}From RPC&rsquo;s on-chain owner map, refreshed every 3 hours.
       </div>

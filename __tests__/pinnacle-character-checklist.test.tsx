@@ -164,9 +164,11 @@ describe("franchise kind (pass 2)", () => {
     await waitFor(() => expect(f).toHaveBeenCalled())
     expect(String((f.mock.calls[0] as unknown[])[0])).not.toContain("kind=")
   })
-  it("the team page mounts the franchise checklist only on Pinnacle franchises; the route refuses an unknown kind", () => {
+  it("the team page shows ONE franchise checklist (TeamChecklist), never a second one; the route refuses an unknown kind", () => {
     const page = readFileSync(join(process.cwd(), "app/(collections)/[collection]/team/[slug]/page.tsx"), "utf8")
-    expect(page).toMatch(/collection === "disney-pinnacle" && isFranchise \? \(\s*<Section[^>]*>\s*<PinnacleCharacterChecklist character=\{detail\.team_name\} kind="franchise" \/>/)
+    // 2026-11-23: two checklists with two costs on /disney-pinnacle/team/<slug> — the duplicate mount was removed.
+    expect(page).not.toMatch(/<PinnacleCharacterChecklist/)
+    expect(page).toMatch(/<TeamChecklist collectionUrlSlug=\{collection\} teamSlug=\{slug\} \/>/)
     const route = readFileSync(join(process.cwd(), "app/api/entity/pinnacle-character-checklist/route.ts"), "utf8")
     expect(route).toMatch(/kind !== "character" && kind !== "franchise"[\s\S]*status: 400/)
     expect(route).toContain('"get_pinnacle_checklist"')

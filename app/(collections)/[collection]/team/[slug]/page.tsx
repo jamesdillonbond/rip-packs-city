@@ -7,7 +7,6 @@
 
 import type { Metadata } from "next"
 import Link from "next/link"
-import PinnacleCharacterChecklist from "@/components/pinnacle/PinnacleCharacterChecklist"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
@@ -380,15 +379,10 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         </Section>
       )}
 
-      {/* ── Disney Pinnacle Franchise Checklist (2026-11-23, Pinnacle parity pass 2) ──
-          The team checklist's job on the render grain: every pin of this franchise (the
-          `franchises` trait, ™ stripped), owned vs missing for a tracked Dapper wallet, cost to
-          complete by price source. get_pinnacle_checklist('franchise', …); hides itself on a 404. */}
-      {collection === "disney-pinnacle" && isFranchise ? (
-        <Section title={`${detail.team_name} Checklist`}>
-          <PinnacleCharacterChecklist character={detail.team_name} kind="franchise" />
-        </Section>
-      ) : null}
+      {/* 2026-11-23: the pass-2 PinnacleCharacterChecklist (kind="franchise") mount was REMOVED the same evening — the
+          Team / Franchise Checklist above already covers Pinnacle franchises (series tabs, variant filter, wallet), so
+          the page showed two checklists with two costs. Their cost rules now agree (get_team_checklist_progress's
+          Pinnacle arm caps asks at 3x FMV, 20261124015000); the franchise kind stays for the concierge. */}
 
       {/* ── Roster / Cast grid ───────────────────────────────────────────── */}
       <Section title={rosterLabel}>

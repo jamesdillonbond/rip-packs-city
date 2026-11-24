@@ -399,7 +399,10 @@ BEGIN
           pc.variant AS tier,
           99 AS tier_rank,
           pc.fmv_usd,
-          pc.floor_ask AS floor_usd,
+          -- 2026-11-23: a live ask counts toward cost only within 3x the pin's FMV (the generic arm's rule since
+          -- 2026-10-03, and what the checklist's copy already promised). A raw ask put a never-sold $1,000,000
+          -- 1/1 listing into Mickey & Friends' cost ($1.83M); past 3x -> its FMV; no FMV -> unpriced (no cost).
+          CASE WHEN pc.fmv_usd > 0 AND pc.floor_ask <= pc.fmv_usd * 3 THEN pc.floor_ask END AS floor_usd,
           pc.fmv_confidence::text AS fmv_confidence,
           CASE WHEN p_wallet IS NULL THEN false ELSE COALESCE(ok.cnt,0) > 0 END AS owned,
           CASE WHEN p_wallet IS NULL THEN false ELSE (COALESCE(ok.cnt,0) > 0 AND COALESCE(ok.any_locked,false)) END AS owned_locked
@@ -688,6 +691,12 @@ SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', '
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'locked_owned'), '1', 'r1 has a locked copy');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'cost_to_complete_usd'), '20.00', 'cost = r3 floor 15 + r2 FMV 5 (no floor)');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'completion_pct'), '33.3', 'completion 1 of 3');
+-- 2026-11-23: an ask above 3x FMV counts at FMV; an ask on a pin with no FMV adds nothing (was the raw ask).
+UPDATE public.pinnacle_catalog SET floor_ask = 1000000 WHERE render_id = 'r3';
+SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'cost_to_complete_usd'), '25.00', 'r3 ask 1,000,000 > 3x FMV 20 -> counts at FMV 20; + r2 FMV 5');
+UPDATE public.pinnacle_catalog SET fmv_usd = NULL, floor_ask = 1000000 WHERE render_id = 'r3';
+SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'cost_to_complete_usd'), '5.00', 'a never-priced pin''s ask adds nothing to the cost');
+UPDATE public.pinnacle_catalog SET fmv_usd = 20, floor_ask = 15 WHERE render_id = 'r3';
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'all_time', :w) ->> 'wallet_cached'), 'true', 'wallet_cached true for a cached wallet');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'star-wars', 'series_2025', :w) ->> 'total'), '1', 'series scope in progress too');
 SELECT _assert_eq((public.get_team_checklist_progress(:pin::uuid, 'moana', 'all_time', :w) ->> 'owned'), '1', 'a catalog-only franchise sees the held pin');

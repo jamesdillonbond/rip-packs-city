@@ -24,3 +24,13 @@ export function fmtMultiplier(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—"
   return `${v >= 10 ? v.toFixed(1) : v.toFixed(2)}×`
 }
+
+/**
+ * A listed share. The RPC rounds to 0.1 %, so a pin with 3 of 6,269 copies listed arrives as 0 — printing "0%" beside
+ * "3 listed" reads as none listed. Any listing under 0.1 % prints "<0.1%"; only a true zero prints "0%".
+ */
+export function fmtListedPct(pct: number | null | undefined, listed: number | null | undefined): string {
+  if (pct == null || !Number.isFinite(pct)) return "—"
+  if ((listed ?? 0) > 0 && pct < 0.1) return "<0.1%"
+  return `${pct}%`
+}

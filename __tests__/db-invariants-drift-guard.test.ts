@@ -703,8 +703,9 @@ const PINS = [
   {
     fn: "get_team_checklist_progress",
     test: "supabase/tests/get_team_checklist.sql",
+    // Re-pointed 2026-11-23: the Pinnacle arm counts a live ask only within 3x FMV.
     migration:
-      "supabase/migrations/20261028141531_audit_20261028_allday_play_season_opens_in_march.sql",
+      "supabase/migrations/20261124015000_audit_20261123_pinnacle_franchise_checklist_cost_caps_asks_at_3x_fmv.sql",
   },
   {
     // Added 2026-10-30 (beta feedback 11691): the PLAYER checklist — the team

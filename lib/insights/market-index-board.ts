@@ -49,7 +49,16 @@ export async function fetchMarketIndexRows(
     ),
     "market",
   )
-  return { rows: (rows ?? []) as MarketIndexRow[], error }
+  // 2026-11-23: COMPLETE DAYS ONLY. The views bucket by UTC calendar day (the DB clock), so the newest row is the day
+  // still in progress — at 5 PM PT Disney Pinnacle's "today" held ONE sale and the page headlined its $33 as the OPEN
+  // median (a typical day: $3). Every consumer (both pages, the public route / OG cards, the concierge) reads here.
+  const today = new Date().toISOString().slice(0, 10)
+  return { rows: completeDaysOnly((rows ?? []) as MarketIndexRow[], today), error }
+}
+
+/** Drops the UTC day still in progress (and anything dated after it). `todayUtc` is YYYY-MM-DD. */
+export function completeDaysOnly<T extends { d: string }>(rows: T[], todayUtc: string): T[] {
+  return rows.filter((r) => typeof r.d === "string" && r.d.slice(0, 10) < todayUtc)
 }
 
 /**

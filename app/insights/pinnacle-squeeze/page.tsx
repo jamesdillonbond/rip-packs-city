@@ -12,7 +12,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { fetchPinnacleSqueeze, type PinnacleSqueezePayload } from "@/lib/insights/pinnacle-boards"
-import { fmtBoardUsd } from "@/lib/insights/pinnacle-board-format"
+import { fmtBoardUsd, fmtListedPct } from "@/lib/insights/pinnacle-board-format"
 
 // The listings sweep runs ~5×/day; refresh with it.
 export const revalidate = 1800
@@ -89,7 +89,7 @@ export default async function PinnacleSqueezePage() {
                       {r.collector_held.toLocaleString("en-US")}
                       {r.issuer_held > 0 ? <div style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>+{r.issuer_held.toLocaleString("en-US")} issuer</div> : null}
                     </td>
-                    <td style={{ ...cell, fontWeight: 700 }}>{r.pct_listed != null ? `${r.pct_listed}%` : "—"}</td>
+                    <td style={{ ...cell, fontWeight: 700 }}>{fmtListedPct(r.pct_listed, r.listed)}</td>
                     <td style={cell}>{r.floor_ask_usd != null ? fmtBoardUsd(r.floor_ask_usd) : "none listed"}</td>
                     <td style={cell}>{fmtBoardUsd(r.fmv_usd)}</td>
                     <td style={cell}>{r.sales_30d.toLocaleString("en-US")}</td>
