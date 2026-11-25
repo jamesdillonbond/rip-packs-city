@@ -13,6 +13,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~1:05 AM PT · 🟢 REVIEW / 0 SHIPPED — overnight pass GREEN, docs-only night (Cowork cloud, laptop-VM clone + .rpc-git-cred push; run id a885f7d4)
+
+- Clock no-skew (shell/device 09:02Z, DB 09:05:51Z, newest sale 09:03:09Z — within 3 min; ~1:05 AM PT, genuine overnight). Lock was RELEASED (prior rpc-context-hygiene, pushed 04b059bee = ancestor of origin/main), taken over + released. Push available. Collision gate: origin/main 3f768c942, no advance. Stranded-output sweep CLEAN.
+- Health GREEN: security [] on all 4 snapshot arms + independent direct catalog SQL (rls-off 0, anon/auth write-on-RLS-off 0); trust 43/43 ok, 0 breaches; stalled_pipelines []; all drift arms []; sentinel_ts_uuid_48h 0. 1 medium alert (gha-schedule-watchdog, known self-clearing #80, 0 cadence lanes breaching, backfills fresh — not escalating); 8 info (Atlas/Dapper CF-403 base-rate + flow-rest 400, designed).
+- Post-ship watch of the 11-24 evening feature wave CLEAN: CI green (HEAD 3f768c942 13/16-skip; code tip 8aeece563 26/3-skip); prod 8aeece563 READY; docs tips CANCELED (expected); no new error cluster; 0 reverts.
+- Inbox (3 new, untouched/append-only): (1617Z) misattrib-remap timeout already FIXED by the evening pass (job 926 cron_heavy 600s), tonight's 05:53Z run ok 102.5s — resolved; (0415Z) pg_net_http_403 publicnode indexed-token CRITICAL SELF-CLEARED this pass (aged out of 2h window), masking-prevention QUEUED low; (0712Z) refresh_wmc_fmv_changed deadlock pair self-cleared (next 16 ok), SKIP-LOCKED extension QUEUED (off-limits FMV route-logic).
+- Observation (QUEUE low): pinnacle-image /_next/image MODULE_NOT_FOUND on /api/public/pinnacle-image/[renderId], pre-existing since 2026-10-19, ~4 occ/24h — public route logic, attended fix.
+- Shipped 0. Deltas vs 11-24: db 57,694 -> 58,778 MB (+1,084 routine); FMV HIGH+MED nba +142 / panini +266 / nfl +91 / pinnacle -18 / candy +24; editions panini +638.
+- Revert: docs only (handoff 2026-11-25-overnight-pass + this ledger + metrics-latest.json + session entry).
+
 ### 2026-11-24 ~10:10 PM PT · 🔧 SHIPPED (code) — Disney Pinnacle capsule chaser pack page (dist 8922, Walt Disney Mugs Vol.1) no longer shows a per-pack average built from its 98 chaser pins; it says the opens are chasers only and gives the capsules-sold floor from the mint record (Claude Code cloud; Trevor: "Keep going. Connect to the repo and do it all yourself")
 
 - Finding (read-only, 11-24): mystery capsules are not PackNFTs. Mugs Vol.1 minted 7,503 mug pins (1,980 pre-minted to custody `0xedf9df96c92f4595`, 5,523 to buyers 11-09 → 11-23), 0 in `pinnacle_pack_opens`; dist 8922 is only the 98 Friends-Giving Vol.2 chasers, all opened 11-09 9:00 AM → 2:45 PM PT. The live page read "$9.99" beside "Realized: $42.20 avg · $45.00 median" and "complete open history". Write-up: project doc `claude/pinnacle-pack-capture-gaps-2026-11-24.md`.
