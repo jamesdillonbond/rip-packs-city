@@ -5927,6 +5927,10 @@ async function executeToolInner(
               : undefined,
         capped: s.capped || undefined,
       })
+      // 2026-11-24: a side with no known username carries a SHORTENED address for display ("0x1234…abcd"), which
+      // /trades/compare refuses (400). Never hand out that link, and never put a wallet address in it (this answer
+      // carries no wallet) — say how to open the page instead.
+      const linkable = isCompareIdentifier(r.a.username) && isCompareIdentifier(r.b.username)
       const q = new URLSearchParams({ u1: r.a.username, u2: r.b.username })
       if (c.slug !== "nba-top-shot") q.set("c", c.slug)
       return JSON.stringify({
@@ -5941,7 +5945,8 @@ async function executeToolInner(
               difference_usd: r.quick_trade.difference_usd,
             }
           : null,
-        page: `/trades/compare?${q.toString()}`,
+        page: linkable ? `/trades/compare?${q.toString()}` : null,
+        page_note: linkable ? undefined : "One side has no Top Shot username on record, so there is no shareable link: tell them to open /trades/compare and enter the username or wallet there.",
         rule: "Each side keeps one copy of every edition; only extra copies are offered, checked on chain just now (locked / listed copies left out and counted). FMV is RPC's for the edition, no serial premium; null = not priced. A Quick Trade is a suggestion, not an offer. They act on the page — pick serials, then Start a trade room; you cannot start one for them.",
         ...(r.a.editions_total === 0 && r.b.editions_total === 0 ? { message: "Neither has a tradeable duplicate the other lacks right now. Say that — not that either holds nothing." } : {}),
       })

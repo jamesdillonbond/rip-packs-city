@@ -10,6 +10,7 @@ import {
   dbAtlasDisneyCall,
   isRetryableAtlasFailure,
   sweepAtlasEditions,
+  sweepAtlasOpenListings,
   type AtlasCallResult,
 } from "@/lib/pinnacle/atlas-disney"
 
@@ -261,5 +262,24 @@ describe("sweepAtlasEditions", () => {
     const s = await sweepAtlasEditions(async () => ({ ok: false, status: 530, error: "error code: 1033" }))
     expect(s).toMatchObject({ complete: false, editions: [] })
     expect(s.errors[0]).toBe("atlas SearchEditions HTTP 530 (error code: 1033)")
+  })
+})
+
+describe("sweepAtlasOpenListings (2026-11-24)", () => {
+  const tx = (i: number) => ({ uuid: `u${i}`, nftId: String(1000 + i), editionId: `e${i % 7}`, priceCents: 500 + i, serialNumber: i + 1 })
+  const ok = (body: unknown): AtlasCallResult => ({ ok: true, body })
+  it("a full walk to an explicit empty page is complete", async () => {
+    const s = await sweepAtlasOpenListings(async (_m, b) =>
+      Number(b.offset) === 0 ? ok({ transactions: [tx(1), tx(2)], pagination: { hasMore: false } }) : ok({ transactions: [] }),
+    { concurrency: 1 })
+    expect(s.complete).toBe(true)
+    expect(s.listings).toHaveLength(2)
+  })
+  it("a 200 with NO transactions array is an error, never the end of a complete sweep", async () => {
+    // A complete sweep lets the backfill replace pinnacle_live_listings — a partial one would delete the rest.
+    const full = Array.from({ length: 200 }, (_, i) => tx(i))
+    const s = await sweepAtlasOpenListings(async (_m, b) => (Number(b.offset) === 0 ? ok({ transactions: full }) : ok({ error: "upstream hiccup" })), { concurrency: 1 })
+    expect(s.complete).toBe(false)
+    expect(s.errors.join(" ")).toMatch(/no transactions array/)
   })
 })

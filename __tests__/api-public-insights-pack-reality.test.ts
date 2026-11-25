@@ -43,6 +43,9 @@ describe("GET /api/public/insights/pack-reality", () => {
     expect(body.model_vs_reality.qualifying_dists).toBe(0)
   })
 
+  // 2026-11-24: the snapshot must be recent to be used (pg_cron 892 refreshes it every 2 h).
+  const FRESH = new Date(Date.now() - 30 * 60_000).toISOString()
+
   // ── ranker_staleness (#118), added 2026-09-20 with the adjudication ─────────
   // This leg had NO test at all, which is how "N packs would otherwise qualify"
   // stayed an unchecked counterfactual: the view counted rows passing the stored
@@ -53,6 +56,7 @@ describe("GET /api/public/insights/pack-reality", () => {
   it("carries the adjudicated count AND whether the verdict was complete", async () => {
     tables.mv_topshot_pack_reality_ranker_staleness = {
       data: [{
+        computed_at: FRESH,
         qualifying_ignoring_freshness: 2,
         newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z",
         candidates_considered: 3,
@@ -75,6 +79,7 @@ describe("GET /api/public/insights/pack-reality", () => {
     // would publish a floor as a total.
     tables.mv_topshot_pack_reality_ranker_staleness = {
       data: [{
+        computed_at: FRESH,
         qualifying_ignoring_freshness: 60,
         newest_qualifying_snapshot: "2026-09-20T00:00:00.000Z",
         candidates_considered: 214,
@@ -93,7 +98,7 @@ describe("GET /api/public/insights/pack-reality", () => {
   // reassuring value is this panel's entire defect class.
   it("a pre-migration view shape yields verdict_complete null, never true", async () => {
     tables.mv_topshot_pack_reality_ranker_staleness = {
-      data: [{ qualifying_ignoring_freshness: 3, newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z" }],
+      data: [{ computed_at: FRESH, qualifying_ignoring_freshness: 3, newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z" }],
       error: null,
     }
     const res = await GET(req(base))
@@ -126,13 +131,26 @@ describe("GET /api/public/insights/pack-reality", () => {
 
   it("reads it when the ranker loaded EMPTY, and says so", async () => {
     tables.mv_topshot_pack_reality_ranker_staleness = {
-      data: [{ qualifying_ignoring_freshness: 2, newest_qualifying_snapshot: "2026-10-10T00:00:00Z", candidates_considered: 3, candidates_adjudicated: 3 }],
+      data: [{ computed_at: FRESH, qualifying_ignoring_freshness: 2, newest_qualifying_snapshot: "2026-10-10T00:00:00Z", candidates_considered: 3, candidates_adjudicated: 3 }],
       error: null,
     }
     const body = await (await GET(req(base))).json()
     expect(queried).toContain("mv_topshot_pack_reality_ranker_staleness")
     expect(body.meta.ranker_staleness.stale_count).toBe(2)
     expect(body.meta.ranker_staleness_status).toBe("read")
+  })
+
+  it("an OLD or unstamped snapshot is not published as a current count — status 'stale' (2026-11-24)", async () => {
+    // The count means "listed right now"; a snapshot from a stopped refresh job would keep asserting it.
+    for (const computed_at of [new Date(Date.now() - 6 * 3600_000).toISOString(), null]) {
+      tables.mv_topshot_pack_reality_ranker_staleness = {
+        data: [{ computed_at, qualifying_ignoring_freshness: 2, newest_qualifying_snapshot: "2026-10-10T00:00:00Z", candidates_considered: 3, candidates_adjudicated: 3 }],
+        error: null,
+      }
+      const body = await (await GET(req(base))).json()
+      expect(body.meta.ranker_staleness).toBeNull()
+      expect(body.meta.ranker_staleness_status).toBe("stale")
+    }
   })
 
   it("a failed staleness read leaves ranker_staleness null rather than a 0 count", async () => {

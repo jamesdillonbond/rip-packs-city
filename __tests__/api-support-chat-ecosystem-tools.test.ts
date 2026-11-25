@@ -868,6 +868,17 @@ describe("concierge — compare_collections (2026-11-16)", () => {
     expect(runCompareMock).not.toHaveBeenCalled()
   })
 
+  it("a side with no username on record (shortened address) gets NO link — the page would 400 — and no address (2026-11-24)", async () => {
+    runCompareMock.mockResolvedValue({
+      kind: "ok",
+      result: { collection: "nba-top-shot", a: side("0x1234…abcd", [ed()]), b: side("roham", [ed()]), quick_trade: null, candidate_limit: 600, checked_at: "2026-11-16T00:00:00Z" },
+    })
+    const r = await drive("compare_collections", { you: "jamesdillonbond", partner: "roham" })
+    expect(r.page).toBeNull()
+    expect(String(r.page_note)).toMatch(/no shareable link/)
+    expect(JSON.stringify(r)).not.toMatch(/0x[0-9a-f]{16}/)
+  })
+
   it("an empty compare says neither has a tradeable duplicate the other lacks — not that they hold nothing", async () => {
     runCompareMock.mockResolvedValue({ kind: "ok", result: { collection: "nba-top-shot", a: side("x", []), b: side("y", []), quick_trade: null, candidate_limit: 600, checked_at: "2026-11-16T00:00:00Z" } })
     const r = await drive("compare_collections", { you: "x", partner: "y" })

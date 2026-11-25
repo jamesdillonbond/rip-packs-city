@@ -73,7 +73,7 @@ export type TopshotPackRealityBody = {
     errors: PackRealityLegError[]
     ranker_staleness: RankerStaleness | null
     /** Why `ranker_staleness` is what it is: `not_needed` = the ranker had rows (or failed to load), so nothing was read. */
-    ranker_staleness_status: "not_needed" | "read" | "failed"
+    ranker_staleness_status: "not_needed" | "read" | "failed" | "stale"
   }
   stats: Record<string, unknown> | null
   distribution: Record<string, unknown>[]
@@ -255,7 +255,14 @@ export async function readTopshotPackReality(
     newest_qualifying_snapshot?: string | null
     candidates_considered?: number | null
     candidates_adjudicated?: number | null
+    computed_at?: string | null
   } | null
+  // 2026-11-24: the snapshot is refreshed every 2 h (pg_cron 892). If that job stops, an old row would keep publishing
+  // "N packs would qualify but are stale" — a count the view defines as LISTED RIGHT NOW — as a current measurement.
+  // Older than two missed refreshes (or with no stamp) it is not used: same fallback as a failed read.
+  const STALENESS_SNAPSHOT_MAX_MS = 5 * 3600_000
+  const snapshotMs = staleRow?.computed_at ? Date.parse(staleRow.computed_at) : NaN
+  const snapshotTooOld = staleRow != null && !(Number.isFinite(snapshotMs) && Date.now() - snapshotMs <= STALENESS_SNAPSHOT_MAX_MS)
   if (rankerStaleRes?.error) {
     console.error("[public/insights/pack-reality] mv_topshot_pack_reality_ranker_staleness", rankerStaleRes.error)
   }
@@ -274,7 +281,7 @@ export async function readTopshotPackReality(
   // ⛔ Do not collapse this to a bare boolean derived elsewhere — it must come from
   // the same row as the count it qualifies.
   const rankerStaleness: RankerStaleness | null =
-    staleRow == null
+    staleRow == null || snapshotTooOld
       ? null
       : {
           stale_count: Number(staleRow.qualifying_ignoring_freshness ?? 0),
@@ -297,7 +304,7 @@ export async function readTopshotPackReality(
       filters: { limit },
       errors,
       ranker_staleness: rankerStaleness,
-      ranker_staleness_status: rankerStaleRes == null ? "not_needed" : rankerStaleRes.error ? "failed" : "read",
+      ranker_staleness_status: rankerStaleRes == null ? "not_needed" : rankerStaleRes.error ? "failed" : snapshotTooOld ? "stale" : "read",
     },
     stats: statsRes.data?.[0] ?? null,
     distribution: distRes.data ?? [],

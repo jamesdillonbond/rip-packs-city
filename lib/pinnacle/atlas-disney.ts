@@ -441,7 +441,14 @@ export async function sweepAtlasOpenListings(
         return
       }
       const txs = rec(r.body)?.transactions
-      const list = Array.isArray(txs) ? txs : []
+      // 2026-11-24: Atlas sends an explicit `"transactions":[]` at the true end, so a 200 with NO transactions array is a
+      // malformed body. It used to read as an empty last page — reachedEnd, `complete: true` on a partial sweep — and
+      // the backfill's pinnacle_live_listings_replace then deleted every live listing the sweep never reached.
+      if (!Array.isArray(txs)) {
+        errors.push(`offset ${wave[i]}: ${method} 200 with no transactions array — malformed page, sweep not complete`)
+        return
+      }
+      const list = txs
       rowsSeen += list.length
       for (const tx of list) {
         const l = atlasOpenListing(tx)
