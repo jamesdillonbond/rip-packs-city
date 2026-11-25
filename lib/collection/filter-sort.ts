@@ -16,6 +16,7 @@ import {
   isLockKnown,
   duplicateGroupKey,
   getParallel,
+  parallelLabel,
   getTraits,
   compareText,
   compareNumber,
@@ -66,7 +67,7 @@ export function computeFilteredSortedRows(
       if (!duplicateEditions.has(key)) return false
     }
     if (q) {
-      const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ")
+      const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), parallelLabel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ")
       if (!textIncludes(haystack, q)) return false
     }
     return true
@@ -80,7 +81,7 @@ export function computeFilteredSortedRows(
         case "player":    result = compareText(a.playerName, b.playerName); break
         case "series":    result = compareText(a.series, b.series); break
         case "set":       result = compareText(a.setName, b.setName); break
-        case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
+        case "parallel":  result = compareText(parallelLabel(a), parallelLabel(b)); break
         case "rarity":    result = compareText(a.tier, b.tier); break
         case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
         case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break

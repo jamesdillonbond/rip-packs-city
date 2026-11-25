@@ -31,6 +31,10 @@ describe("desktop table — parallel lives in the Set cell", () => {
     render(<CollectionMomentTable {...props(row({ parallel: "Holo Icon" }))} />)
     expect(screen.getByTestId("set-parallel").textContent).toBe("Holo Icon")
   })
+  it("a row whose source already says 'Standard' gets no tag either", () => {
+    render(<CollectionMomentTable {...props(row({ parallel: "Standard" }))} />)
+    expect(screen.queryByTestId("set-parallel")).toBeNull()
+  })
   it("a base Moment shows no tag at all", () => {
     render(<CollectionMomentTable {...props(row())} />)
     expect(screen.queryByTestId("set-parallel")).toBeNull()

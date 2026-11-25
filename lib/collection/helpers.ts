@@ -110,6 +110,22 @@ export function formatAcquiredAt(iso: string | null | undefined, acquisitionMeth
 export function compareText(a?: string | null, b?: string | null) { return (a ?? "").localeCompare(b ?? "") }
 export function compareNumber(a?: number | null, b?: number | null) { return (a ?? -Infinity) - (b ?? -Infinity) }
 export function getParallel(row: MomentRow) { return normalizeParallel(row.parallel ?? row.subedition ?? "") }
+
+/**
+ * What a USER sees for a row's parallel (2026-11-24, Trevor: "the original version of the parallel
+ * is called 'Standard', not 'Base'. Base is a set, so that messaging could be confusing").
+ * `getParallel` keeps "Base" as the INTERNAL default because scope keys, market matching and the
+ * sniper feed compare against it; only rendered and exported text goes through here.
+ */
+export function parallelLabel(row: MomentRow): string {
+  const p = getParallel(row)
+  return p === "Base" || p === "Standard" ? "Standard" : p
+}
+
+/** True only for a real parallel — never for the standard printing, however the source spells it. */
+export function isParallelRow(row: MomentRow): boolean {
+  return parallelLabel(row) !== "Standard"
+}
 export function getSerial(row: MomentRow) { return row.serialNumber ?? row.serial ?? null }
 export function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?? null }
 export function getTraits(row: MomentRow) { return row.specialSerialTraits ?? row.traits ?? [] }

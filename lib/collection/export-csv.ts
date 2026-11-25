@@ -11,7 +11,7 @@ import { normalizeSetName } from "@/lib/wallet-normalize"
 import {
   seriesDisplayLabel,
   formatAcquiredAt,
-  getParallel,
+  parallelLabel,
   getSerial,
   getMint,
 } from "@/lib/collection/helpers"
@@ -52,7 +52,7 @@ export function buildCollectionCsv(
       normalizeSetName(r.setName) ?? "",
       seriesDisplayLabel(r.series, collectionSeriesMap),
       r.tier ?? "",
-      getParallel(r),
+      parallelLabel(r),
       String(getSerial(r) ?? ""),
       String(getMint(r) ?? ""),
       r.fmv != null ? r.fmv.toFixed(2) : "",

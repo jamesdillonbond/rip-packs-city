@@ -1366,6 +1366,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 @media (min-width: 640px) {
   .rpc-binder-hero-stats[data-cols="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .rpc-binder-hero-stats[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rpc-binder-hero-stats[data-cols="5"] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 .rpc-binder-hero-stat {
   background: color-mix(in srgb, var(--rpc-surface) 92%, var(--rpc-black));

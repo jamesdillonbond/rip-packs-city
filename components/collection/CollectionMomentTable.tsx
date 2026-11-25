@@ -38,7 +38,8 @@ import {
   seriesDisplayLabel,
   seriesIntToSeason,
   formatAcquiredAt,
-  getParallel,
+  parallelLabel,
+  isParallelRow,
   getSerial,
   getMint,
   getTraits,
@@ -783,10 +784,10 @@ export default function CollectionMomentTable(props: {
                         )}
                         {/* 2026-11-24: the Parallel column read "Base" on nearly every row and pushed the
                             table past 1280 px. A parallel now shows here, only on the rows that are one. */}
-                        {getParallel(row) !== "Base" ? (
+                        {isParallelRow(row) ? (
                           <div className="mt-1">
                             <span data-testid="set-parallel" className="inline-block whitespace-nowrap rounded border border-[color:var(--rpc-border-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[color:var(--rpc-text-secondary)]">
-                              {getParallel(row)}
+                              {parallelLabel(row)}
                             </span>
                           </div>
                         ) : null}
@@ -1100,7 +1101,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Parallel</div>
-                                  <div className="rpc-expand-field-value">{getParallel(row)}</div>
+                                  <div className="rpc-expand-field-value">{parallelLabel(row)}</div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Series</div>

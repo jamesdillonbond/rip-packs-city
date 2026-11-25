@@ -304,3 +304,20 @@ describe("seriesDisplayLabel does not repeat a season the label already carries"
     expect(seriesDisplayLabel("2", map)).toBe("Series 1 · 2019-20")
   })
 })
+
+// 2026-11-24 (Trevor): "the original version of the parallel is called 'Standard', not 'Base'.
+// Base is a set, so that messaging could be confusing." Users see "Standard"; the internal
+// default stays "Base" because keys and market matching compare against it.
+describe("parallelLabel / isParallelRow", () => {
+  it("shows a non-parallel as Standard however the source spells it, and keeps real names", async () => {
+    const { parallelLabel, isParallelRow, getParallel } = await import("@/lib/collection/helpers")
+    const row = (parallel?: string) => ({ momentId: "1", playerName: "P", setName: "Base Set", parallel } as any)
+    expect(getParallel(row())).toBe("Base") // internal default unchanged
+    for (const p of [undefined, "", "Base", "Standard"]) {
+      expect(parallelLabel(row(p))).toBe("Standard")
+      expect(isParallelRow(row(p))).toBe(false)
+    }
+    expect(parallelLabel(row("Holo Icon"))).toBe("Holo Icon")
+    expect(isParallelRow(row("Holo Icon"))).toBe(true)
+  })
+})
