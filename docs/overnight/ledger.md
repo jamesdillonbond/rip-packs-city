@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:00 PM PT · 🗄 APPLIED (`20261125025303`) — `rpc-topshot-misattrib-remap` moved to `cron_heavy`: it died at exactly 120 s on 11-20 and 11-24 because the function's declared 300 s is inert on pg_cron (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Inbox `2026-11-24T1617Z` (daytime monitor). Both failures ran 120.0 s, and successful runs take 52–98 s over a 50,736-row map. The job ran as `postgres`, so the 120 s global applied and the function's `statement_timeout=300s` did nothing. The monitor's option 1 (raise the function's timeout) would therefore have changed nothing. Fix: run the job as `cron_heavy` (600 s), like jobs 919 and 383, and grant it EXECUTE (it had none). The function is SECURITY DEFINER, so no table grants are needed. Job is now 926, `cron_heavy`, same schedule.
+- Revert: in the migration header. Target metric: the 05:53Z (9:53 PM PT) tick reads `succeeded` for a week.
+
 ### 2026-11-24 ~11:35 AM PT · 📝 DOCS — inbox INDEX.md 734 KB → 193 KB: summaries of entries older than 30 days moved to inbox-index-archive.md (Cowork, Trevor: "Yes do it all", `e742773ad`)
 - 334 entries filed before 2026-10-25 are title + link only; full lines in [inbox-index-archive.md](inbox-index-archive.md) (same date headings, relative links re-based onto `inbox/`). Every filing still listed; counts unchanged (`inbox:index:check` clean); no filing moved; clobber detector 0. Verified with the inbox guard tests + md-link test on a cloud clone (npm ci + vitest, 34/34).
 - revert: git revert e742773ad
