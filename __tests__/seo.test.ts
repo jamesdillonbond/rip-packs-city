@@ -756,7 +756,9 @@ describe("seriesPageMetadata — Top Shot label follows the site-wide series map
   })
   it("keeps the ordinal where the map has one (Series 1..4) and leaves other collections alone", () => {
     expect(titleText(seriesPageMetadata({ series_number: 0, display_label: "Series 1", season: "2019-20" }, "nba-top-shot", "series-1").title)).toContain("Series 1 (Season 2019-20)")
-    expect(titleText(seriesPageMetadata({ series_number: 7, display_label: "Series 7", season: null }, "nfl-all-day", "series-7").title)).toContain("Series 7 — NFL All Day")
+    expect(titleText(seriesPageMetadata({ series_number: 1, display_label: "Series 1", season: null }, "laliga-golazos", "series-1").title)).toContain("Series 1 — ")
+    // 2026-11-24: All Day decodes through its own on-chain names, not Top Shot's map and not the raw number.
+    expect(titleText(seriesPageMetadata({ series_number: 7, display_label: "Series 7", season: null }, "nfl-all-day", "series-7").title)).toContain("2024 Season — NFL All Day")
   })
 })
 

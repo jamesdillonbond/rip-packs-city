@@ -1,4 +1,5 @@
 import { playerPagePath, isTeamSubject } from "@/lib/player-route"
+import { ALLDAY_SERIES_DISPLAY } from "@/lib/series-label"
 import { editionRouteHref } from "@/lib/entity-href"
 import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
@@ -1283,8 +1284,12 @@ export function seriesPageMetadata(
   // so the series page's title matches every page that links to it.
   const seriesNumber = n(payload, "series_number")
   const tsLabel = collectionUrlSlug === "nba-top-shot" && seriesNumber != null ? TS_SERIES_DISPLAY[String(seriesNumber)] : undefined
-  const displayLabel = tsLabel ?? s(payload, "display_label") ?? "Series"
-  const season = s(payload, "season")
+  // 2026-11-24: All Day's own on-chain series names ("2025 Season", not "Series 9") —
+  // the H1, edition pages and OG card already use them.
+  const adLabel = collectionUrlSlug === "nfl-all-day" && seriesNumber != null ? ALLDAY_SERIES_DISPLAY[seriesNumber] : undefined
+  const displayLabel = tsLabel ?? adLabel ?? s(payload, "display_label") ?? "Series"
+  // An All Day Historical release's `season` is its RELEASE year, not a season.
+  const season = displayLabel.startsWith("Historical") ? null : s(payload, "season")
   const editionCount = n(payload, "edition_count")
   const setCount = n(payload, "set_count")
   const playerCount = n(payload, "player_count")
