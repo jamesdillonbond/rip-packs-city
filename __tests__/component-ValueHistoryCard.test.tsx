@@ -11,7 +11,7 @@ vi.mock("recharts", () => {
   const Area = ({ name, stackId }: { name?: string; stackId?: string }) => <div data-testid="line" data-stack={stackId}>{name}</div>
   return { ResponsiveContainer: Pass, AreaChart: Pass, CartesianGrid: () => null, XAxis: () => null, YAxis: () => null, Tooltip: () => null, Legend: () => null, Area }
 })
-import ValueHistoryCard, { fmtAxisUsd, fmtDay, nightTotal, packSeriesStart } from "@/components/dashboard/ValueHistoryCard"
+import ValueHistoryCard, { fmtAxisUsd, fmtDay, nightTotal, packSeriesStart, totalLabel } from "@/components/dashboard/ValueHistoryCard"
 
 const answer = (status: number, body: unknown) =>
   vi.fn(async () => ({ ok: status < 400, status, json: async () => body }) as unknown as Response)
@@ -28,6 +28,10 @@ describe("ValueHistoryCard", () => {
     expect(nightTotal({ moments_usd: 49651, packs_usd: 16429.06 })).toBeCloseTo(66080.06, 2)
     expect(nightTotal({ moments_usd: 40100, packs_usd: null })).toBe(40100)
     expect(nightTotal({ moments_usd: null, packs_usd: null })).toBeNull()
+    // 2026-11-24: a night missing a part is labelled with what the figure covers, never a bare "Total".
+    expect(totalLabel({ moments_usd: 40100, packs_usd: null })).toBe("Total (moments only)")
+    expect(totalLabel({ moments_usd: null, packs_usd: 120 })).toBe("Total (packs only)")
+    expect(totalLabel({ moments_usd: 49651, packs_usd: 16429.06 })).toBe("Total")
   })
   it("names the pack start date only when packs begin inside the window", () => {
     const night = (date: string, packs_usd: number | null) => ({ date, moments_usd: 1, packs_usd, packs_held: null })

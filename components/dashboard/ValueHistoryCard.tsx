@@ -50,6 +50,13 @@ export function nightTotal(p: Pick<Point, "moments_usd" | "packs_usd">): number 
   return (p.moments_usd ?? 0) + (p.packs_usd ?? 0)
 }
 
+/** The tooltip's label for nightTotal: a night missing one part says which part the figure is (2026-11-24). */
+export function totalLabel(p: Pick<Point, "moments_usd" | "packs_usd">): string {
+  if (p.moments_usd != null && p.packs_usd == null) return "Total (moments only)"
+  if (p.moments_usd == null && p.packs_usd != null) return "Total (packs only)"
+  return "Total"
+}
+
 const mono = "var(--font-mono, monospace)"
 const PACK_COLOR = "#F59E0B"
 
@@ -68,7 +75,7 @@ function StackTooltip({ active, payload, label }: { active?: boolean; payload?: 
   return (
     <div style={{ background: "rgba(0,0,0,0.92)", border: "1px solid rgba(224,58,47,0.4)", borderRadius: 6, fontSize: 11, fontFamily: mono, color: "#e4e4e7", padding: "6px 8px" }}>
       <div style={{ marginBottom: 4 }}>{fmtDay(String(label ?? p.date))}</div>
-      {row("Total", total, true)}
+      {row(totalLabel(p), total, true)}
       {row("Moments", p.moments_usd)}
       {row(p.packs_estimated ? "Sealed packs (est.)" : "Sealed packs", p.packs_usd)}
     </div>
