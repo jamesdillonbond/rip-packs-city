@@ -13,6 +13,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:54 AM PT · 🗄 APPLIED (`20261125155001`) + 🔧 SHIPPED (code) — Pinnacle share cards stop losing their art: signed image URLs are stored and served without the slow upstream (Claude Code cloud; Trevor: "Figure it out")
+
+- **Root cause (measured).** Vercel external-API metrics on `/api/public/pinnacle-image`:
+  - Dapper studio-platform GraphQL fails fast with 530 (max 251 ms), so **100 % of images** come from disneypinnacle.com's ~270 KB edition page (the new `x-pinnacle-image-source` header reads `edition-page` on 20/20).
+  - That page gets 2,500–3,900 fetches a day at p95 ~1 s, but its max is the **10 s timeout** in 4 of the last 24 hours (8 PM–1 AM PT, 11-24/25).
+  - Vercel's optimizer gives up on a local source at ~7 s: all three 11-25 failures died at 7.05 s with `/_next/image` `MODULE_NOT_FOUND`.
+  - The OG builder's art budget is 4.5 s for every leg, so the share card drew an art-unavailable tile.
+- **Fix.**
+  - New table `public.pinnacle_signed_media` (render_id, variant → url, expires_at, source; service-role only, RLS on, anon revoked).
+  - The route serves a stored signature with ≥ 30 min left **before any upstream** (header `store`) and upserts every fresh one.
+  - When every upstream fails, it serves a stored signature with ≥ 6 min left (`store-stale`).
+  - A store read or write failure is a miss or a skip (`lib/pinnacle/signed-media-store.ts`, never throws).
+  - Signatures live ~24 h, so the slow page is read about once per pin per day instead of once per cold request per region.
+- **Proof.** 6 new route tests. Planted defects: dropping the store-first serve → 1 red; dropping the write → 2 red. `npm run preflight`: 6 steps, 0 failed. Live check after deploy: second request for a render reads `x-pinnacle-image-source: store`.
+- **Revert.** `git revert` this commit, then `DROP TABLE public.pinnacle_signed_media;`.
+
 ### 2026-11-25 ~7:55 AM PT · 🔧 SHIPPED (DB + code) — candy-listings-indexer owner-moved retire timeouts: the mark clear is bounded to the asks skipped this run (`20261125154323`) (Claude Code, attended; Trevor: "Keep going")
 - 2 of today's 3 runs failed on "owner-moved retire: statement timeout" (0 on 11-22..24). Per-statement EXPLAIN: the card mark CLEAR probed every ever-marked row (11,700, growing ~700/day) — 59.6k buffers / 14.9 s cold; the other four statements ≤ 10k. The mark's only reader is the indexer's skip of a RETURNED ask, so `candy_retire_listings_owner_moved(p_returned_pdas text[] DEFAULT NULL)` judges only those (1,751-PDA sample: ~11k buffers / 3.2 s cold). NULL keeps the old unbounded form, so the DB change was safe ahead of the deploy. Retire arms byte-identical. Delta: a marked ask whose seller regains the card while ME is not returning it is restored one sweep (3 h) later.
 - Route passes the run's skipped PDAs; new test planted-defect-proven; DB test extended (empty set ≠ NULL; unreturned mark survives). Revert: re-apply `20261124044913` after `DROP FUNCTION public.candy_retire_listings_owner_moved(text[])`, and revert the route commit.
