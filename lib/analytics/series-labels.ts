@@ -5,9 +5,13 @@
 // artifact (mostly UUID-based imports that didn't carry a real series tag);
 // they render as "Misc / Unmapped" with a tooltip explaining the anomaly.
 //
-// Other collections (AllDay / Golazos / UFC) typically carry their own
-// series numbers — when we receive an unknown integer we fall back to
+// NFL All Day decodes through its contract's own series names (2026-11-24:
+// on-chain 9 is "2025 Season", even numbers are Historical releases) — see
+// ALLDAY_SERIES_DISPLAY in lib/series-label.ts. Other collections (Golazos /
+// UFC) carry their own series numbers — an unknown integer falls back to
 // "Series N". A null series resolves to "Misc / Unmapped".
+
+import { ALLDAY_SERIES_DISPLAY } from "@/lib/series-label"
 
 const TOPSHOT_SERIES: Record<number, string> = {
   0: "Series 1",
@@ -36,6 +40,7 @@ export function seriesLabel(
   const c = (collection || "").toLowerCase()
   if (c === "topshot") return topshotSeriesLabel(series)
   if (series == null) return "Misc / Unmapped"
+  if (c === "allday" || c === "nfl_all_day" || c === "nfl-all-day") return ALLDAY_SERIES_DISPLAY[series] ?? `Series ${series}`
   return `Series ${series}`
 }
 

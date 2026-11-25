@@ -27,7 +27,11 @@ describe("seriesLabel", () => {
     expect(seriesLabel("TopShot", 99)).toBe("Series 99")
   })
   it("other collections: 'Series N' or Misc when null", () => {
-    expect(seriesLabel("allday", 3)).toBe("Series 3")
+    // 2026-11-24: All Day decodes through its contract's own names (on-chain 3 = "Series 2").
+    expect(seriesLabel("allday", 3)).toBe("Series 2")
+    expect(seriesLabel("allday", 9)).toBe("2025 Season")
+    expect(seriesLabel("nfl_all_day", 6)).toBe("Historical (2024 Release)")
+    expect(seriesLabel("golazos", 3)).toBe("Series 3")
     expect(seriesLabel("allday", null)).toBe("Misc / Unmapped")
   })
 })
