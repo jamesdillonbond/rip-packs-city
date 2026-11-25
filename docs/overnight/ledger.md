@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:20 PM PT · 🔧 SHIPPED (DB + code) — Pack cost/value gaps: get_wallet_pack_history v34 + v35 (Cowork cloud; Trevor: "my sealed all day packs only have 41/59 that have a cost" → "Do it all and dig deeper. Make sure there are no gaps anywhere in this pack information" → "Push to the repo yourself")
+
+- DB (applied ~9:45 / ~9:55 PM PT): `20261125054434` v34 — atlas_pack_market retail / start / REWARD-type fallback; All Day, Golazos, Pinnacle reward packs $0 (reward-style title, REWARD type, or Atlas $0 retail from 2024 on; never when a price is known; Top Shot Tour stays priced); packs out of a box and box toppers $0 'box' with P/L kept on the box; last-resort sealed bases `atlas_last_sale` / `opened_few` only where the drop has no reference of ours. `20261125055459` v35 — a box pack's $0 never enters held_unrealized. Census of 8,485 held packs on 58 saved wallets: Top Shot no cost 1,408 → 157, All Day 187 → 55, Golazos 28 → 0, Top Shot no value 882 → ~545; Trevor's sealed All Day 41/59 → 59/59 ($875 unchanged). A/B on 6,445 rows: 0 known costs or values changed.
+- Code: literal migration files (bodies rebuilt from 20261122025253's v33 with the same edits, prosrc md5 cfbfcffc…71ab / 819acbf6…3ca8 == live), pin re-pinned + V34-1..6 / V35-0..1 (V35-1 red on the v34 body, green on v35), P62 + IB1/IB2/IB4 re-pinned (same property, new label / $0), drift-guard pointer → 20261125055459, `PACK_VALUE_BASIS_LABEL` gains the two new bases.
+- Left: `public.audit_20261124_gwph_v34` (test copy, no anon/auth EXECUTE) — its drop asked Trevor for confirmation and timed out; `public.audit_20261124_pack_gap_census` (scratch, RLS on). Drop both when convenient.
+- Revert: re-apply get_wallet_pack_history from 20261122025253_audit_20261122_pack_ask_capped_by_references.sql; revert the commit by message "pack history v34/v35".
+
 ### 2026-11-24 ~10:05 PM PT · 🔧 SHIPPED (code) — trade room: a seal's transaction must be THIS room's trade (script + arguments), not any other the same two wallets signed (Claude Code cloud; Trevor: "Keep going")
 
 - **Why.** This is trading.md Open 6, a low finding from the 11-24 review. `assertSealTx` checked only that the transaction was final, error-free and authorized by both wallets. An earlier trade between the same two wallets could seal a stale room and give it the wrong flowscan link.
