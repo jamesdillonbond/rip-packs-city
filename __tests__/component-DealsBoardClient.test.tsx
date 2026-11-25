@@ -110,6 +110,18 @@ describe("DealsBoardClient", () => {
     expect(text).toContain("can show a lower number than this board")
   })
 
+  it("marks a Panini row's FMV with its basis, and no other collection's (2026-11-24)", () => {
+    const base = { name: "x", player_name: "P", set_name: "S", tier: "RARE", circulation_count: 10, confidence: "HIGH", fmv_usd: 144, low_ask: 99,
+      discount_pct: 31.3, discount_usd: 45, ask_updated_at: null, collection_name: "c", render_id: null, detail_url: null, thumbnail_url: null,
+      low_ask_serial: null, low_ask_nft_id: null, low_confidence_fmv: false }
+    const rows = [
+      { ...base, external_id: "pan-1", collection_slug: "panini_blockchain" },
+      { ...base, external_id: "ts-1", collection_slug: "nba_top_shot" },
+    ] as unknown as Row[]
+    const { container } = render(<DealsBoardClient initialRows={rows} initialFetchedAt={null} />)
+    expect(container.querySelectorAll('[data-testid="panini-fmv-basis"]')).toHaveLength(1)
+  })
+
   it("shows the empty state when nothing is listed below FMV", () => {
     const { getByText } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
     expect(getByText(/No editions listed below a trustworthy FMV match\./)).toBeTruthy()

@@ -617,7 +617,15 @@ export default function DealsBoardClient({
                         2026-10-18, when that caveat came off too (no confidence
                         signal of any kind on a public surface — thin-data rows
                         now render plain). Do NOT reintroduce. (2026-07-25) */}
-                    <td className="rpc-dl-td-num">{fmtUsd(r.fmv_usd)}</td>
+                    <td className="rpc-dl-td-num">
+                      {fmtUsd(r.fmv_usd)}
+                      {/* 2026-11-24: a Panini row's FMV is the sales-based deal FMV, not the ask-capped FMV its
+                          edition page headlines (which equals the ask on every Panini row here). Name the basis
+                          on the row, as the edition page's "under recent sales" chip does. */}
+                      {r.collection_slug === "panini_blockchain" ? (
+                        <span className="rpc-dl-discount-usd" data-testid="panini-fmv-basis">recent sales</span>
+                      ) : null}
+                    </td>
                     <td className="rpc-dl-td-num">
                       {fmtUsd(r.low_ask)}
                       {(function () {
@@ -694,9 +702,10 @@ export default function DealsBoardClient({
             <strong>Panini rows</strong> are the cheapest regular serial (never a #1, jersey-number or perfect-mint copy)
             whose ask is under its FMV <em>and</em> under the median of the edition&apos;s recent sales. Panini sales reach RPC
             hours to days after they happen, and its asks are re-read by RPC&apos;s walk of Panini&apos;s marketplace, so
-            check the listing on Panini before acting. A Panini row&apos;s FMV is the sales-based deal FMV, which is not
-            capped at the live ask. The edition page caps its headline FMV at the cheapest ask, so it can show a lower
-            number than this board for the same card. The page&apos;s chip reads the same gap as &quot;under recent sales&quot;.
+            check the listing on Panini before acting. A Panini row&apos;s FMV, marked <em>recent sales</em>, is the
+            sales-based deal FMV, which is not capped at the live ask. The edition page caps its headline FMV at the
+            cheapest ask, so it can show a lower number than this board for the same card. The page&apos;s chip reads
+            the same gap as &quot;under recent sales&quot;.
           </p>
           <p>
             Each leg carries a minimum ask so penny-floor artifacts don&apos;t
