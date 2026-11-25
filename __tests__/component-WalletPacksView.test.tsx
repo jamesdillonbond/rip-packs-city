@@ -326,7 +326,7 @@ describe("WalletPacksView", () => {
           : res(200, { packs: [heldRow], total_count: 1 }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    const { getByText, getAllByText, findByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    const { getByText, getAllByText, findByText, queryByText, getAllByTestId } = render(<WalletPacksView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
     fireEvent.click(getByText("Opened"))
     expect(await findByText("Rookie Pack")).toBeTruthy()
@@ -334,7 +334,12 @@ describe("WalletPacksView", () => {
     expect(getByText("2 of 3")).toBeTruthy()
     // the row's held FMV and the tile's total are the same $12.50 here
     expect(getAllByText("$12.50").length).toBe(2)
-    expect(getByText("2 of 3 pulls still held")).toBeTruthy()
+    // Re-pinned 2026-11-24 (Trevor: "very simple and digestible, no subtext"): the coverage note
+    // is no longer a visible caption under the figure — it is the metric's hover title, kept
+    // rather than dropped, so the figure still says what it covers.
+    expect(queryByText("2 of 3 pulls still held")).toBeNull()
+    const titles = getAllByTestId("pack-tab-metric").map((el) => el.getAttribute("title"))
+    expect(titles).toContain("2 of 3 pulls still held")
   })
 
   it("an older payload with no tab_totals renders no metric tiles (and no $0)", async () => {

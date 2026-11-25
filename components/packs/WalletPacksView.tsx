@@ -360,8 +360,9 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Collection-scoped hero */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+      {/* Collection-scoped hero — 2026-11-24: the same plain stat strip as the Moments header
+          (Trevor: "very simple and digestible, no subtext"). */}
+      <section className="rpc-binder-hero-stats" data-cols="4" style={{ marginTop: 0 }} aria-label="Pack totals">
         <Stat label="Packs purchased" value={summaryState === "loading" ? "…" : summaryRow ? summaryRow.packs_purchased.toLocaleString("en-US") : "—"} tint="var(--rpc-text-primary)" />
         <Stat label="Total spent" value={summaryState === "loading" ? "…" : fmtPackUsd(summaryRow?.spent_usd)} tint="var(--rpc-text-primary)" />
         <Stat label="Ripped value" value={summaryState === "loading" ? "…" : fmtPackUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
@@ -410,18 +411,22 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
         })}
       </div>
 
-      {/* 2026-11-13: the tab's own metrics, over every row of the tab (not just this page) */}
-      {history && !loading && !error && history.tab_totals && (
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }} aria-label={`${PACK_FILTER_LABEL[packFilter]} pack metrics`}>
-          {packTabMetrics(packFilter, history.tab_totals).map((m) => (
-            <div key={m.label} className="rpc-card" style={{ padding: "10px 12px" }}>
-              <div style={{ fontFamily: mono, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{m.label}</div>
-              <div style={{ fontFamily: display, fontWeight: 800, fontSize: 20, lineHeight: 1.15, color: packMetricTint(m.tone), marginTop: 3 }}>{m.value}</div>
-              {m.caption && <div style={{ fontFamily: mono, fontSize: 9, color: "var(--rpc-text-muted)", marginTop: 3, lineHeight: 1.4 }}>{m.caption}</div>}
-            </div>
-          ))}
-        </section>
-      )}
+      {/* 2026-11-13: the tab's own metrics, over every row of the tab (not just this page).
+          2026-11-24: no caption lines. A metric's coverage note ("120 of 150 with a cost") is kept,
+          as the stat's hover title — the same treatment the Moments header gives Unlocked. */}
+      {history && !loading && !error && history.tab_totals && (() => {
+        const metrics = packTabMetrics(packFilter, history.tab_totals)
+        return (
+          <section className="rpc-binder-hero-stats" data-cols={String(metrics.length)} style={{ marginTop: 0 }} aria-label={`${PACK_FILTER_LABEL[packFilter]} pack metrics`}>
+            {metrics.map((m) => (
+              <div key={m.label} className="rpc-binder-hero-stat" title={m.caption || undefined} data-testid="pack-tab-metric">
+                <div className="rpc-binder-hero-stat-label">{m.label}</div>
+                <div className="rpc-binder-hero-stat-value" style={{ color: packMetricTint(m.tone) }}>{m.value}</div>
+              </div>
+            ))}
+          </section>
+        )
+      })()}
 
       {/* History table */}
       <section className="rpc-card" style={{ padding: 0, overflow: "hidden" }}>
@@ -614,9 +619,9 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
 
 function Stat({ label, value, tint, title }: { label: string; value: string; tint: string; title?: string }) {
   return (
-    <div className="rpc-card" style={{ padding: "12px 14px" }} title={title}>
-      <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: tint, marginTop: 4 }}>{value}</div>
+    <div className="rpc-binder-hero-stat" title={title}>
+      <div className="rpc-binder-hero-stat-label">{label}</div>
+      <div className="rpc-binder-hero-stat-value" style={{ color: tint }}>{value}</div>
     </div>
   )
 }
