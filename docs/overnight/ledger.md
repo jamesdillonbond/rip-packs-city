@@ -13,6 +13,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:05 AM PT · 📏 READ (docs only) — fmv-recalc `:08` interim: fallback errors 7/49 pre-fix → 0/11 since `20261125030623`; under the 20-run floor, re-read ~4 PM PT (Claude Code, attended; Trevor: "Keep going")
+- focus.md bullet annotated so the 7:37 AM scheduled read does not close it early. Revert: drop the ↳ INTERIM clause.
+
 ### 2026-11-25 ~1:05 AM PT · 🟢 REVIEW / 0 SHIPPED — overnight pass GREEN, docs-only night (Cowork cloud, laptop-VM clone + .rpc-git-cred push; run id a885f7d4)
 
 - Clock no-skew (shell/device 09:02Z, DB 09:05:51Z, newest sale 09:03:09Z — within 3 min; ~1:05 AM PT, genuine overnight). Lock was RELEASED (prior rpc-context-hygiene, pushed 04b059bee = ancestor of origin/main), taken over + released. Push available. Collision gate: origin/main 3f768c942, no advance. Stranded-output sweep CLEAN.
