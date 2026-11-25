@@ -610,7 +610,6 @@ export default function CollectionMomentTable(props: {
                 <th scope="col">{labels.player}</th>
                 <th scope="col" className="hidden sm:table-cell">Set</th>
                 <th scope="col" className="hidden sm:table-cell">Series</th>
-                <th scope="col" className="hidden md:table-cell">Parallel</th>
                 <th scope="col" className="hidden md:table-cell">{isPinnacle ? labels.tier : "Rarity"}</th>
                 <th scope="col" className="hidden sm:table-cell">Serial / Mint</th>
                 <th scope="col" className="hidden lg:table-cell">{heldLabel}</th>
@@ -782,6 +781,15 @@ export default function CollectionMomentTable(props: {
                         ) : (
                           normalizeSetName(row.setName)
                         )}
+                        {/* 2026-11-24: the Parallel column read "Base" on nearly every row and pushed the
+                            table past 1280 px. A parallel now shows here, only on the rows that are one. */}
+                        {getParallel(row) !== "Base" ? (
+                          <div className="mt-1">
+                            <span data-testid="set-parallel" className="inline-block whitespace-nowrap rounded border border-[color:var(--rpc-border-hover)] px-1.5 py-0.5 text-[10px] font-medium text-[color:var(--rpc-text-secondary)]">
+                              {getParallel(row)}
+                            </span>
+                          </div>
+                        ) : null}
                       </td>
                       {/* 2026-11-24: "Series 2024-25" wrapped over three lines in a narrow column. Each part of the
                           label stays whole; the only break allowed is before the season ("Series 1 / 2019-20").
@@ -791,7 +799,6 @@ export default function CollectionMomentTable(props: {
                           return <span key={i} className="whitespace-nowrap">{i > 0 ? " · " : ""}{part}{i === 0 ? " " : ""}</span>
                         })}
                       </td>
-                      <td className="text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="rpc-table-cell--mono hidden sm:table-cell">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-[color:var(--rpc-border)] bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
