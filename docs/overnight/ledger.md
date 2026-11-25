@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~11:35 AM PT · 🔧 SHIPPED (code) — Interactive Moment slab on /moment/[id], opt-in (Claude Code cloud; Trevor: "Build it", answering @coultin's 11-24 ask to bring back Top Shot's interactive Moment)
+
+- `components/InteractiveSlab.tsx` wraps the hero media: drag to spin, fling to coast, settles face-on; Flip / Enter / arrow keys show the back (subject, tier · series, serial, set, play, date, FMV when shown, special-serial finish #1 > jersey > perfect); mouse hover leans it; phones get a Tilt button (iOS permission prompt). Reduced motion: no coast/tilt, flips land instantly. `touch-action: pan-y` keeps page scroll.
+- **Off by default.** `?slab=1` turns it on for that browser (remembered in localStorage `rpc:slab3d`; `?slab=0` turns it off); `NEXT_PUBLIC_MOMENT_SLAB_3D=1` would turn it on for everyone. Off, the front face is the same tier-bordered square as before and no listener is attached.
+- Pure math + flag in `lib/slab-3d.ts`; tests `__tests__/slab-3d.test.ts`, `__tests__/InteractiveSlab.test.tsx` (17). Preflight: tsc, ci:guards, lint:ratchet, related + tree-walking guards green; component coverage gate green on re-run (lines 94.3 %).
+- Revert: `git revert` the code commit (message "moment: interactive slab").
+
 ### 2026-11-25 ~10:05 AM PT · 🔧 SHIPPED (script) — Wednesday rookie X draft re-checks every top-10 stat line against ESPN's live box scores (Claude Code cloud; Trevor: "Yes do it all and update everything")
 `scripts/social/x-draft.mjs` `espnSeasonCheck()` → `facts.espn_check` + a warning per differing line. Found: Darryn Peterson stored 15.8 / 4.5 / 4.1 vs ESPN 15.9 / 4.5 / 4.0 (ESPN corrected 11-11 pts 20→22 and 11-02 ast 6→5 after RPC read them). Calendar note in `docs/social/x-calendar.md`. Two DB fixes written but NOT applied (the apply_migration approval prompt went unanswered): `20261125175500_…atlas_sale_twins_match_seller_buyer_within_2h` (231 Top Shot sales stored twice, 10–93 min apart, invisible to the ±10-min retirer) and `20261125175600_…espn_box_scores_reread_for_stat_corrections` (box scores are read once and never again). Files held locally until applied, so migration-parity stays green. **Revert:** `git revert` the commit "social: Wednesday rookie draft re-checks…".
 
