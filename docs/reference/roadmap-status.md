@@ -224,6 +224,16 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
+## ⭐ NEW 2026-11-24 — DEMAND RE-READ (the read owed "on/after 11-24"), 11-17 8:30 PM → 11-24 8:30 PM PT (`scripts/demand-read.sql`, params 11-18 04:30 → 11-25 04:30 UTC; Claude Code cloud, autonomous pass, ~7:20 PM PT). Measurement only, nothing changed.
+
+- **The 11-23 weekly email went to all eligible members:** `weekly-digest` Mon 8:33 AM PT sent **56**, skipped 0, guard_errors 0 (the 11-21 note expected ~50–53). **It brought 4 visits** (`utm_source=email`, all one-page) in the ~36 h since.
+- **Alerts:** 3 `alert_subscriptions` from **1 external member** (not internal), Mon ~12:05 PM PT, all Discord, **no player filter**, so not the email's `alert_player` suggestion. `fmv_alerts` is still 0 rows ever.
+- **Week, same file as the 11-17 block:** 623 human events · 184 browsers · 258 visits · **51 engaged browsers (82 the week before, 134 the week before that)** · 0 crawler-burst visits excluded · 11 external signed-in users · 1 signup · sign-in clicks 1 · wallet pastes 35 (11 browsers). Sources: direct 218 (182 one-page) · Google 18 · ChatGPT 16 · email 4 · X 2.
+- **11-17 surfaces, second week:** `anon-value-lookup` 1, `anon-save-cta-shown` 2, `binder_save_signup` 0, `watch-edition-open` 1. Concierge human messages 0 (second week at zero).
+- ⚠ Before trusting a drop like this, check retention: `usage_events` keeps ~31 days (`purge_old_usage_events`; oldest row 10-24), so this window is complete.
+- **Read:** engagement is down for the third week running, and the email is not bringing people back (4 visits from 56 sends). Per the 11-20 note, the only thing that has moved daily users is a challenge, and its date is Trevor's call.
+
+
 ## ⭐ NEW 2026-11-20 — ACTIVITY + CONCIERGE REVIEW, 11-13 8:00 PM → 11-20 8:00 PM PT (rolling 7 days by `scripts/demand-read.sql`, params 11-14 04:00 UTC → 11-21 04:00 UTC, prior week 11-07 04:00 → 11-14 04:00 by the same file; Claude Code cloud; Trevor: "review user activity and concierge from the past week")
 
 | rolling 7 days | prior (11-06..11-13) | **this (11-13..11-20)** |

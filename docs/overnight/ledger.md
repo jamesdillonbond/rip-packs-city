@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:45 PM PT · 📏 READS (docs only) — Top Shot ingest p90 9.5 min after the promote-gap fix (target met); demand re-read for 11-17 → 11-24; index re-bloat read (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Top Shot: on-chain p50 3.8 / p90 8.3 min since 12 AM PT 11-24 (n 2,662). Parked path sold → resolved p90 9.5 min (drain p90 4.8). Detail in focus.md.
+- Demand (roadmap-status.md, new 11-24 block): the weekly email went to 56 of 56 and brought 4 visits. Engaged browsers 51 (82 the week before), concierge human use 0, and one member made 3 Discord alerts without the email's player suggestion. `usage_events` keeps ~31 days, so the window is complete.
+- `idx_tame_open_listing_seen_cover` is at 43 % density, 3 days after its rebuild; re-read ~11-28.
+- Revert: `git revert` this commit (docs only).
+
 ### 2026-11-24 ~7:10 PM PT · 🗄 APPLIED (`20261125030623`) — `fmv_recalc_historical_candidates()` answers Candy from one capped scan instead of 18k per-edition probes: 688k → 354k buffers, same rows (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - The owed read from the 11-22 handoff (item 8): fmv-recalc's `:08` run still lost its historical fallback to the 60 s timeout on 7 of 48 runs in 48 h (0 at `:28`/`:48`). The call cost 688k buffers / 21.6 s for 0 rows. ~400k of that was probing 19,063 stale editions across 8 sales partitions, and 18,434 of them are Candy, which has only 18,905 paid-sale rows in all of `sales`.
