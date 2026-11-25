@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~9:45 PM PT · 🔧 SHIPPED (code) — Binder desktop table: the Parallel column is folded into the Set cell (a tag only on rows that are a parallel), so the table fits a 1366 px screen and nearly fits 1280 (Claude Code cloud; Trevor: "Keep going")
+
+- The Parallel column read "Base" on nearly every row and pushed the table past common laptop widths. It is removed. A parallel now shows as a small one-line tag under the set name, and only on rows that are one; a base Moment shows nothing, never a "Base" tag. The expanded row still lists Parallel, and the Parallel sort is unchanged.
+- Measured locally on the real CSS: 1440 and 1366 px have no overflow; 1280 px overflows by 2 px (was 94 px after `e3e955b`, 42 px before that).
+- Test `component-CollectionMomentTable-parallel-in-set-cell` (3 cases); forcing the tag onto base rows turns it red.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~9:14 PM PT · 🔧 SHIPPED (code) — from the fourth review: a malformed Atlas page can't make the Pinnacle listings sweep "complete" (which deletes unread live listings); the concierge stops handing out compare links that 400; Pack Reality stops publishing an old "would qualify" count (Claude Code cloud; Trevor: "Keep going")
 
 - **Pinnacle listings sweep** (`lib/pinnacle/atlas-disney.ts`, from `6a51539eb`): a 200 with no `transactions` array was read as an empty last page, so the sweep reported `complete: true` and the backfill's `pinnacle_live_listings_replace` would delete every live listing it never reached. Atlas sends an explicit `"transactions":[]` at the true end, so a missing array is now an error. Live runs are healthy (`floor_agrees_with_listings` 2,756 of 2,757); this is a guard. The reviewer's other suggestion (require an exact `totalCount` match) was not adopted: listings change mid-sweep, so it would routinely mark good sweeps incomplete. First tests for this sweep; a planted revert turns one red.
