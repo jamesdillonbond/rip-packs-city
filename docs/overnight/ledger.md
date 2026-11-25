@@ -13,6 +13,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:05 PM PT · 🔧 SHIPPED (code) — trade room: a seal's transaction must be THIS room's trade (script + arguments), not any other the same two wallets signed (Claude Code cloud; Trevor: "Keep going")
+
+- **Why.** This is trading.md Open 6, a low finding from the 11-24 review. `assertSealTx` checked only that the transaction was final, error-free and authorized by both wallets. An earlier trade between the same two wallets could seal a stale room and give it the wrong flowscan link.
+- **What.** New `txMismatch` in `lib/trade-room/seal-tx.ts`:
+  - the script must be byte-equal to `expectedCadence(room)`;
+  - the base64 JSON-Cadence arguments must decode, via `describeRoomSignable`, to the room's two sources and each side's Moment set, in either orientation;
+  - the first authorizer must be the signer of the side named first.
+
+  `assertSealTx` now takes the room. Its only caller is the `sealed` action in `app/api/trade-room/[code]/route.ts`.
+- **Controls.**
+  - Positive: the real 10-31 swap 3e1c0976…, read through `pg_net` (the sandbox proxy blocks Flow REST). Its script is byte-identical to `SWAP_CADENCE` (md5 c9c72dc5…, 4,770 bytes) and it passes with its verbatim arguments.
+  - Negative: the sibling swap c48f280a… (same wallets and script, different Moments) is refused.
+  - Four planted defects each turned a test red: dropping the script check, the Moment check, the authorizer-role check, and the call itself.
+  - `npm run preflight`: 6 steps, 0 failed. The route test was re-pinned to the new signature.
+- **Not covered.** No multi-collection trade has executed, so that path has no live positive control; it uses the relay guard's decode.
+- **Revert.** `git revert` this commit; no DB change.
+
 ### 2026-11-24 ~9:56 PM PT · ✅ VERIFIED (docs only) — `rpc-topshot-misattrib-remap` (job 926, `cron_heavy` since `20261125025303`) first run succeeded, 102.5 s (Claude Code, attended; Trevor: "keep going")
 
 - Old job 721 history: ok 55.6–98.5 s on 11-16 → 11-22, failed at exactly 120.1 s on 11-19 and 11-23 (`statement_timeout`). Tonight's 102.5 s is inside the old ok band, so the 600 s `cron_heavy` budget is in place but not yet exercised; a later run > 120 s that succeeds proves it. Durations trend up (~60 → ~100 s over a week). Inbox `2026-11-24T1617Z` marked.
