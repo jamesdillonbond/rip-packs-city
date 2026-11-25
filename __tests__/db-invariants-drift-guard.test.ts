@@ -551,7 +551,15 @@ const PINS = [
     fn: "name_pack_pulls_by_id_neighbours",
     test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
     // 2026-09-29: inferred names re-derived every run.
-    migration: "supabase/migrations/20260929145500_audit_20260929_inferred_pull_names_rederived_each_run.sql",
+    // 2026-11-25: neighbours also from the chain checkpoint via topshot_id_neighbours (99.66 % on 1,754 known pulls).
+    migration: "supabase/migrations/20261125154540_audit_20261125_id_neighbours_read_chain_checkpoint.sql",
+  },
+  {
+    // Added 2026-11-25. Nearest known Top Shot ids below / above an id from the corpus OR the chain
+    // checkpoint; a checkpoint moment with no 'tssub' row is the base edition. Pins K1a-c.
+    fn: "topshot_id_neighbours",
+    test: "supabase/tests/name_pack_pulls_by_id_neighbours.sql",
+    migration: "supabase/migrations/20261125154540_audit_20261125_id_neighbours_read_chain_checkpoint.sql",
   },
   {
     // Its corpus: drops ids two sources disagree on; an empty build never wipes it.

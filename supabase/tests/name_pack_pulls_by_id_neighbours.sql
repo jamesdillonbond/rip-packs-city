@@ -53,6 +53,9 @@ CREATE TABLE public.topshot_atlas_market_events (nft_id bigint, product text, at
 CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text, rpc_edition_id uuid, parallel text);
 CREATE TABLE public.topshot_moment_id_editions (id bigint PRIMARY KEY, edition_external_id text NOT NULL,
   refreshed_at timestamptz NOT NULL DEFAULT now());
+-- 2026-11-25: the chain checkpoint (c='ts': a=setID b=playID; c='tssub': a=subeditionID)
+CREATE TABLE public.checkpoint_nft_meta (spork int NOT NULL, c text NOT NULL, nft_id bigint NOT NULL, a int, b int, serial int,
+  loaded_at timestamptz DEFAULT now(), PRIMARY KEY (c, nft_id, spork));
 
 -- >>> BEGIN verbatim (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.refresh_topshot_sale_id_editions(p_from timestamptz, p_to timestamptz)
@@ -192,6 +195,49 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.topshot_id_neighbours(p_id bigint)
+ RETURNS TABLE(lo_id bigint, lo_ext text, hi_id bigint, hi_ext text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  -- The nearest Top Shot moment id below and above p_id whose edition we know, from the
+  -- id->edition corpus (topshot_moment_id_editions) OR the chain checkpoint
+  -- (checkpoint_nft_meta: c='ts' a=setID b=playID; c='tssub' a=subeditionID). A checkpoint
+  -- moment with no 'tssub' row is the BASE edition: measured 2026-11-25, 307 of 307 known
+  -- parallels carry one and no base moment lacks one but the 818 that read 0. The checkpoint
+  -- holds ~2.7M Top Shot ids the corpus does not -- moments burned since (trade-ins) among
+  -- them -- and halves the median neighbour gap (8 -> 4 ids) on the unnamed pulls. On a tie
+  -- (the same id in both) the corpus wins.
+  WITH cl AS (
+    SELECT t.id, t.edition_external_id AS ext FROM public.topshot_moment_id_editions t
+     WHERE t.id < p_id ORDER BY t.id DESC LIMIT 1
+  ), ch AS (
+    SELECT t.id, t.edition_external_id AS ext FROM public.topshot_moment_id_editions t
+     WHERE t.id > p_id ORDER BY t.id ASC LIMIT 1
+  ), kl AS (
+    SELECT k.nft_id AS id,
+           k.a || ':' || k.b || coalesce('::' || nullif((SELECT x.a FROM public.checkpoint_nft_meta x
+                                                         WHERE x.c = 'tssub' AND x.nft_id = k.nft_id
+                                                         ORDER BY x.spork DESC LIMIT 1), 0), '') AS ext
+      FROM public.checkpoint_nft_meta k
+     WHERE k.c = 'ts' AND k.nft_id < p_id ORDER BY k.nft_id DESC LIMIT 1
+  ), kh AS (
+    SELECT k.nft_id AS id,
+           k.a || ':' || k.b || coalesce('::' || nullif((SELECT x.a FROM public.checkpoint_nft_meta x
+                                                         WHERE x.c = 'tssub' AND x.nft_id = k.nft_id
+                                                         ORDER BY x.spork DESC LIMIT 1), 0), '') AS ext
+      FROM public.checkpoint_nft_meta k
+     WHERE k.c = 'ts' AND k.nft_id > p_id ORDER BY k.nft_id ASC LIMIT 1
+  )
+  SELECT CASE WHEN kl.id > coalesce(cl.id, -1) THEN kl.id ELSE cl.id END,
+         CASE WHEN kl.id > coalesce(cl.id, -1) THEN kl.ext ELSE cl.ext END,
+         CASE WHEN kh.id < coalesce(ch.id, 9223372036854775807) THEN kh.id ELSE ch.id END,
+         CASE WHEN kh.id < coalesce(ch.id, 9223372036854775807) THEN kh.ext ELSE ch.ext END
+    FROM (SELECT 1) one
+    LEFT JOIN cl ON true LEFT JOIN ch ON true LEFT JOIN kl ON true LEFT JOIN kh ON true
+$function$;
+
 CREATE OR REPLACE FUNCTION public.name_pack_pulls_by_id_neighbours()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -220,17 +266,11 @@ BEGIN
       JOIN public.editions e ON e.id = o.edition_id
      WHERE o.collection_id = v_ts AND o.resolved_via = 'id_neighbours'
   ), chk AS (
-    SELECT i.*, lo.id AS lo_id, lo.edition_external_id AS lo_ext, hi.id AS hi_id, hi.edition_external_id AS hi_ext,
+    SELECT i.*, nb.lo_id, nb.lo_ext, nb.hi_id, nb.hi_ext,
            EXISTS (SELECT 1 FROM public.topshot_moment_id_editions x WHERE x.id = i.id) AS has_record
     FROM inf i
-    LEFT JOIN LATERAL (
-      SELECT t.id, t.edition_external_id FROM public.topshot_moment_id_editions t
-       WHERE t.id < i.id ORDER BY t.id DESC LIMIT 1
-    ) lo ON true
-    LEFT JOIN LATERAL (
-      SELECT t.id, t.edition_external_id FROM public.topshot_moment_id_editions t
-       WHERE t.id > i.id ORDER BY t.id ASC LIMIT 1
-    ) hi ON true
+    -- 2026-11-25: neighbours from the corpus AND the chain checkpoint (topshot_id_neighbours)
+    LEFT JOIN LATERAL public.topshot_id_neighbours(i.id) nb ON true
   ), stale AS (
     SELECT c.pack_nft_id, c.nft_id FROM chk c
      WHERE c.has_record
@@ -260,16 +300,10 @@ BEGIN
     FROM public.pack_open_pulls p
     WHERE p.collection_id = v_ts AND p.edition_id IS NULL AND p.nft_id ~ '^[0-9]{1,15}$'
   ), pred AS (
-    SELECT c.*, lo.id AS lo_id, lo.ext AS lo_ext, hi.id AS hi_id, hi.ext AS hi_ext
+    SELECT c.*, nb.lo_id, nb.lo_ext, nb.hi_id, nb.hi_ext
     FROM cand c
-    LEFT JOIN LATERAL (
-      SELECT t.id, t.edition_external_id AS ext FROM public.topshot_moment_id_editions t
-       WHERE t.id < c.id ORDER BY t.id DESC LIMIT 1
-    ) lo ON true
-    LEFT JOIN LATERAL (
-      SELECT t.id, t.edition_external_id AS ext FROM public.topshot_moment_id_editions t
-       WHERE t.id > c.id ORDER BY t.id ASC LIMIT 1
-    ) hi ON true
+    -- 2026-11-25: neighbours from the corpus AND the chain checkpoint (topshot_id_neighbours)
+    LEFT JOIN LATERAL public.topshot_id_neighbours(c.id) nb ON true
   ), named AS (
     -- both neighbours the SAME edition, each within 50 ids (99.3 % measured);
     -- the edition must exist in our catalogue
@@ -470,6 +504,37 @@ BEGIN
   PERFORM public.refresh_topshot_moment_id_editions();
   PERFORM _assert((SELECT edition_external_id = '1:2' FROM public.topshot_moment_id_editions WHERE id = 800), 'A1 a Standard Atlas event names 800');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.topshot_moment_id_editions WHERE id IN (801, 802)), 'A1 a Parallel event / another product never enters');
+END $$;
+
+-- K1 (2026-11-25): neighbours also come from the chain checkpoint. A checkpoint moment with no
+-- 'tssub' row is the base edition; with one, that parallel.
+INSERT INTO public.editions (collection_id, external_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '5:5'), ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '6:6'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '6:6::2');
+INSERT INTO public.checkpoint_nft_meta (spork, c, nft_id, a, b, serial) VALUES
+  (28, 'ts', 2000, 5, 5, 1), (28, 'ts', 2010, 5, 5, 2),
+  (28, 'ts', 40000000, 6, 6, 1), (28, 'tssub', 40000000, 2, NULL, NULL),
+  (28, 'ts', 40000010, 6, 6, 2), (28, 'tssub', 40000010, 2, NULL, NULL),
+  (28, 'ts', 40000020, 6, 6, 3), (28, 'tssub', 40000020, 2, NULL, NULL),
+  (28, 'ts', 40000030, 6, 6, 4),
+  (28, 'ad', 3000, 9, 9, 1);   -- another collection: never a neighbour
+INSERT INTO public.pack_open_pulls (collection_id, pack_nft_id, nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK9', '2005', '0xw'),       -- K1a: 2000 and 2010 both 5:5
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK9', '40000005', '0xw'),   -- K1b: both 6:6::2
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK9', '40000025', '0xw');   -- K1c: 6:6::2 below, base 6:6 above
+INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, opener_address, n_pulls, n_resolved, n_priced, priced_at) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PK9', '0xw', 3, 0, 0, now());
+DO $$
+BEGIN
+  PERFORM public.name_pack_pulls_by_id_neighbours();
+  PERFORM _assert((SELECT e.external_id = '5:5' AND o.resolved_via = 'id_neighbours' FROM public.pack_open_pulls o JOIN public.editions e ON e.id = o.edition_id WHERE o.nft_id = '2005'),
+                  'K1a two checkpoint neighbours of one edition name the pull, labelled id_neighbours');
+  PERFORM _assert((SELECT e.external_id = '6:6::2' FROM public.pack_open_pulls o JOIN public.editions e ON e.id = o.edition_id WHERE o.nft_id = '40000005'),
+                  'K1b checkpoint neighbours carrying subedition 2 name the PARALLEL, never the base');
+  PERFORM _assert((SELECT edition_id IS NULL FROM public.pack_open_pulls WHERE nft_id = '40000025'),
+                  'K1c a parallel neighbour and a base neighbour (no tssub row) disagree -> unnamed');
+  PERFORM _assert((SELECT n_inferred = 2 AND priced_at = '-infinity' FROM public.pack_open_pull_values WHERE pack_nft_id = 'PK9'),
+                  'K1 two inferred, requeued');
 END $$;
 
 ROLLBACK;
