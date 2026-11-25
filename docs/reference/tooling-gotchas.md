@@ -1831,6 +1831,8 @@ extra tool call and removes the entire class.
 
 ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.**
 
+⛔ **READ THE CLOCK FOR EVERY STAMP — never extrapolate one from how long the session "feels"** (2026-11-24). An evening pass read the clock once at 6:52 PM PT, then stamped twelve ledger headings by estimate. They ran ~0.5–2.5 h late, up to "~10:30 PM PT" when the DB's `now()` read 8:03 PM, and nothing flagged it: `find-future-dated-ledger-headings.mjs` checks the DATE, not the time of day. Before each heading, run `TZ=America/Los_Angeles date` (or `select now() at time zone 'America/Los_Angeles'`), or stamp the commit time (`git log -1 --format=%ad --date=format:%H:%M`, which is PT in the web sandbox).
+
 - **Web sandbox (this environment): `TZ` data IS present and correct.** `TZ=America/Los_Angeles date '+%Y-%m-%d %I:%M%p %Z'` returns real PDT/PST — verified 2026-09-10 (`2026-09-10 17:48 PDT` against `2026-09-11T00:48:50Z`). This is the cheapest correct conversion here and should be the default.
 - ⛔ **Git Bash on Trevor's Windows box lies BOTH ways:** `TZ=America/Los_Angeles date` returns **UTC labelled `GMT`** (no `/usr/share/zoneinfo`), and bare `date` has read a calendar **DAY** ahead.
 - ✅ **On Windows the only trustworthy form is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"`** — it prints the offset, so it cannot be wrong silently.
