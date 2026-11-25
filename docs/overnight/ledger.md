@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:12 AM PT · 🔧 SHIPPED (code + workflow) — UFC wallet rows the enrichment chain can't reach in time now go to the NULL-key drain, which gets a caller again (Claude Code cloud; Trevor: "Keep going")
+
+- **Why.** Trust arm `ufc_wmc_null_edition_key_aged_rows` is breaching: 114 rows on `0x9a26549ac659995d`, walked at 1:44 AM PT. Vercel shows the per-wallet chain enriched 350 rows over 7 pages, then `deadline reached … the rest stays NULL for the next run`. There is no next run: `/api/cron/ufc-enrichment-drain`, which reads only NULL-key rows, has had no caller since cron-job.org disabled it on 10-18 (0 `pipeline_runs` rows in retention). The 11-23 fix (`f04a8cd`) made the chain resumable but left the remainder stranded.
+- **What.**
+  - `wallet-backfill-ufc` fires the drain once whenever the chain finishes with `done=false` (`lib/chains/flow/ufc-drain-handoff.ts`; fired only on its 202, never throws, one log line either way).
+  - `.github/workflows/dead-lane-backstop.yml` gains a `ufc-enrichment-drain` step as the backstop for a failed hand-off. Its egress is pinned `needs-egress` in `scripts/check-lane-egress.mjs`, and the guard count went from 11 to 12.
+- **Proof.** `npm run preflight`: 6 steps, 0 failed. A planted defect (dropping the hand-off) turns `ufc-drain-handoff.test.ts` red. Live drain of the 114 is owed: dispatch the workflow once after deploy and read `pipeline_runs` `ufc-enrichment-drain` plus the trust arm.
+- **Revert.** `git revert` this commit; no DB change.
+
 ### 2026-11-25 ~7:12 AM PT · 🔧 SHIPPED (code) — Drops calendar: Walt Disney Mugs Vol.2 shows as a $4.99 mystery capsule closing Mon 11/30 9 AM PT (was an Open Edition with no price, no close, starting at the custody pre-mint); Vol.1's chaser odds carry the official "while they last" (Claude Code cloud; Trevor: "Keep going")
 
 - Read 11-25 from disneypinnacle.com/releases: Vol.2 $4.99, 1 pin, open edition set of six, 11/16 9 AM PT → 11/30 9 AM PT. RPC saw it only as the `OEV2-WDMG` Open Edition minting (first mint = the 11-15 2:24 PM PT custody pre-mint). New `DROP_CORRECTIONS` entry; `DropCorrection` gains `start_time` and `retail_usd` (a correction's price fills only a feed row that has none).
