@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~9:40 PM PT · 🔧 SHIPPED (code) — Below FMV board: every Panini row's FMV is labelled "recent sales"; Candy Floor movers population question answered by data (Claude Code cloud; Trevor: "Keep going")
+
+- All 11 Panini rows on the board contradicted their edition pages: the board showed 16–90 % "below FMV" while each page's ask-capped FMV equals the ask. Each Panini row's FMV cell now names its basis, `recent sales`, as the edition page's chip does, and the methodology points to that label. Tested both ways (one label on a Panini row, none elsewhere); a planted always-true condition turns the test red. Preflight green.
+- Floor movers: of today's 1,061 lane editions with a $2+ floor, 1,045 are in sets the Squeeze board vouches for (170 registry, 875 legacy with fresh, clean market checks) and only 16 are not. No view change; the "every set" copy stands.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~8:55 PM PT · 🔧 SHIPPED (copy) — the Below FMV board says a Panini row's FMV is the uncapped deal FMV, so it can exceed the FMV on the edition page it links to (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - From the evening review. Since `8245132c4` (11-23), `mv_panini_public_deals` compares asks against `panini_deal_board_all.fmv_usd`, which is not capped at the ask. The edition page caps its headline FMV at the cheapest ask. Live example: `packcard-1584_290008_7621293_16` shows FMV $144 and "31% below FMV" on the board, while its page shows FMV $99. The board's methodology now says this, with a pin. Preflight green.
