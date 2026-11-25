@@ -64,6 +64,9 @@ function subscribeFlag(): () => void {
 }
 const serverFlag = () => false;
 
+// One physics step is tuned for a 60 Hz frame.
+const FRAME_MS = 1000 / 60;
+
 type SlabPhysics = {
   rotY: number;
   rotX: number;
@@ -153,6 +156,7 @@ export default function InteractiveSlab({
     lastT: 0,
     pointerId: -1,
     raf: 0,
+    acc: 0,
     back: false,
   });
 
@@ -188,9 +192,21 @@ export default function InteractiveSlab({
   const kick = useCallback(() => {
     const st = s.current;
     if (st.raf) return;
-    const tick = () => {
+    let last = -1;
+    const tick = (now: number) => {
       st.raf = 0;
-      const more = advance(st);
+      // The physics are tuned per 60 Hz frame. Run as many 60 Hz steps as
+      // wall-clock time elapsed (a 120 Hz phone takes a step every other frame,
+      // a throttled tab catches up, capped at 4), so the slab spins and settles
+      // at the same speed on every display.
+      st.acc += last < 0 ? FRAME_MS : Math.min(4 * FRAME_MS, Math.max(0, now - last));
+      last = now;
+      let more = true;
+      while (st.acc >= FRAME_MS && more) {
+        st.acc -= FRAME_MS;
+        more = advance(st);
+      }
+      if (!more) st.acc = 0;
       paint();
       if (more) st.raf = requestAnimationFrame(tick);
     };

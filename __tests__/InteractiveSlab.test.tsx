@@ -228,3 +228,45 @@ describe("InteractiveSlab interaction", () => {
     expect(getByText("Tilt blocked")).toBeTruthy()
   })
 })
+
+describe("InteractiveSlab timing", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("settles in the same wall-clock time whatever the display's frame rate", () => {
+    // Drive requestAnimationFrame by hand at a chosen frame interval and count
+    // how many milliseconds a flip takes to land.
+    function msToSettle(frameMs: number): number {
+      window.history.replaceState(null, "", "/moment/x?slab=1")
+      mockMedia({})
+      let queue: Array<(t: number) => void> = []
+      vi.stubGlobal("requestAnimationFrame", (cb: (t: number) => void) => {
+        queue.push(cb)
+        return queue.length
+      })
+      vi.stubGlobal("cancelAnimationFrame", () => {})
+      const { getByText, getByRole, unmount } = render(slab())
+      fireEvent.click(getByText("Flip"))
+      const c = card(getByRole("group"))
+      let t = 0
+      while (t < 10_000) {
+        const q = queue
+        queue = []
+        if (q.length === 0) break
+        t += frameMs
+        act(() => q.forEach((cb) => cb(t)))
+      }
+      const landed = rotY(c)
+      unmount()
+      cleanup()
+      expect(landed).toBe(180)
+      return t
+    }
+    const at60 = msToSettle(1000 / 60)
+    const at120 = msToSettle(1000 / 120)
+    const at30 = msToSettle(1000 / 30)
+    expect(Math.abs(at120 - at60)).toBeLessThan(at60 * 0.15)
+    expect(Math.abs(at30 - at60)).toBeLessThan(at60 * 0.15)
+  })
+})
