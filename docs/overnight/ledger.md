@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:50 PM PT · 🗄 APPLIED (`20261125031604`) + 🔧 SHIPPED (code) — Panini sales ingest accepts `_-<serial>-<cap>` keys: 150 dropped sales ($133k) for product 1551/284632 recovered, Sentinel "Panini Ingest" WARN source fixed (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Sentinel WARN: 18 sales in 24 h dropped for an unrecognised key, every sample `packcard-1551_284632_…_-<serial>-<cap>` (2020-21 Prizm Red Mosaic /3 cards). Under that sub-product: 216 serials and 72 editions, all in this shape, 0 mixed, edition = sku minus the suffix on all 216, and 0 stored sales.
+- Fix: one more WHEN arm and WHERE alternative in `panini_sales_ingest` (body md5 asserted before, matched after), plus the TS mirror `PANINI_SALE_KEY_SHAPES` and its pin test. Seeded from the serials' last sales: 150 rows, $133,453, median $178.
+- Also uncommitted from earlier: UFC FMV spot checks resolved (ufc-strike.md).
+- Revert: in the migration header (re-apply `20261123045852`, delete the seeded rows); `git revert` the code commit. Target metric: the Sentinel Panini arm stops reporting unrecognised keys from 1551/284632.
+
 ### 2026-11-24 ~8:15 PM PT · 📏 READS (docs only) — Pinnacle ask-cap backtest (owed since 11-02): `min(FMV, ask)` beats FMV slightly on every priced tier, gated on #193; Top Shot series relabel needs no change (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Pinnacle: 5,849 sales since 10-21, each scored against FMV and floor ask as they stood a day before. Within ±25 %: HIGH 69.9 → 70.7, MEDIUM 67.9 → 69.1, LOW 66.2 → 68.5. WAPE down 2.6–3.8 points. The ask alone and a blend are both worse. No price change (gated on #193). Detail in disney-pinnacle.md.
