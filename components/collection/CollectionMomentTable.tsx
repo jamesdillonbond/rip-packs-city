@@ -783,7 +783,14 @@ export default function CollectionMomentTable(props: {
                           normalizeSetName(row.setName)
                         )}
                       </td>
-                      <td className="text-sm hidden sm:table-cell">{seriesDisplayLabel(row.series, collectionSeriesMap)}</td>
+                      {/* 2026-11-24: "Series 2024-25" wrapped over three lines in a narrow column. Each part of the
+                          label stays whole; the only break allowed is before the season ("Series 1 / 2019-20").
+                          A fully nowrap cell pushed the table 52 px wider at 1280. */}
+                      <td className="text-sm hidden sm:table-cell">
+                        {seriesDisplayLabel(row.series, collectionSeriesMap).split(" · ").map(function(part, i) {
+                          return <span key={i} className="whitespace-nowrap">{i > 0 ? " · " : ""}{part}{i === 0 ? " " : ""}</span>
+                        })}
+                      </td>
                       <td className="text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="rpc-table-cell--mono hidden sm:table-cell">
