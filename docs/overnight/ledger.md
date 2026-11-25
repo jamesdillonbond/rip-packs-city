@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:37 PM PT · 🔧 SHIPPED (code) — dashboard Value / 30D tooltip says "Total (moments only)" / "(packs only)" on a night missing one part, not a bare "Total" (Claude Code cloud; Trevor: "Keep going")
+
+- From the third review's minor note. `nightTotal` sums the parts a night has, by design, but the tooltip labelled it "Total" even when sealed-pack value was not recorded that night. New `totalLabel()`, tested in all three states. Preflight green. Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~8:33 PM PT · 📝 DOCS — inbox `2026-11-25T0415Z` (`pg_net_http_403` CRITICAL, publicnode "Indexed requests require a personal token") dispositioned: session probes, not a lane; clears by itself (Claude Code, attended; Trevor: "keep going")
 
 - `pg_net_request_log` holds 5 publicnode calls ever: 7:17 PM PT (200) and 7:56 PM PT (4 × 403), the hour a concurrent session was reading OpenSea bid rent from the chain. No public function or pg_cron command names publicnode; the only DB Solana caller (`candy_collections_discover_begin`, jobs 840/841) posts to `api.mainnet-beta.solana.com` once a day. The Candy chain lanes that fall through publicnode run in Vercel, not pg_net, so they cannot feed this arm.
