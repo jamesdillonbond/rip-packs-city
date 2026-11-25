@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:33 PM PT · 📝 DOCS — inbox `2026-11-25T0415Z` (`pg_net_http_403` CRITICAL, publicnode "Indexed requests require a personal token") dispositioned: session probes, not a lane; clears by itself (Claude Code, attended; Trevor: "keep going")
+
+- `pg_net_request_log` holds 5 publicnode calls ever: 7:17 PM PT (200) and 7:56 PM PT (4 × 403), the hour a concurrent session was reading OpenSea bid rent from the chain. No public function or pg_cron command names publicnode; the only DB Solana caller (`candy_collections_discover_begin`, jobs 840/841) posts to `api.mainnet-beta.solana.com` once a day. The Candy chain lanes that fall through publicnode run in Vercel, not pg_net, so they cannot feed this arm.
+- The arm's window is 2 h, so it reads clean after ~9:57 PM PT with no change. No Candy freshness cost (filing: `candy_sales_stale_hours` 0.8).
+- **Revert:** docs only.
+
 ### 2026-11-24 ~8:28 PM PT · 🔧 SHIPPED (code) — Candy sales lanes: re-read 15 min below the high-water mark (same-second and late-indexed sales were dropped for good); a two-bid OpenSea transaction is reported, not priced; chain-sales states its ~4 h rotation (Claude Code cloud; Trevor: "Keep going")
 
 - From the third review (findings 2–4; impact not measured, all latent or edge cases).

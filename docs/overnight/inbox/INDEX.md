@@ -36,7 +36,7 @@ failure it documents.
 
 ## 2026-11-25 — 1 filing
 
-- [Daytime monitor — pg_net_http_403 arm reads CRITICAL on 4 Solana RPC 403s to solana-rpc.publicnode.com ("Indexed requests require a personal token"); self-inflicted, candy data fresh (no outage)](2026-11-25T0415Z-rpc-daytime-monitor-pg-net-http-403-publicnode-indexed-token.md)
+- [✅ DISPOSITIONED 11-24 ~8:33 PM PT (Claude Code, attended): SESSION PROBES, no lane — `pg_net_request_log` holds only 5 publicnode calls ever (7:17 PM 200, 7:56 PM ×4 403); no function or pg_cron job names publicnode (the one DB Solana caller, `candy_collections_discover_begin`, hits mainnet-beta daily); arm window 2 h, clears ~9:57 PM PT by itself — Daytime monitor — pg_net_http_403 arm reads CRITICAL on 4 Solana RPC 403s to solana-rpc.publicnode.com ("Indexed requests require a personal token"); self-inflicted, candy data fresh (no outage)](2026-11-25T0415Z-rpc-daytime-monitor-pg-net-http-403-publicnode-indexed-token.md)
 
 ## 2026-11-24 — 3 filings
 
