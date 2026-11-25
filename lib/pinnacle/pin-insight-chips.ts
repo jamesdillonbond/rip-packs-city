@@ -11,12 +11,14 @@
 //   · pack reality — pulled from a drop opened since Sept 2026 (the board's window) → pack reality board
 // A read that failed or was not supplied (null) earns no chip — a chip is a claim, never a guess.
 
+import { isPinnacleChaseOnlyDist } from "@/lib/pinnacle/capsule-drops"
+
 // The drops get_pinnacle_pack_reality excludes by definition (20261123210500): issuer-labelled non-products and the
 // chase-only dist 8922. The chip links to that board, so it must not name a drop the board can never show
 // (2026-11-24 review: three pins pulled only from "Internal Test" carried the chip). ⚠ The board's ≥ 25-opens floor is
 // not mirrored: the page does not read open counts, so a very small drop can still earn the chip.
 export function isPackRealityDrop(distId: string, title: string | null): boolean {
-  if (distId === "8922") return false
+  if (isPinnacleChaseOnlyDist(distId)) return false
   if (title == null) return true
   return !/^\[OLD\]/.test(title) && title !== "Internal Test" && title !== "Distribution Mock Test"
 }

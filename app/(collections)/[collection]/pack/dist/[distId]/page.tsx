@@ -21,6 +21,8 @@ import { momentSubjectName } from "@/lib/entity-href"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
 import PinnacleDropReality from "@/components/pinnacle/PinnacleDropReality"
+import PinnacleCapsuleNotice from "@/components/pinnacle/PinnacleCapsuleNotice"
+import { pinnacleCapsuleForDist } from "@/lib/pinnacle/capsule-drops"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { resolveUsernames } from "@/lib/flowty-username"
@@ -2502,7 +2504,13 @@ async function PackStreamedTop({
   // the pack_rips bridge (partial: ~20% and growing) — NOT the complete open history,
   // which lives in the supply counters shown in the KPI row above (total_opened /
   // Depletion). Label the TS number as the sample it is so it never contradicts them.
-  const lcSince = hasCompleteOpenHistory(collection) ? "complete open history" : "attributed rips · sample"
+  // A Pinnacle capsule sale's chaser dist (lib/pinnacle/capsule-drops.ts): its opens are only the hidden chasers —
+  // the main capsules minted straight to buyers — so a per-pack average here would read as a guaranteed 4× pack.
+  // Keep the counts, drop every per-pack value, and say why (PinnacleCapsuleNotice).
+  const chaseOnlyCapsule = collection === "disney-pinnacle" ? pinnacleCapsuleForDist(distId) : null
+  const lcSince = chaseOnlyCapsule
+    ? "chaser capsules only"
+    : hasCompleteOpenHistory(collection) ? "complete open history" : "attributed rips · sample"
 
   // Modeled-vs-realized reality check
   const reModeled = num(realizedEv?.modeled_gross_ev)
@@ -2517,7 +2525,7 @@ async function PackStreamedTop({
   // trustworthy number anyway), just without the modeled-vs-actual comparison.
   const hasModeled = reModeled !== null && reModeled > 0
   const showRealizedEv =
-    reMean !== null && reOpens !== null && reOpens >= 10
+    chaseOnlyCapsule === null && reMean !== null && reOpens !== null && reOpens >= 10
   const showCalibrated = computeShowCalibrated(hasModeled, reCalibrated, reModeled)
   const reVerdict = deriveRealizedVsModeledVerdict(reRatio)
 
@@ -2540,6 +2548,11 @@ async function PackStreamedTop({
   return (
     <>
       <DegradedDataNotice summary={streamedTopDegraded} />
+      {chaseOnlyCapsule && (
+        <Suspense fallback={null}>
+          <PinnacleCapsuleNotice capsule={chaseOnlyCapsule} />
+        </Suspense>
+      )}
       {showLifecycle && (
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
@@ -2565,8 +2578,10 @@ async function PackStreamedTop({
                 zero class. Fixed in
                 audit_20260801_pack_lifecycle_realized_value_never_fabricate_zero;
                 a genuine measured 0.00 (269 dists) still shows as $0.00. */}
-            <KpiCell label="Realized pull value" value={fmtUsd(lcRealizedTotal)} sub="total, priced pulls" />
-            <KpiCell label="Avg / pack" value={fmtUsd(lcAvgPerPack)} sub="per pack we could price" />
+            <KpiCell label="Realized pull value" value={fmtUsd(lcRealizedTotal)} sub={chaseOnlyCapsule ? "total, chaser pulls only" : "total, priced pulls"} />
+            {chaseOnlyCapsule === null && (
+              <KpiCell label="Avg / pack" value={fmtUsd(lcAvgPerPack)} sub="per pack we could price" />
+            )}
             {lcSealed != null && lcSealed > 0 && (
               <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
             )}
