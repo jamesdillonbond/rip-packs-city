@@ -295,6 +295,22 @@ jobs:
           retries: "1"
           max-time: "60"
           fail-on-auth: "false"
+      # 2026-11-25: the UFC NULL-edition_key drain had NO caller since cron-job.org disabled it on
+      # 10-18, so rows the per-wallet enrichment chain could not reach before its deadline stayed
+      # unkeyed (0x9a26549ac659995d: 114 rows, trust arm ufc_wmc_null_edition_key_aged_rows).
+      # wallet-backfill-ufc now hands its remainder to the drain directly; this is the backstop for a
+      # hand-off that failed. An idle run is one indexed read + one pipeline_runs row.
+      - name: ufc-enrichment-drain — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/ufc-enrichment-drain
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: ufc-enrichment-drain
+          accept: "202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
 
       # ⛔⛔ THE ELEVENTH LANE IS DISABLED (2026-09-11 PT). It was added 09-10 on a
       # premise that MEASUREMENT REFUTES, and it cannot do anything but fail.

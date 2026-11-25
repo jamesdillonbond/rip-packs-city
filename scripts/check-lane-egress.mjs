@@ -105,6 +105,9 @@ const PINNED = {
   // lib/chains/flow/topshot.ts, so pg_cron is not an option for it — it needs the
   // route, the token and egress, exactly like the other eight.
   "cron/offers-sweep": "needs-egress",
+  // Added 2026-11-25 PT. Reads each NULL-key UFC NFT's metadata from Flow REST
+  // (rest-mainnet.onflow.org), so it needs the route, the token and egress.
+  "cron/ufc-enrichment-drain": "needs-egress",
 };
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs"];

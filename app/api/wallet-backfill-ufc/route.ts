@@ -16,6 +16,7 @@ import {
   UFC_COLLECTION_UUID,
 } from "@/lib/chains/flow/wallet-backfill-helpers"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { fireUfcEnrichmentDrain } from "@/lib/chains/flow/ufc-drain-handoff"
 
 export const dynamic = "force-dynamic"
 // maxDuration must cover the WHOLE after() chain: runIdOnlyBackfill (the
@@ -75,6 +76,12 @@ export async function POST(req: NextRequest) {
   const skipCached = force ? false : body.skip_cached !== false
 
   const startedMs = Date.now()
+  let origin = "https://www.rippackscity.com"
+  try {
+    origin = new URL(req.url).origin
+  } catch {
+    /* keep the production host */
+  }
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
@@ -105,6 +112,7 @@ export async function POST(req: NextRequest) {
     // edition_key / player_name / set_name / tier populated rather than
     // sitting NULL. enrich-ufc-wallet is paginated (100 NFTs per page)
     // so we drive it sequentially until done.
+    let chainDone = false
     try {
       // Deadline inside maxDuration (300 s) with ~15 s for the log line and
       // teardown: the chain will not START a page it cannot finish.
@@ -112,10 +120,19 @@ export async function POST(req: NextRequest) {
       console.log(
         `[wallet-backfill-ufc] enrich chain wallet=${wallet} pages=${result.pagesFired} enriched=${result.totalEnriched} done=${result.done}`,
       )
+      chainDone = result.done
     } catch (err) {
       console.warn(
         `[wallet-backfill-ufc] enrich chain failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`,
       )
+    }
+    // 2026-11-25: rows the chain did not reach used to wait for a "next run" that has had no
+    // caller since 10-18. Hand them to the NULL-key drain now (lib/chains/flow/ufc-drain-handoff.ts).
+    if (!chainDone) {
+      const h = await fireUfcEnrichmentDrain(origin, process.env.INGEST_SECRET_TOKEN)
+      const line = `[wallet-backfill-ufc] drain hand-off wallet=${wallet} fired=${h.fired} status=${h.status ?? "none"}${h.error ? ` error=${h.error}` : ""}`
+      if (h.fired) console.log(line)
+      else console.warn(line)
     }
   })
 
