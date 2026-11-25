@@ -1040,7 +1040,8 @@ const PINS = [
     // v34 (2026-11-24, Trevor "no gaps anywhere in this pack information"): Atlas retail / start / REWARD type; All Day,
     // Golazos and Pinnacle reward packs $0; box packs $0 'box' (P/L on the box); last-resort sealed bases atlas_last_sale / opened_few.
     // v35 (same night): a box pack's $0 is not a cost basis -- held_unrealized skips it.
-    migration: "supabase/migrations/20261125055459_audit_20261124_pack_history_v35_box_pack_not_a_cost_basis.sql",
+    // v36 (2026-11-25): Pinnacle (no secondary pack market) and Golazos (from 2022-10-26) packs inside their drop window priced at retail.
+    migration: "supabase/migrations/20261125151148_audit_20261125_pack_history_v36_pinnacle_golazos_retail_inferred.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

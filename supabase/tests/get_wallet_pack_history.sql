@@ -741,7 +741,13 @@ BEGIN
               AND r.from_box IS NULL
               AND ((ds.drop_start IS NOT NULL
                     AND (r.collection_id = v_ts
-                         OR (r.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16'))
+                         OR (r.collection_id = v_ad AND ds.drop_start >= timestamptz '2022-12-16')
+                         -- v36 (2026-11-25): Disney Pinnacle packs have no secondary market at all (0 of 164
+                         -- drops ever listed or bought on Atlas), so one acquired inside its drop window came
+                         -- from Dapper at retail; Golazos once our marketplace history covers the drop (2022-10-26).
+                         -- Before v36 neither collection was ever inferable: every Pinnacle pack read no cost.
+                         OR r.collection_id = v_pin
+                         OR (r.collection_id = v_gz AND ds.drop_start >= timestamptz '2022-10-26'))
                     -- v17: the mint only when it lies INSIDE the window. A mint
                     -- before the window (a pre-minted drop) says nothing about
                     -- when the wallet got it, so the sale / open bound decides,
@@ -2471,6 +2477,32 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34G';
   PERFORM _assert(row_->>'value_usd' = '7.00' AND row_->>'value_basis' = 'atlas_last_sale',
                   'V34-6 a drop with no reference of ours is valued at Atlas last purchase. got ' || coalesce(row_::text, 'NULL'));
+END $$;
+
+-- V36 (2026-11-25): Disney Pinnacle packs have no secondary market, so a pack acquired inside its
+-- drop window is priced at retail; outside the window it stays unknown. Golazos only once our
+-- marketplace history covers the drop (2022-10-26).
+INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata) VALUES
+  ('7dd9dd11-e8b6-45c4-ac99-71331f959714', 'DV36P', 'Turning Red Vol.1', '{"retail_price_usd": "49.95", "start_time": "2024-05-09T16:00:00Z"}'),
+  ('06248cc4-b85f-47cd-af67-1855d14acd75', 'DV36G', 'V36 Early Golazos', '{"retail_price_usd": "19", "start_time": "2022-09-01T16:00:00Z"}');
+INSERT INTO public.pinnacle_pack_opens (pack_nft_id, dist_id, opener_address, opened_at, moments_pulled, pull_value_usd) VALUES
+  ('P36A', 'DV36P', '0xv36w', '2024-05-09 18:00', 3, 40),
+  ('P36B', 'DV36P', '0xv36w', '2025-01-09 18:00', 3, 40);
+INSERT INTO public.golazos_pack_opens (pack_nft_id, dist_id, opener_address, opened_at, moments_pulled, pull_value_usd) VALUES
+  ('G36A', 'DV36G', '0xv36w', '2022-09-02 18:00', 3, 10);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xv36w', NULL, 'ripped', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P36A';
+  PERFORM _assert(row_->>'buy_usd' = '49.95' AND row_->>'buy_price_source' = 'retail_inferred' AND row_->>'realized_pl_usd' = '-9.95',
+                  'V36-1 a Pinnacle pack opened on drop day is priced at its $49.95 retail. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P36B';
+  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL,
+                  'V36-2 a Pinnacle pack opened 8 months after its drop stays unknown. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G36A';
+  PERFORM _assert(row_->>'buy_usd' IS NULL,
+                  'V36-3 a Golazos drop before our marketplace history (2022-10-26) stays unknown. got ' || coalesce(row_::text, 'NULL'));
 END $$;
 
 ROLLBACK;
