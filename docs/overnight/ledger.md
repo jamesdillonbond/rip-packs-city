@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:55 PM PT · 🔧 SHIPPED (copy) — the Below FMV board says a Panini row's FMV is the uncapped deal FMV, so it can exceed the FMV on the edition page it links to (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- From the evening review. Since `8245132c4` (11-23), `mv_panini_public_deals` compares asks against `panini_deal_board_all.fmv_usd`, which is not capped at the ask. The edition page caps its headline FMV at the cheapest ask. Live example: `packcard-1584_290008_7621293_16` shows FMV $144 and "31% below FMV" on the board, while its page shows FMV $99. The board's methodology now says this, with a pin. Preflight green.
+- ⚠ For Trevor: disclosure is the minimal fix. The cleaner fix is to show the Panini leg's gap as "under recent sales" (as the edition chip already does) or drop its FMV column. That's a product call on a board shipped yesterday, so it's not made here.
+- Revert: `git revert` the commit.
+
 ### 2026-11-24 ~8:40 PM PT · 🗄 APPLIED (`20261125032943`) — Candy Squeeze "Listings as of …" now shows the OLDEST venue's newest read, so a stalled Magic Eden sweep can't hide behind the hourly OpenSea lane (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - From the evening review. `listings_seen_at` was `max(last_seen_at)` over all active `candy_listings`. Since 11-23 the OpenSea lane writes hourly beside Magic Eden's 3-hourly sweep (about 1,500 active rows each), so a stalled Magic Eden sweep would show its editions as "0 listed" under a fresh stamp. The stamp is now the minimum of the per-venue maxima; live it reads 5:51 PM PT (Magic Eden), not 6:41 PM (OpenSea). 282 editions ranked, body md5 asserted before and matched after, anon still has no EXECUTE.
