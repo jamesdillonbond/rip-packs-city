@@ -101,6 +101,15 @@ describe("DealsBoardClient", () => {
     expect(text).not.toMatch(/confidence/i)
   })
 
+  it("says a Panini row's FMV is the uncapped deal FMV, so it can differ from the edition page (2026-11-24)", () => {
+    // mv_panini_public_deals reads panini_deal_board_all.fmv_usd (not capped at the ask) since 8245132c4; the
+    // edition page caps its headline FMV at the cheapest ask. Without this, the board and the page it links to disagree.
+    const { container } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("not capped at the live ask")
+    expect(text).toContain("can show a lower number than this board")
+  })
+
   it("shows the empty state when nothing is listed below FMV", () => {
     const { getByText } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
     expect(getByText(/No editions listed below a trustworthy FMV match\./)).toBeTruthy()

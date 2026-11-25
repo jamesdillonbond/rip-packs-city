@@ -694,7 +694,9 @@ export default function DealsBoardClient({
             <strong>Panini rows</strong> are the cheapest regular serial (never a #1, jersey-number or perfect-mint copy)
             whose ask is under its FMV <em>and</em> under the median of the edition&apos;s recent sales. Panini sales reach RPC
             hours to days after they happen, and its asks are re-read by RPC&apos;s walk of Panini&apos;s marketplace, so
-            check the listing on Panini before acting.
+            check the listing on Panini before acting. A Panini row&apos;s FMV is the sales-based deal FMV, which is not
+            capped at the live ask. The edition page caps its headline FMV at the cheapest ask, so it can show a lower
+            number than this board for the same card. The page&apos;s chip reads the same gap as &quot;under recent sales&quot;.
           </p>
           <p>
             Each leg carries a minimum ask so penny-floor artifacts don&apos;t
