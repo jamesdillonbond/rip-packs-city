@@ -192,6 +192,10 @@ function WalletMomentsBody() {
   // during the 2026-08-28/29 Top Shot outage: `public-api.nbatopshot.com`
   // returned Cloudflare 530/503 for 21 h, which is exactly when that branch runs.
   const [packsFailed, setPacksFailed] = useState(false)
+  // 2026-11-24: signed out, the pack read is SKIPPED (the route needs a session), so every row
+  // read "?" — a whole column of question marks for every anonymous visitor. Not a failure to
+  // disclose per row: the column is simply not available signed out, so it is not drawn.
+  const [packsSignedOut, setPacksSignedOut] = useState(false)
   const sealedPackSource = packNftTypeName(collectionSlug) != null
   // A failed /api/badges chunk leaves up to 100 rows with no pills, and a
   // badge filter then drops them — read as "no badges" unless it is SAID.
@@ -1114,17 +1118,18 @@ function WalletMomentsBody() {
       // totalSealedPacks was previously stored in a `sealedPackCount` state that
       // nothing ever read — dropped 2026-07-28; re-add a reader before the state.)
       setPacksFailed(false)
+      setPacksSignedOut(false)
       setPacksByTitle({})
       // ⛔ Scoped to THIS collection (2026-10-19): the route read Top Shot's
       // PackNFT type for every collection, so an All Day set name was matched
       // against the wallet's Top Shot pack titles. A collection with no sealed-
       // pack source does not fetch at all; its table has no Packs column.
       if (!sealedPackSource) return
-      // Signed out, the proxy 401s this; skipping lands in the same unknown
-      // (packsFailed) state the 401 did, minus the console error.
+      // Signed out, the proxy 401s this, so it is not fetched. Since 2026-11-24 that is its own state
+      // (packsSignedOut → no Packs column) rather than packsFailed ("?" on every row).
       signedInOnce()
         .then(function(si) {
-          if (si === false) return null
+          if (si === false) return "signed-out" as const
           return fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug))
             .then(function(r) { return r.ok ? r.json() : null })
         })
@@ -1134,6 +1139,7 @@ function WalletMomentsBody() {
           // an answer, and only it may set the map.
           // A late answer for a wallet the user has since searched away from must not land.
           if (lastSearchedRef.current !== trimmed) return
+          if (d === "signed-out") { setPacksSignedOut(true); return }
           if (!d || d.error) { setPacksFailed(true); return }
           if (d.packsByTitle) setPacksByTitle(d.packsByTitle)
         })
@@ -1803,7 +1809,7 @@ function WalletMomentsBody() {
           hasSearched={hasSearched}
           loading={loading}
           showDebug={showDebug}
-          getPackCount={sealedPackSource ? getPackCount : null}
+          getPackCount={sealedPackSource && !packsSignedOut ? getPackCount : null}
           accent={accent}
         />
 

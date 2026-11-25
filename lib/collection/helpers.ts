@@ -48,7 +48,9 @@ export function seriesDisplayLabel(seriesRaw: string | undefined | null, seriesM
   const n = parseInt(seriesRaw, 10)
   if (!Number.isNaN(n) && seriesMap?.has(n)) {
     const entry = seriesMap.get(n)!
-    return entry.season ? entry.display_label + " · " + entry.season : entry.display_label
+    // 2026-11-24: newer Top Shot labels already carry the season ("Series 2024-25"), which then
+    // rendered "Series 2024-25 · 2024-25". Append the season only when the label lacks it.
+    return entry.season && !entry.display_label.includes(entry.season) ? entry.display_label + " · " + entry.season : entry.display_label
   }
   if (!Number.isNaN(n) && SERIES_DISPLAY_FALLBACK[n] !== undefined) return SERIES_DISPLAY_FALLBACK[n]
   return seriesRaw

@@ -54,6 +54,7 @@ vi.mock("@/components/collection/CollectionMomentTable", () => ({
           : ""
       }
       data-has-searched={String(p.hasSearched)}
+      data-packs-column={p.getPackCount ? "shown" : "hidden"}
       data-loading={String(p.loading)}
       data-show-debug={String(p.showDebug)}
       /* The cost-basis map, surfaced so a claim ABOUT it can be asserted. The
@@ -2220,6 +2221,24 @@ describe("CollectionTabClient — session-gated reads wait for a signed-in answe
     await waitFor(() => expect(urls().some((u) => u.startsWith("/api/profile/me"))).toBe(true))
     await new Promise((r) => setTimeout(r, 50))
     for (const g of GATED) expect(urls().filter((u) => u.startsWith(g)), g).toEqual([])
+  })
+
+  // 2026-11-24: the skipped read used to land in packsFailed, so every row of the Packs column
+  // read "?" for every anonymous visitor. Signed out, the column is simply not drawn.
+  it("a signed-out visitor gets no Packs column (not a column of '?')", async () => {
+    withProfile({ user: null })
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-packs-column")).toBe("hidden"))
+  })
+
+  it("a signed-in visitor keeps the Packs column", async () => {
+    withProfile({ user: { id: "u1" } })
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(urls().some((u) => u.startsWith("/api/wallet-packs"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByTestId("moment-table").getAttribute("data-packs-column")).toBe("shown")
   })
 
   it.each([

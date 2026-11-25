@@ -291,3 +291,16 @@ describe("duplicateGroupKey / computeDuplicateEditionKeys — the 'duplicates on
     expect(computeDuplicateEditionKeys([]).size).toBe(0)
   })
 })
+
+// 2026-11-24: "Series 2024-25 · 2024-25" — a label that already carries its season must not repeat it.
+describe("seriesDisplayLabel does not repeat a season the label already carries", () => {
+  it("appends the season only when the label lacks it", async () => {
+    const { seriesDisplayLabel } = await import("@/lib/collection/helpers")
+    const map = new Map<number, any>([
+      [9, { display_label: "Series 2024-25", season: "2024-25" }],
+      [2, { display_label: "Series 1", season: "2019-20" }],
+    ])
+    expect(seriesDisplayLabel("9", map)).toBe("Series 2024-25")
+    expect(seriesDisplayLabel("2", map)).toBe("Series 1 · 2019-20")
+  })
+})
