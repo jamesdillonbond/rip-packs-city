@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~12:20 PM PT · 🔧 SHIPPED (code) — Interactive slab motion is time-based, not frame-based (Claude Code cloud; Trevor: "Use chrome if you need to QA it")
+
+- Chrome QA of the 11:35 slab on /moment/48276189?slab=1 (Trevor's Chrome): real Top Shot media renders on the front face, drag spins, Flip shows the back, no console errors. It also showed the physics stepped once per animation frame: the throttled tab ran ~2 frames/s and the spin crawled; a 120 Hz phone would spin twice as fast.
+- Fix: `components/InteractiveSlab.tsx` runs as many 60 Hz physics steps as wall-clock time elapsed (capped at 4 per frame). New test settles a flip at 30 / 60 / 120 Hz within 15 % of each other; planted defect (one step per frame) → red. Preflight green incl. component coverage.
+- QA note: extension screenshots draw the autoplaying clip as black on both the slab and the plain hero; hiding the <video> shows the image. Capture artifact, not a page fault.
+- Revert: `git revert` the code commit ("moment slab: time-based motion").
+
 ### 2026-11-25 ~11:35 AM PT · 🔧 SHIPPED (code) — Interactive Moment slab on /moment/[id], opt-in (Claude Code cloud; Trevor: "Build it", answering @coultin's 11-24 ask to bring back Top Shot's interactive Moment)
 
 - `components/InteractiveSlab.tsx` wraps the hero media: drag to spin, fling to coast, settles face-on; Flip / Enter / arrow keys show the back (subject, tier · series, serial, set, play, date, FMV when shown, special-serial finish #1 > jersey > perfect); mouse hover leans it; phones get a Tilt button (iOS permission prompt). Reduced motion: no coast/tilt, flips land instantly. `touch-action: pan-y` keeps page scroll.
