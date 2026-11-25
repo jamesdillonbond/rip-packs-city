@@ -9,8 +9,9 @@ import {
   BID_STATE_DISCRIMINATOR_B58,
   MIN_PLAUSIBLE_BID_ACCOUNTS,
   decodeBidState,
+  BID_STATE_RENT_FALLBACK_LAMPORTS,
   fetchOpenSeaBidStates,
-  rentExemptLamports,
+  fetchRentExemptLamports,
   runOpenSeaChainBids,
 } from "@/lib/candy/opensea-chain-bids"
 import { OPENSEA_SOLANA_PROGRAM, encodeBase58 } from "@/lib/candy/opensea-chain-listings"
@@ -43,6 +44,10 @@ const b64 = (u: Uint8Array) => Buffer.from(u).toString("base64")
 function fakeRpc(accounts: Array<{ pda: number; data: Uint8Array; lamports: bigint }>) {
   return async (_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body))
+    if (body.method === "getMinimumBalanceForRentExemption") {
+      expect(body.params).toEqual([393])
+      return new Response(JSON.stringify({ result: Number(RENT) }))
+    }
     expect(body.method).toBe("getProgramAccounts")
     expect(body.params[0]).toBe(OPENSEA_SOLANA_PROGRAM)
     expect(body.params[1].filters[0].memcmp.bytes).toBe(BID_STATE_DISCRIMINATOR_B58)
@@ -92,8 +97,8 @@ function fakeDb(opts: { wmc: Array<{ moment_id: string; edition_key: string | nu
 
 const filler = (n: number) => Array.from({ length: n }, (_, i) => ({ pda: 100 + (i % 100), data: bidState({ owner: 9, targetId: 200 + (i % 40), amount: BigInt(1) }), lamports: SOL }))
 const NOW = Date.UTC(2026, 10, 24, 14, 0, 0)
-// Rent-exempt minimum of the 200-byte fixture account: lamports up to here are rent, never bid money (2026-11-24).
-const RENT = rentExemptLamports(200)
+// The chain's rent-exempt minimum for a 393-byte BidState on 11-24 — lamports up to here are rent, never bid money.
+const RENT = BigInt(BID_STATE_RENT_FALLBACK_LAMPORTS)
 const wmc = [11, 12, 13, 14, 15, 16, 17, 18].map((n) => ({ moment_id: b58(n), edition_key: "key-1" }))
 
 describe("decodeBidState", () => {
@@ -110,9 +115,44 @@ describe("decodeBidState", () => {
   })
 })
 
-describe("rentExemptLamports", () => {
-  it("is Solana's rent-exempt minimum: (128 + bytes) x 6,960 lamports — 3,626,160 for a 393-byte BidState (read on-chain 11-24)", () => {
-    expect(rentExemptLamports(393)).toBe(BigInt(3_626_160))
+describe("fetchRentExemptLamports", () => {
+  it("asks the chain for the minimum (a formula went stale: (128 + 393) x 6,960 = 3,626,160, the chain said 2,646,680)", async () => {
+    const f = async (_u: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toMatchObject({ method: "getMinimumBalanceForRentExemption", params: [393] })
+      return new Response(JSON.stringify({ result: 2_646_680 }))
+    }
+    expect(await fetchRentExemptLamports(f, 393, ["a"])).toBe(2_646_680)
+  })
+  it("null when every RPC fails or answers nonsense — never a guessed zero", async () => {
+    expect(await fetchRentExemptLamports(async () => new Response("x", { status: 503 }), 393, ["a", "b"])).toBeNull()
+    expect(await fetchRentExemptLamports(async () => new Response(JSON.stringify({ result: 0 })), 393, ["a"])).toBeNull()
+    expect(await fetchRentExemptLamports(async () => new Response(JSON.stringify({ result: "2646680" })), 393, ["a"])).toBeNull()
+  })
+})
+
+describe("runOpenSeaChainBids — rent", () => {
+  const one = (lamports: bigint) => [{ pda: 51, data: bidState({ owner: 1, targetId: 11, amount: BigInt(1_000_000) }), lamports }, ...filler(MIN_PLAUSIBLE_BID_ACCOUNTS)]
+  it("the 11-24 production shape — rent + exactly the bid — is funded and written", async () => {
+    const { db, upserts } = fakeDb({ wmc })
+    const rep = await runOpenSeaChainBids(db, { fetchImpl: fakeRpc(one(RENT + BigInt(1_000_000))), now: () => NOW, solUsd: async () => 200 })
+    expect(upserts.map((r) => r.pda_address)).toEqual([b58(51)])
+    expect(rep).toMatchObject({ rent_lamports: Number(RENT), rent_source: "rpc", skipped_unfunded: 0 })
+  })
+  it("under-subtracted rent cannot fund a bid: rent + 500,000 against a 0.0008 SOL bid is unfunded", async () => {
+    // The first 11-24 fix used the 200-byte SLICE length: (128 + 200) x 6,960 = 2,282,880, which left 863,800 here and
+    // wrote this bid as funded. Only the chain's minimum for the real 393-byte account leaves 500,000.
+    const accounts = [{ pda: 51, data: bidState({ owner: 1, targetId: 11, amount: BigInt(800_000) }), lamports: RENT + BigInt(500_000) }, ...filler(MIN_PLAUSIBLE_BID_ACCOUNTS)]
+    const { db, upserts } = fakeDb({ wmc })
+    const rep = await runOpenSeaChainBids(db, { fetchImpl: fakeRpc(accounts), now: () => NOW, solUsd: async () => 200 })
+    expect(upserts).toHaveLength(0)
+    expect(rep.skipped_unfunded).toBe(1)
+  })
+
+  it("a failed rent read falls back to the measured minimum and says so", async () => {
+    const { db, upserts } = fakeDb({ wmc })
+    const rep = await runOpenSeaChainBids(db, { fetchImpl: fakeRpc(one(RENT + BigInt(999_999))), now: () => NOW, solUsd: async () => 200, rentLamports: async () => null })
+    expect(upserts).toHaveLength(0)
+    expect(rep).toMatchObject({ rent_lamports: BID_STATE_RENT_FALLBACK_LAMPORTS, rent_source: "fallback", skipped_unfunded: 1 })
   })
 })
 
@@ -126,7 +166,7 @@ describe("runOpenSeaChainBids", () => {
       { pda: 55, data: bidState({ owner: 1, targetId: 15, amount: SOL, currency: 7 }), lamports: SOL * BigInt(2) },                        // non-SOL
       { pda: 56, data: bidState({ owner: 1, target: 1, targetId: 16, amount: SOL }), lamports: SOL * BigInt(2) },                          // collection bid
       { pda: 57, data: bidState({ owner: 1, targetId: 17, amount: SOL, qty: 3, filled: 1 }), lamports: SOL },                             // 2 left, 1 SOL held → under-funded
-      // The 11-24 production shape: rent + 20,520 lamports against a 0.001 SOL bid. The rent alone exceeds the bid, so the
+      // A margin-funded bid: rent + 20,520 lamports against a 0.001 SOL bid. The rent alone exceeds the bid, so the
       // pre-fix check (total lamports >= amount) wrote it as live; only lamports above rent can fund it.
       { pda: 58, data: bidState({ owner: 1, targetId: 18, amount: BigInt(1_000_000) }), lamports: RENT + BigInt(20_520) },             // rent-only → under-funded
       ...filler(MIN_PLAUSIBLE_BID_ACCOUNTS),

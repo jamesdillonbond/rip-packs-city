@@ -12,10 +12,13 @@
 // The bid's SOL sits in the BidState account itself. A bid is written only when the account's lamports cover
 // amount × remaining quantity — a bid funded from a shared margin account cannot be confirmed here and is skipped
 // (11-24: 1,007 of 1,029 accounts self-funded). Expired, filled, non-SOL and non-Candy bids are skipped.
-// ⚠ 2026-11-24 (evening): the funding test counts only lamports ABOVE the account's rent-exempt minimum. A BidState
-// account is 393 bytes, so it always holds 3,626,160 lamports (0.0036 SOL) of rent that is not bid money. Measured
-// via getMultipleAccounts: the three cheapest live OpenSea offers (0.001–0.0014 SOL) held rent + 20,520–464,980
-// lamports, i.e. unfunded, and were written as live because the rent covered them.
+// ⚠ 2026-11-24 (evening): the funding test counts only lamports ABOVE the account's rent-exempt minimum — rent is not
+// bid money. Every BidState is 393 bytes (getProgramAccounts with and without `dataSize: 393` both return 1,101), and
+// the census reads a 200-byte SLICE, so the size is a constant, never `data.length`. The minimum comes from the chain
+// each run (getMinimumBalanceForRentExemption(393) = 2,646,680 on 11-24; the textbook (128 + bytes) × 6,960 formula
+// gives 3,626,160 and is STALE — it briefly shipped here and would have wrongly skipped funded bids). 65 of 1,101
+// accounts hold exactly the minimum, i.e. margin-funded bids with nothing escrowed; without the subtraction any such
+// bid at or under ~0.0026 SOL passed. The three cheapest live offers hold exactly their bid above rent (funded).
 //
 // BidState layout (from the decoded accounts, 11-24): [0..8] discriminator · [8] version · [9] bump · [10..42] owner
 // (bidder) · [42..74] bid id · [74] target (0 asset, 1 whitelist) · [75..107] target id · [107] field Option (+1) ·
@@ -44,9 +47,29 @@ type Db = any
 export const BID_STATE_DISCRIMINATOR_B58 = "T4AJW1shazA"
 /** Below this many BidState accounts a census is not trusted to retire anything (1,029 on 11-24). */
 export const MIN_PLAUSIBLE_BID_ACCOUNTS = 200
-/** Solana's rent-exempt minimum for an account of `dataLen` bytes: (128 + dataLen) × 3,480 lamports/byte-year × 2 years. */
-export function rentExemptLamports(dataLen: number): bigint {
-  return BigInt(128 + dataLen) * BigInt(6960)
+/** Every OpenSea BidState account's size (verified on-chain 11-24: 1,101 of 1,101). The census reads a slice. */
+export const BID_STATE_ACCOUNT_BYTES = 393
+/** getMinimumBalanceForRentExemption(393) on 2026-11-24 — used only when the chain cannot be asked this run. */
+export const BID_STATE_RENT_FALLBACK_LAMPORTS = 2_646_680
+
+/** The chain's rent-exempt minimum for `bytes`; null when no RPC answers with a positive integer. */
+export async function fetchRentExemptLamports(doFetch: FetchFn, bytes: number, urls = CENSUS_RPC_URLS): Promise<number | null> {
+  for (const url of urls) {
+    try {
+      const r = await doFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getMinimumBalanceForRentExemption", params: [bytes] }),
+        signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+      })
+      if (!r.ok) continue
+      const j = (await r.json()) as { result?: unknown }
+      if (typeof j.result === "number" && Number.isSafeInteger(j.result) && j.result > 0) return j.result
+    } catch {
+      // try the next RPC
+    }
+  }
+  return null
 }
 const SLICE_LENGTH = 200
 
@@ -141,6 +164,9 @@ export interface OpenSeaChainBidsReport {
   /** The account's lamports do not cover amount × remaining — funded elsewhere or not at all; not confirmable. */
   skipped_unfunded: number
   skipped_no_edition: number
+  /** Rent-exempt minimum subtracted from every account before the funding test, and where it came from. */
+  rent_lamports: number
+  rent_source: "rpc" | "fallback"
   retired: number | null
   retire_skipped: string | null
   previous_accounts: number | null
@@ -149,7 +175,7 @@ export interface OpenSeaChainBidsReport {
 
 export async function runOpenSeaChainBids(
   db: Db,
-  opts: { fetchImpl?: FetchFn; now?: () => number; solUsd?: () => Promise<number | null>; urls?: string[]; previousAccounts?: number | null } = {},
+  opts: { fetchImpl?: FetchFn; now?: () => number; solUsd?: () => Promise<number | null>; urls?: string[]; previousAccounts?: number | null; rentLamports?: () => Promise<number | null> } = {},
 ): Promise<OpenSeaChainBidsReport> {
   const now = opts.now ?? Date.now
   const doFetch: FetchFn = opts.fetchImpl ?? ((u, i) => fetch(u, i))
@@ -157,11 +183,16 @@ export async function runOpenSeaChainBids(
   const rep: OpenSeaChainBidsReport = {
     ok: false, error: null, rpc: null, accounts: 0, decode_failed: 0, collection_bids: 0, candy_matched: 0, written: 0,
     skipped_not_sol: 0, skipped_expired: 0, skipped_filled: 0, skipped_unfunded: 0, skipped_no_edition: 0,
+    rent_lamports: BID_STATE_RENT_FALLBACK_LAMPORTS, rent_source: "fallback",
     retired: null, retire_skipped: null, previous_accounts: opts.previousAccounts ?? null, sol_usd: null,
   }
 
-  // 1. The census.
+  // 1. The census, and the rent the funding test subtracts (see header).
   const { accounts, url } = await fetchOpenSeaBidStates(doFetch, opts.urls)
+  let rentRead: number | null = null
+  try { rentRead = opts.rentLamports ? await opts.rentLamports() : await fetchRentExemptLamports(doFetch, BID_STATE_ACCOUNT_BYTES, opts.urls) } catch { rentRead = null }
+  if (rentRead != null && Number.isSafeInteger(rentRead) && rentRead > 0) { rep.rent_lamports = rentRead; rep.rent_source = "rpc" }
+  const rent = BigInt(rep.rent_lamports)
   rep.rpc = url
   rep.accounts = accounts.length
   // `bidLamports` = the account's lamports minus its rent-exempt minimum (see header): only that can fund the bid.
@@ -171,11 +202,10 @@ export async function runOpenSeaChainBids(
     const data = a.account?.data?.[0]
     const held = a.account?.lamports
     if (typeof pda !== "string" || typeof data !== "string" || typeof held !== "number") { rep.decode_failed++; continue }
-    const bytes = b64(data)
-    const d = decodeBidState(pda, bytes)
+    const d = decodeBidState(pda, b64(data))
     if (typeof d === "string") { rep.decode_failed++; continue }
     if (d.target === 1) { rep.collection_bids++; continue }
-    single.push({ ...d, bidLamports: BigInt(held) - rentExemptLamports(bytes.length) })
+    single.push({ ...d, bidLamports: BigInt(held) - rent })
   }
 
   // 2. Which target a Candy card — the census maps each Core asset id to its edition.
