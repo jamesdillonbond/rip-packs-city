@@ -41,6 +41,13 @@ describe("pinInsightChips", () => {
       "Pulled from Stitch in Costume Vol.1 — did the pack pay? →",
     ])
     expect(pinInsightChips({ ...none, packPulls: [{ dist_id: "8000", title: "Old", first_opened_at: "2025-03-01T00:00:00Z" }] })).toEqual([])
+    // 2026-11-24: drops the Pack Reality board excludes never earn the chip; a later board drop on the same pin still does.
+    const t = "2026-10-01T00:00:00Z"
+    for (const p of [{ dist_id: "8906", title: "Internal Test" }, { dist_id: "8001", title: "[OLD] Something" }, { dist_id: "8002", title: "Distribution Mock Test" }, { dist_id: "8922", title: "Walt Disney Mugs Vol.1" }]) {
+      expect(pinInsightChips({ ...none, packPulls: [{ ...p, first_opened_at: t }] })).toEqual([])
+    }
+    expect(pinInsightChips({ ...none, packPulls: [{ dist_id: "8922", title: "Mugs", first_opened_at: t }, { dist_id: "8923", title: "Mugs Standard", first_opened_at: t }] }).map((c) => c.label))
+      .toEqual(["Pulled from Mugs Standard — did the pack pay? →"])
     expect(pinInsightChips({ ...none, specialSerial: { serial: 1, perfect: false, priceUsd: 45 } })[0].label).toBe("#1 sold for $45.00 →")
   })
 })

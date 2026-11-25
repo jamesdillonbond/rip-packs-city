@@ -11,6 +11,16 @@
 //   · pack reality — pulled from a drop opened since Sept 2026 (the board's window) → pack reality board
 // A read that failed or was not supplied (null) earns no chip — a chip is a claim, never a guess.
 
+// The drops get_pinnacle_pack_reality excludes by definition (20261123210500): issuer-labelled non-products and the
+// chase-only dist 8922. The chip links to that board, so it must not name a drop the board can never show
+// (2026-11-24 review: three pins pulled only from "Internal Test" carried the chip). ⚠ The board's ≥ 25-opens floor is
+// not mirrored: the page does not read open counts, so a very small drop can still earn the chip.
+export function isPackRealityDrop(distId: string, title: string | null): boolean {
+  if (distId === "8922") return false
+  if (title == null) return true
+  return !/^\[OLD\]/.test(title) && title !== "Internal Test" && title !== "Distribution Mock Test"
+}
+
 export interface PinChip {
   key: "scarcity" | "squeeze" | "hot" | "serial" | "pack"
   href: string
@@ -65,7 +75,9 @@ export function pinInsightChips(i: PinChipInput): PinChip[] {
     const s = i.specialSerial
     out.push({ key: "serial", href: "/insights/pinnacle-serial-premiums", label: `${s.perfect ? `Perfect serial #${s.serial}` : "#1"} sold for ${usd(s.priceUsd)} →` })
   }
-  const recent = (i.packPulls ?? []).find((p) => p.first_opened_at != null && Date.parse(p.first_opened_at) >= PACK_REALITY_SINCE_MS)
+  const recent = (i.packPulls ?? []).find(
+    (p) => p.first_opened_at != null && Date.parse(p.first_opened_at) >= PACK_REALITY_SINCE_MS && isPackRealityDrop(p.dist_id, p.title),
+  )
   if (recent) {
     out.push({ key: "pack", href: "/insights/pinnacle-pack-reality", label: `Pulled from ${recent.title ?? "a recent drop"} — did the pack pay? →` })
   }
