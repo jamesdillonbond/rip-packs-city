@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:28 PM PT · 🔧 SHIPPED (code) — Candy sales lanes: re-read 15 min below the high-water mark (same-second and late-indexed sales were dropped for good); a two-bid OpenSea transaction is reported, not priced; chain-sales states its ~4 h rotation (Claude Code cloud; Trevor: "Keep going")
+
+- From the third review (findings 2–4; impact not measured, all latent or edge cases).
+- **High-water overlap:** both Magic Eden sales lanes (`collections-market` rotating, `collections-sales-pass` hourly) floored at `blockTime <= mark`. A second sale in the same second as the mark, or one Magic Eden indexed after a newer one moved the mark, was never offered. Both now re-read `SALES_HW_OVERLAP_MS` (15 min) below the mark. `offerSales` dedupes by signature against the queue and `sales`, so nothing is offered twice, and the mark still only moves forward. A test per lane; a planted strict floor turns each red.
+- **TakeBidCore:** `decodeTakeBid` prices from the whole transaction's balance changes, so a transaction with two bid fills would price both at the larger escrow. Such a transaction now goes to `unknown_ix` (`TakeBidCore:multi_in_tx`), counted and never priced. The header said TakeBidCore was "Not decoded", stale since `a2ab151`; corrected. Synthetic two-bid test from the real fixture; a planted defect turns it red.
+- **chain-sales rotation:** the header now states the measured coverage (24 h: 103 of ~398 collections per hourly run, range 23–176), i.e. roughly a 4 h rotation, and that `ok` means no collection failed, not that all were read.
+- Preflight green. Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~8:20 PM PT · 🔧 SHIPPED (code) — Top Shot / All Day offer-fill sales: a lost fill can no longer sit under an ok run. Failed chain reads hold the cursor, budget skips fail the run, and nine unchecked Top Shot lookup reads now throw (Claude Code cloud; Trevor: "Keep going")
 
 - From the third review (30 commits, 11-19 → 11-22; no live defect, this one dormant). Both indexers' chain fallback swallowed a failed read and broke off at the lookup or time budget. The fill was dropped as `unresolved`, the run logged ok=true, and the cursor moved past it. Last 3 days: 0 chain errors, so nothing was lost yet.
