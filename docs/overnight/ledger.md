@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:20 AM PT · 🔧 SHIPPED (code) — All Day market + sniper cards show the series name, not a bare "· 7" (Claude Code cloud; Trevor: "Keep going")
+
+- Live read of the feeds: `/api/market?collectionId=nfl-all-day` and `/api/sniper-feed?collection=nfl-all-day` both send All Day's BARE on-chain number (market 153/200 rows "7"; sniper 151/183). `marketSeriesLabel` decoded Top Shot only and the sniper's All Day RPC path passed `series_name` through, so cards read "Base · 7".
+- `marketSeriesLabel` (Market cards, table and Series filter options) now decodes nfl-all-day through `seriesDisplay` too; `allDaySeriesLabel` (lib/sniper/series-label.ts) decodes only a BARE number on the `get_allday_sniper_deals` path — the marketplace GQL path already carries official names and its "Series 2" is on-chain 3. Tests: component-MarketClient (old pin asserted All Day "8" passes through — re-pinned to Golazos), sniper-series-label.
+- Checked, not changed: cached_listings.series_name is Top Shot only ("Series N", on-chain numbering, 51k rows) and every reader decodes it (sniper `topShotSeriesLabel`); the Market series filter matches on that raw text, so the writer stays as is.
+- Revert: revert the commit by message "All Day market and sniper cards show the series name".
+
 ### 2026-11-25 ~7:05 AM PT · 📏 READ (docs only) — fmv-recalc `:08` interim: fallback errors 7/49 pre-fix → 0/11 since `20261125030623`; under the 20-run floor, re-read ~4 PM PT (Claude Code, attended; Trevor: "Keep going")
 - focus.md bullet annotated so the 7:37 AM scheduled read does not close it early. Revert: drop the ↳ INTERIM clause.
 
