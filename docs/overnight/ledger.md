@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:55 PM PT · 🔧 SHIPPED (code) — Binder table: Series no longer repeats its season ("Series 2024-25 · 2024-25"); the Packs column is not drawn for signed-out visitors instead of a "?" on every row (Claude Code cloud; Trevor: "keep going" / "the series seems to be off on the clingan and others")
+
+- Series: `seriesDisplayLabel` appended the season to labels that already carry it (every Series 2023-24 and later), so Clingan, Durant, Avdija and the rest read "Series 2024-25 · 2024-25" and wrapped over four lines. The data is right: set 176 "2024 Rookie Ultimates" is series 7 = 2024-25, his rookie season. Season now appended only when the label lacks it ("Series 4 · 2022-23" unchanged). This also fixes every other caller of the helper.
+- Packs column: signed out, `/api/wallet-packs` is skipped by design, which landed in `packsFailed` → "?" on every row for every anonymous visitor. That is now its own state, and the column is hidden; signed-in readers keep counts, and a real failed read still shows "?".
+- Tests: both pinned, and planting either old behaviour turns its test red. Full suite 27,069/27,069, tsc 0, lint ratchet at baseline.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~8:37 PM PT · 🔧 SHIPPED (code) — dashboard Value / 30D tooltip says "Total (moments only)" / "(packs only)" on a night missing one part, not a bare "Total" (Claude Code cloud; Trevor: "Keep going")
 
 - From the third review's minor note. `nightTotal` sums the parts a night has, by design, but the tooltip labelled it "Total" even when sealed-pack value was not recorded that night. New `totalLabel()`, tested in all three states. Preflight green. Revert: `git revert` the code commit.
