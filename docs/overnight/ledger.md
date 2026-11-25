@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:50 PM PT · 🔧 SHIPPED (code) — My Binder: one big Collection value with four plain stats and a source bar (no captions), set chips for Close to completing, two-up sleeve cards (`6917969`; Claude Code cloud; Trevor: "very simple and digestible, no subtext" / "Connect to the repo yourself")
+
+- Hero: Collection value in whole dollars with the stale-priced share folded in (11-22 one-number rule), then Moments · Unlocked · Top offers · Profit / Loss and a Packs / Market / Rewards bar. Removed the Locked FMV tile, the "vs their FMV" / stale captions, the cost-basis strip and the three acquisition tiles. P&L shows only from the wallet-wide summary; unchecked-lock FMV stays out of Unlocked (named in a tooltip). Closed-market and UFC-on-Aptos branches unchanged.
+- Cards under 768 px go two-up from 600 px with art on a tier-coloured glow. CI all green; deploy `dpl_743m6nR8XBW67WN9GkF7MyUR4y5r` READY; live render at 760 px checked (hero, chips, grid) and the new rules are in the served CSS.
+- Revert: `git revert 6917969`.
+
 ### 2026-11-24 ~9:40 PM PT · 🔧 SHIPPED (code) — Below FMV board: every Panini row's FMV is labelled "recent sales"; Candy Floor movers population question answered by data (Claude Code cloud; Trevor: "Keep going")
 
 - All 11 Panini rows on the board contradicted their edition pages: the board showed 16–90 % "below FMV" while each page's ask-capped FMV equals the ask. Each Panini row's FMV cell now names its basis, `recent sales`, as the edition page's chip does, and the methodology points to that label. Tested both ways (one label on a Panini row, none elsewhere); a planted always-true condition turns the test red. Preflight green.
