@@ -164,6 +164,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                 packs: acquisitionStats.pack_pull_count,
                 market: acquisitionStats.marketplace_count,
                 rewards: acquisitionStats.challenge_reward_count,
+                gifts: acquisitionStats.gift_count ?? 0,
                 total: acquisitionStats.total_count,
               }
             : null

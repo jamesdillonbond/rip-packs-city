@@ -62,7 +62,7 @@ export type WalletStatRowProps = {
   /** The WHOLE wallet's profit/loss on moments with a known cost; null/absent hides the stat. */
   pnl?: { amount: number; pct: number } | null
   /** Where the moments came from — drawn as one bar under the stats. */
-  acquisition?: { packs: number; market: number; rewards: number; total: number } | null
+  acquisition?: { packs: number; market: number; rewards: number; gifts?: number; total: number } | null
 }
 
 const PULSE_DOT_STYLE = {
@@ -203,12 +203,19 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     })
   }
 
+  // The bar spans the WHOLE count, not just the rows whose source is known (2026-11-24: a Pinnacle
+  // wallet of 187 pins drew one full-width "Packs 31" bar — 100 % packs, a claim about 156 pins
+  // nobody knew the source of). The unknown remainder is its own grey "Other" share.
   const src = acquisition && acquisition.total > 0 ? acquisition : null
+  const known = src ? src.packs + src.market + src.rewards + (src.gifts ?? 0) : 0
+  const other = src && typeof momentCount === "number" && momentCount > known ? momentCount - known : 0
   const segments = src
     ? [
         { key: "packs", label: "Packs", n: src.packs, color: "rgb(20,184,166)" },
         { key: "market", label: "Market", n: src.market, color: "var(--rpc-text-secondary)" },
         { key: "rewards", label: "Rewards", n: src.rewards, color: "rgb(245,158,11)" },
+        { key: "gifts", label: "Gifts", n: src.gifts ?? 0, color: "rgb(168,85,247)" },
+        { key: "other", label: "Other", n: other, color: "var(--rpc-border-hover)" },
       ].filter(function(seg) { return seg.n > 0 })
     : []
   const segTotal = segments.reduce(function(a, seg) { return a + seg.n }, 0)

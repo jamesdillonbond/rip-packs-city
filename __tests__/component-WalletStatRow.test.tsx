@@ -190,3 +190,27 @@ describe("formatUsdWhole", () => {
     expect(formatUsdWhole(-81941.27)).toBe("-$81,941")
   })
 })
+
+// 2026-11-24: live Pinnacle drew one full-width "Packs 31" bar for a 187-pin wallet — the bar must
+// span the whole count, with the unknown-source remainder as its own share, never stretched packs.
+describe("WalletStatRow source bar covers the whole count", () => {
+  it("adds an Other share for moments whose source is unknown, and shows gifts", async () => {
+    const { render } = await import("@testing-library/react")
+    const WalletStatRow = (await import("@/components/wallet-stat-row")).default
+    const r = render(<WalletStatRow {...props({ walletFmv: 1010, momentCount: 187, collectionSlug: "disney-pinnacle",
+      acquisition: { packs: 31, market: 0, rewards: 0, gifts: 2, total: 33 } })} />)
+    const txt = r.getByTestId("binder-source").textContent!
+    expect(txt).toContain("Packs 31")
+    expect(txt).toContain("Gifts 2")
+    expect(txt).toContain("Other 154")
+    r.unmount()
+  })
+  it("draws no Other share when every moment's source is known", async () => {
+    const { render } = await import("@testing-library/react")
+    const WalletStatRow = (await import("@/components/wallet-stat-row")).default
+    const r = render(<WalletStatRow {...props({ momentCount: 12, collectionSlug: "nba-top-shot",
+      acquisition: { packs: 7, market: 5, rewards: 0, total: 12 } })} />)
+    expect(r.getByTestId("binder-source").textContent).not.toContain("Other")
+    r.unmount()
+  })
+})
