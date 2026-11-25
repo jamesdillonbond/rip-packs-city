@@ -306,10 +306,17 @@ describe("/api/og/series — the Top Shot label matches the page", () => {
     expect(text).toContain("1,234 editions")
   })
 
-  it("another collection keeps its own display_label (the Top Shot map is Top-Shot-only)", async () => {
-    mockRpc(healthy(card, { ...card.detail, display_label: "Series 1", series_number: 6, season: null }))
+  it("another collection keeps its own label (the Top Shot map is Top-Shot-only)", async () => {
+    mockRpc(healthy(card, { ...card.detail, display_label: "Series 1", series_number: 1, season: null }))
     const text = ogText(await render(card, "?collection=nfl-all-day&slug=series-1"))
     expect(text).toContain("Series 1")
     expect(text).not.toContain("2023-24")
+  })
+
+  it("All Day's on-chain 9 previews as its official '2025 Season', not 'Series 9' (2026-11-24)", async () => {
+    mockRpc(healthy(card, { ...card.detail, display_label: "Series 9", series_number: 9, season: "2025" }))
+    const text = ogText(await render(card, "?collection=nfl-all-day&slug=series-9"))
+    expect(text).toContain("2025 Season")
+    expect(text).not.toContain("Series 9")
   })
 })

@@ -36,6 +36,34 @@ export const SERIES_DISPLAY: Record<number, string> = {
 export const CURRENT_TOP_SHOT_SERIES: number = Math.max(...Object.keys(SERIES_DISPLAY).map(Number))
 export const CURRENT_TOP_SHOT_SERIES_LABEL: string = SERIES_DISPLAY[CURRENT_TOP_SHOT_SERIES]
 
+/**
+ * NFL All Day on-chain series → the contract's OWN names (AllDay.getSeriesData on
+ * 0xe4cf4bdc1751c65d, read 2026-11-24). Two interleaved tracks: odd = contemporary
+ * season, even = Historical release. The raw number ("Series 9") reads like a ninth
+ * NFL season; it is the 2025 Season. collection_series.display_label still holds
+ * "Series N" because it is the series URL key — only what readers see changes.
+ * Mirrored in SQL by public.series_display_label (audit_20261124_allday_series_official_labels).
+ */
+export const ALLDAY_SERIES_DISPLAY: Record<number, string> = {
+  1: "Series 1",
+  2: "Historical",
+  3: "Series 2",
+  4: "Historical 2",
+  5: "2023 Season",
+  6: "Historical (2024 Release)",
+  7: "2024 Season",
+  8: "Historical (2025 Release)",
+  9: "2025 Season",
+  10: "Historical (2026 Release)",
+}
+
+function isTopShotSlug(slug: string | null | undefined): boolean {
+  return slug === "nba_top_shot" || slug === "nba-top-shot"
+}
+function isAllDaySlug(slug: string | null | undefined): boolean {
+  return slug === "nfl_all_day" || slug === "nfl-all-day"
+}
+
 /** Analytics-board series label (collection-agnostic). Unmapped/nullish → "Unknown". */
 export function seriesLabel(n: number | null | undefined): string {
   if (n === null || n === undefined) return "Unknown"
@@ -53,19 +81,19 @@ export function seriesLabel(n: number | null | undefined): string {
  */
 export function analyticsSeriesLabel(n: number | null | undefined, collectionSlug: string | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(Number(n))) return "Unknown"
-  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
-  if (isTopShot) return SERIES_DISPLAY[Number(n)] ?? "Unknown"
+  if (isTopShotSlug(collectionSlug)) return SERIES_DISPLAY[Number(n)] ?? "Unknown"
+  if (isAllDaySlug(collectionSlug)) return ALLDAY_SERIES_DISPLAY[Number(n)] ?? `Series ${Number(n)}`
   return `Series ${Number(n)}`
 }
 
 /**
- * Moment-page series display. Top Shot decodes via SERIES_DISPLAY (unmapped n →
- * "Series N"); every other collection's series encoding is unverified, so it
- * falls back to the raw "Series N".
+ * Moment-page series display. Top Shot decodes via SERIES_DISPLAY and All Day via
+ * ALLDAY_SERIES_DISPLAY (unmapped n → "Series N"); every other collection's series
+ * encoding is unverified, so it falls back to the raw "Series N".
  */
 export function seriesDisplay(n: number, collectionSlug: string | null | undefined): string {
-  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
-  if (isTopShot) return SERIES_DISPLAY[n] ?? `Series ${n}`
+  if (isTopShotSlug(collectionSlug)) return SERIES_DISPLAY[n] ?? `Series ${n}`
+  if (isAllDaySlug(collectionSlug)) return ALLDAY_SERIES_DISPLAY[n] ?? `Series ${n}`
   return `Series ${n}`
 }
 
@@ -83,8 +111,8 @@ export function seriesPageLabel(
   displayLabel: string | null | undefined,
   collectionSlug: string | null | undefined,
 ): string {
-  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
-  if (isTopShot && seriesNumber != null && SERIES_DISPLAY[seriesNumber]) return SERIES_DISPLAY[seriesNumber]
+  if (isTopShotSlug(collectionSlug) && seriesNumber != null && SERIES_DISPLAY[seriesNumber]) return SERIES_DISPLAY[seriesNumber]
+  if (isAllDaySlug(collectionSlug) && seriesNumber != null && ALLDAY_SERIES_DISPLAY[seriesNumber]) return ALLDAY_SERIES_DISPLAY[seriesNumber]
   return (displayLabel ?? "").trim() || (seriesNumber != null ? `Series ${seriesNumber}` : "Series")
 }
 

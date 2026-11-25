@@ -86,6 +86,13 @@ export function compactSeriesLabel(label: string): string {
   if (m) return `'${m[2]}-${m[3]}`
   m = /^Summer (\d{2})(\d{2})$/.exec(label)
   if (m) return `Sum '${m[2]}`
+  // NFL All Day official names (2026-11-24): "2025 Season", "Historical (2025 Release)", "Historical 2".
+  m = /^(\d{2})(\d{2}) Season$/.exec(label)
+  if (m) return `'${m[2]}`
+  m = /^Historical \((\d{2})(\d{2}) Release\)$/.exec(label)
+  if (m) return `Hist '${m[2]}`
+  m = /^Historical(?: (\d{1,2}))?$/.exec(label)
+  if (m) return m[1] ? `Hist ${m[1]}` : "Hist"
   if (label === NO_SERIES_LABEL) return "None"
   return label
 }

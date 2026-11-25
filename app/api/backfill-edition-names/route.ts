@@ -164,8 +164,12 @@ export async function POST(req: NextRequest) {
           const rawDate = playMeta.DateOfMoment || playMeta.dateOfMoment || null
           const dateSlice = rawDate ? rawDate.slice(0, 10) : null
           const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null
-          const homeTeam = playMeta.TeamAtMoment || playMeta.teamAtMoment || playMeta.HomeTeamName || playMeta.homeTeamName || null
-          const awayTeam = playMeta.TeamAtMomentOpponent || playMeta.teamAtMomentOpponent || playMeta.AwayTeamName || playMeta.awayTeamName || null
+          // 2026-11-24: home/away come ONLY from the game's own HomeTeamName/AwayTeamName.
+          // This used to prefer TeamAtMoment (the PLAYER's team), so every Moment whose
+          // player was the away side stored its own team twice — 298 Top Shot editions
+          // read "Clippers vs Clippers" (repaired by audit_20261124_edition_home_away_same_team_repair).
+          const homeTeam = playMeta.HomeTeamName || playMeta.homeTeamName || null
+          const awayTeam = playMeta.AwayTeamName || playMeta.awayTeamName || null
 
           if (playCategory) update.play_category = playCategory
           if (playType) update.play_type = playType

@@ -47,8 +47,15 @@ describe("shortSeriesLabel", () => {
   })
 
   it("keeps another collection's own number (0↔1 is Top-Shot-specific)", () => {
-    expect(shortSeriesLabel(3, "nfl-all-day")).toBe("S3")
+    expect(shortSeriesLabel(3, "laliga-golazos")).toBe("S3")
     expect(shortSeriesLabel(0, "nfl_all_day")).toBe("S0")
+  })
+
+  it("All Day reads its official names, compacted (2026-11-24)", () => {
+    expect(shortSeriesLabel(9, "nfl_all_day")).toBe("'25")
+    expect(shortSeriesLabel(8, "nfl-all-day")).toBe("Hist '25")
+    expect(shortSeriesLabel(4, "nfl_all_day")).toBe("Hist 2")
+    expect(shortSeriesLabel(3, "nfl-all-day")).toBe("S2")
     expect(shortSeriesLabel(5, null)).toBe("S5")
   })
 })

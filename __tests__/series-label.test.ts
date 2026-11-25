@@ -33,8 +33,14 @@ describe("seriesDisplay — moment-page variant (Top Shot only)", () => {
     expect(seriesDisplay(1, "nba_top_shot")).toBe("Series 1") // SERIES_DISPLAY[0] is the quirk; 1 is unmapped → "Series 1"
     expect(seriesDisplay(42, "nba_top_shot")).toBe("Series 42")
   })
-  it("non-Top-Shot collections fall back to raw 'Series N'", () => {
-    expect(seriesDisplay(6, "nfl_all_day")).toBe("Series 6")
+  it("All Day decodes to the contract's own series names (2026-11-24)", () => {
+    expect(seriesDisplay(9, "nfl_all_day")).toBe("2025 Season")
+    expect(seriesDisplay(6, "nfl_all_day")).toBe("Historical (2024 Release)")
+    expect(seriesDisplay(3, "nfl-all-day")).toBe("Series 2")
+    expect(seriesDisplay(11, "nfl_all_day")).toBe("Series 11") // unmapped → raw
+  })
+  it("other collections fall back to raw 'Series N'", () => {
+    expect(seriesDisplay(6, "laliga_golazos")).toBe("Series 6")
     expect(seriesDisplay(0, null)).toBe("Series 0")
   })
 })
@@ -81,9 +87,13 @@ describe("seriesPageLabel", () => {
     expect(seriesPageLabel(3, "Summer 2021", "nba-top-shot")).toBe("Summer 2021")
   })
   it("other collections and unmapped numbers keep the DB label", () => {
-    expect(seriesPageLabel(7, "Series 7", "nfl-all-day")).toBe("Series 7")
+    expect(seriesPageLabel(7, "Series 7", "laliga-golazos")).toBe("Series 7")
     expect(seriesPageLabel(99, "Series 99", "nba-top-shot")).toBe("Series 99")
     expect(seriesPageLabel(null, null, "nba-top-shot")).toBe("Series")
+  })
+  it("All Day's series page shows the official name, the URL key stays 'Series N'", () => {
+    expect(seriesPageLabel(9, "Series 9", "nfl-all-day")).toBe("2025 Season")
+    expect(seriesPageLabel(2, "Series 2", "nfl_all_day")).toBe("Historical")
   })
 })
 
@@ -93,7 +103,8 @@ describe("tileSeriesLabel", () => {
   it("decodes a bare integer with the Top Shot map, 'Series N' elsewhere", () => {
     expect(tileSeriesLabel("5", "nba-top-shot")).toBe("Series 4")
     expect(tileSeriesLabel("8", "nba-top-shot")).toBe("Series 2025-26")
-    expect(tileSeriesLabel("3", "nfl-all-day")).toBe("Series 3")
+    expect(tileSeriesLabel("3", "nfl-all-day")).toBe("Series 2")
+    expect(tileSeriesLabel("3", "laliga-golazos")).toBe("Series 3")
   })
   it("passes phrases through and nulls empties", () => {
     expect(tileSeriesLabel("Series 2023-24", "nba-top-shot")).toBe("Series 2023-24")
@@ -109,10 +120,11 @@ describe("analyticsSeriesLabel — the analytics charts know which collection th
     expect(analyticsSeriesLabel(7, "nba_top_shot")).toBe("Series 2024-25")
     expect(analyticsSeriesLabel(1, "nba-top-shot")).toBe("Unknown")
   })
-  it("All Day's series 7 is NOT Top Shot's 'Series 2024-25' — it is All Day's Series 7 (the chart said otherwise)", () => {
-    expect(analyticsSeriesLabel(7, "nfl-all-day")).toBe("Series 7")
-    expect(analyticsSeriesLabel(3, "nfl-all-day")).toBe("Series 3")
+  it("All Day's series 7 is NOT Top Shot's 'Series 2024-25' — it is All Day's own 2024 Season", () => {
+    expect(analyticsSeriesLabel(7, "nfl-all-day")).toBe("2024 Season")
+    expect(analyticsSeriesLabel(3, "nfl-all-day")).toBe("Series 2")
     expect(analyticsSeriesLabel(1, "nfl_all_day")).toBe("Series 1")
+    expect(analyticsSeriesLabel(8, "nfl_all_day")).toBe("Historical (2025 Release)")
     expect(analyticsSeriesLabel(9, "laliga-golazos")).toBe("Series 9")
   })
   it("a series the read did not carry is Unknown for every collection", () => {
