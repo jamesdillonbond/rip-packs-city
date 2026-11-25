@@ -1463,6 +1463,15 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   .rpc-binder-card, .rpc-binder-card:hover { transition: none; transform: none; }
 }
 
+/* Binder desktop table (2026-11-24): 13 columns × 16 px a side is 416 px of padding, and with real
+   rows the table ran ~1,370 px — past every laptop width, and past the page's own 1,342 px content
+   cap on wide screens. 12 px a side fits the cap; 8 px below 1536 px fits a 1280 px screen with room for row-to-row variation.
+   Measured on live rows 2026-11-24: 1280 → 1182/1182, 1440 → 1342/1342 (scroll/client). */
+.rpc-table.rpc-table--binder th, .rpc-table.rpc-table--binder td { padding-left: 12px; padding-right: 12px; }
+@media (max-width: 1535px) {
+  .rpc-table.rpc-table--binder th, .rpc-table.rpc-table--binder td { padding-left: 8px; padding-right: 8px; }
+}
+
 /* ── Table region — wallet analytics ──────────────────────── */
 .rpc-table-wrapper {
   border: 1px solid var(--rpc-border);

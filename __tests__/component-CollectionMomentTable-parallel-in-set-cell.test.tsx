@@ -35,4 +35,20 @@ describe("desktop table — parallel lives in the Set cell", () => {
     render(<CollectionMomentTable {...props(row())} />)
     expect(screen.queryByTestId("set-parallel")).toBeNull()
   })
+  // The table carries the binder class its width rule keys on (app/rpc-tokens.css, 2026-11-24).
+  it("the table carries rpc-table--binder", () => {
+    const { container } = render(<CollectionMomentTable {...props(row())} />)
+    expect(container.querySelector("table.rpc-table.rpc-table--binder")).not.toBeNull()
+  })
+})
+
+// The rule that makes the 13-column table fit laptop widths must keep both arms and out-rank the
+// generic .rpc-table cell padding (16 px), which is defined later in the same file.
+describe("binder table width rule in app/rpc-tokens.css", () => {
+  it("keeps the 12 px default and the 8 px below-1536 arm, at two-class specificity", async () => {
+    const { readFileSync } = await import("node:fs")
+    const css = readFileSync("app/rpc-tokens.css", "utf8")
+    expect(css).toMatch(/\.rpc-table\.rpc-table--binder th, \.rpc-table\.rpc-table--binder td \{ padding-left: 12px; padding-right: 12px; \}/)
+    expect(css).toMatch(/@media \(max-width: 1535px\) \{\s*\.rpc-table\.rpc-table--binder th, \.rpc-table\.rpc-table--binder td \{ padding-left: 8px; padding-right: 8px; \}/)
+  })
 })

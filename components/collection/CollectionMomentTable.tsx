@@ -604,7 +604,7 @@ export default function CollectionMomentTable(props: {
           </div>
         ) : (
         <div className="rpc-table-wrapper">
-          <table className="rpc-table">
+          <table className="rpc-table rpc-table--binder">
             <thead>
               <tr>
                 <th scope="col">{labels.player}</th>
