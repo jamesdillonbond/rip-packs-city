@@ -857,16 +857,19 @@ function Sealed({ room, busy, act }: { room: RoomView; busy: string | null; act:
           {landed.map((m) => (
             <li key={`${m.collection ?? "nba-top-shot"}:${m.id}`} style={{ color: m.held ? undefined : "var(--rpc-danger-text)" }}>
               {m.collection && m.collection !== "nba-top-shot" ? `${SWAP_COLLECTIONS.find((c) => c.slug === m.collection)?.short ?? m.collection} ` : ""}
-              {m.id} {m.held ? "is now in" : "is NOT in"} {shortAddr(m.to)}
+              {m.id} {m.held ? "landed in" : "had NOT landed in"} {shortAddr(m.to)}
             </li>
           ))}
         </ul>
       ) : (
         <p style={{ ...muted, margin: "0 0 8px" }}>Where each Moment landed hasn&apos;t been read from the chain yet.</p>
       )}
-      <button type="button" style={btn} disabled={busy !== null} onClick={() => act("verify", {})}>
-        Check the chain again
-      </button>
+      {/* 2026-11-24: the landing record is fixed at the seal; a re-check is offered only while it is unread. */}
+      {landed ? null : (
+        <button type="button" style={btn} disabled={busy !== null} onClick={() => act("verify", {})}>
+          Check the chain
+        </button>
+      )}
     </section>
   )
 }

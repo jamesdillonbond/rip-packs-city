@@ -84,6 +84,15 @@ describe("assertSignableMatchesRoom refuses, naming the planted defect", () => {
   it("a third authorizer", () => refuses(MULTI, signable({}, { authorizers: [A.signer, B.signer, "0x1111111111111111"] }), "voucher_authorizers"))
   it("the co-signer named as payer", () => refuses(MULTI, signable({}, { payer: B.signer }), "voucher_payer"))
   it("the co-signer named as proposer", () => refuses(MULTI, signable({}, { proposalKey: { address: B.signer } }), "voucher_proposer"))
+  it("displayed args that differ from the voucher (show one trade, sign another) — 2026-11-24", () => {
+    // The voucher and message are the agreed trade; only the top-level args the panel decodes say B gives nothing.
+    refuses(MULTI, signable({ args: multiArgs([["11"], ["22"], [], []], [[], [], [], []]) }), "args_mismatch")
+    refuses(MULTI, signable({ args: undefined }), "args_mismatch")
+  })
+  it("args equal to the voucher's with keys in another order are accepted", () => {
+    const reordered = multiArgs().map((a: Record<string, unknown>) => Object.fromEntries(Object.entries(a).reverse()))
+    expect(() => assertSignableMatchesRoom(MULTI, "a", B.signer, signable({ args: reordered }), { encode })).not.toThrow()
+  })
   it("an extra Moment of the co-signer's slipped into idsB (the H1 attack)", () => {
     refuses(MULTI, signable({}, { arguments: multiArgs([["11"], ["22"], [], []], [[], [], ["33", "34"], []]) }), "wrong_items")
   })

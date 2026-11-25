@@ -62,6 +62,15 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return b.every((x) => sa.has(x))
 }
 
+/** JSON with object keys sorted, so two structurally equal values compare equal whatever their key order. */
+function canonicalJson(x: unknown): string {
+  const norm = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(norm)
+      : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])]))
+        : v
+  return JSON.stringify(norm(x) ?? null)
+}
+
 export interface RelayGuardOptions {
   /** Override the FCL encoder (tests). */
   encode?: (signable: Record<string, unknown>, signerAddress: string) => string
@@ -116,6 +125,11 @@ export function assertSignableMatchesRoom(
   if (!sameSet(described.idsA, expectedLabels(loaded, initiator)) || !sameSet(described.idsB, expectedLabels(loaded, otherSide(initiator)))) {
     refuse("the voucher's Moments are not the ones this room agreed.", "wrong_items")
   }
+
+  // 4b. 2026-11-24 (review finding 2): the co-signer's "What it does" panel and the wallet's display read the
+  // signable's top-level `args`, not the voucher. A signable whose args differ from what the voucher encodes would show
+  // one trade and sign another, so they must be the same values.
+  if (canonicalJson(s.args) !== canonicalJson(v.arguments)) refuse("the signable's displayed arguments are not the voucher's.", "args_mismatch")
 
   // 5. the bytes the wallet signs must be the bytes this voucher encodes for the co-signer
   const encode = opts.encode ?? ((sig, addr) => encodeMessageFromSignable(sig as never, addr))

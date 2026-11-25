@@ -283,6 +283,29 @@ async function healLockCache(source: string, picker: PickerResult): Promise<void
   if (error) console.error(`[trade-room] lock cache heal failed for ${results.length} row(s): ${error.message}`)
 }
 
+// 2026-11-24 (trade room review, finding 1): a room in `signing` may already have EXECUTED on chain — the initiator's
+// wallet submitted, then the follow-up `sealed` call failed (access node lag, a dropped network, a closed tab). The tx id
+// lived only in that tab, so the room stayed `signing`, and after the relay window either side could cancel it: the room
+// read "cancelled" and the other collector was emailed "Nothing moved." Before a signing room is cancelled or put back
+// to `accepted`, read the chain. Every Moment already with the other side → refused (the trade happened). A failed read
+// → refused as retryable (we cannot tell). Only `signing` rooms can have executed: a co-signature is recorded only then.
+async function refuseIfExecuted(loaded: Awaited<ReturnType<typeof loadRoom>>): Promise<void> {
+  if (loaded.room.status !== "signing") return
+  let landed: Array<{ held: boolean }>
+  try {
+    landed = (await verifyRoom(loaded)) as Array<{ held: boolean }>
+  } catch (e) {
+    throw chainUnavailable(e)
+  }
+  if (landed.length > 0 && landed.every((m) => m.held === true)) {
+    throw new TradeRoomError(
+      "The chain shows this trade already went through: every Moment is with the other side. It can't be cancelled. Record it from the tab that signed, or contact support with the room code.",
+      409,
+      "already_executed",
+    )
+  }
+}
+
 export async function POST(req: NextRequest, ctx: Ctx) {
   const u = await currentUser()
   if (u instanceof Response) return u
@@ -366,6 +389,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         loaded = await unaccept(supabaseAdmin, loaded, me)
         return json({ room: await view(loaded, u.id) })
       case "cancel": {
+        await refuseIfExecuted(loaded)
         const wasLive = loaded.room.status !== "cancelled" && loaded.room.status !== "sealed"
         loaded = await cancelRoom(supabaseAdmin, loaded, u.id, typeof body.reason === "string" ? body.reason : null)
         if (wasLive) notifyLater(loaded, u.id, "cancelled")
@@ -404,6 +428,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         return json({ ok: true })
       }
       case "signing_ended":
+        await refuseIfExecuted(loaded)
         await markSigningEnded(supabaseAdmin, loaded)
         return json({ room: await view(await loadRoom(supabaseAdmin, code), u.id) })
       case "sealed": {
@@ -434,7 +459,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }
       case "verify": {
         const landed = await verifyRoom(loaded)
-        if (loaded.room.status === "sealed" && loaded.room.tx_id) loaded = await markSealed(supabaseAdmin, loaded, loaded.room.tx_id, landed)
+        // 2026-11-24 (review finding 3): a seal's landing record is a fact about the SEAL. It used to be rewritten from
+        // current holdings on every re-check, so a Moment the recipient later sold read "is NOT in …" and sealed_at moved.
+        // Only a seal with no landing record yet is completed here; the fresh read is returned, never stored over it.
+        if (loaded.room.status === "sealed" && loaded.room.tx_id && loaded.room.landed == null) loaded = await markSealed(supabaseAdmin, loaded, loaded.room.tx_id, landed)
         return json({ landed, room: await view(loaded, u.id) })
       }
       default:

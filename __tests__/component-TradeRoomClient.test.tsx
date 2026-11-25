@@ -290,8 +290,10 @@ describe("TradeRoomClient — accept, simulate, the gated sign step", () => {
     await waitFor(() => expect(screen.getByText("Sealed on chain", { selector: "h2" })).toBeTruthy())
     expect(calls.find((c) => c.body?.action === "relay_post")?.body).toMatchObject({ cosigner: WB.signer })
     expect(calls.find((c) => c.body?.action === "sealed")?.body).toMatchObject({ tx_id: tx })
-    expect(screen.getByText(/1 is now in/)).toBeTruthy()
-    expect(screen.getByText(/9 is NOT in/)).toBeTruthy()
+    expect(screen.getByText(/1 landed in/)).toBeTruthy()
+    expect(screen.getByText(/9 had NOT landed in/)).toBeTruthy()
+    // 2026-11-24: the landing record is fixed at the seal, so no re-check is offered once it is read
+    expect(screen.queryByText("Check the chain")).toBeNull()
     // a wallet refusal: the attempt is reported, signing_ended is sent, nothing is "failed on chain"
     cleanup()
     calls = []
@@ -324,8 +326,8 @@ describe("TradeRoomClient — accept, simulate, the gated sign step", () => {
     expect(screen.getByText(/hasn't been read from the chain yet/)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/failed/i)
     posts.verify = { status: 200, body: { landed: [{ id: "1", to: WB.source, held: true }], room: view({ state: "sealed", tx_id: tx, sealed_at: "x", landed: [{ id: "1", to: WB.source, held: true }] }) } }
-    fireEvent.click(screen.getByText("Check the chain again"))
-    await waitFor(() => expect(screen.getByText(/1 is now in/)).toBeTruthy())
+    fireEvent.click(screen.getByText("Check the chain"))
+    await waitFor(() => expect(screen.getByText(/1 landed in/)).toBeTruthy())
   })
 
   it("the co-signer sees the pending relay, must connect the wallet it proved, and signs", async () => {

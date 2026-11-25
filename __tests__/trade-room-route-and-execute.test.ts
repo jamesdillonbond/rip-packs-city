@@ -433,6 +433,61 @@ describe("/api/trade-room — the routes", () => {
     const again = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: "e".repeat(64) }), ctx(code)))
     expect(again.status).toBe(200)
     expect(mem.current.tables.trade_rooms[0].tx_id).toBe(txId)
+    // (e) 2026-11-24: a later re-check never rewrites the seal's landing record from CURRENT holdings
+    const sealedLanded = mem.current.tables.trade_rooms[0].landed
+    const sealedAt = mem.current.tables.trade_rooms[0].sealed_at
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: false }]) // the recipient has since sold it
+    const recheck = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "verify" }), ctx(code)))
+    expect(recheck.status).toBe(200)
+    expect(((await recheck.json()) as { landed: Array<{ held: boolean }> }).landed[0].held).toBe(false)
+    expect(mem.current.tables.trade_rooms[0].landed).toEqual(sealedLanded)
+    expect(mem.current.tables.trade_rooms[0].sealed_at).toBe(sealedAt)
+  })
+
+  it("a SIGNING room whose trade already executed on chain cannot be cancelled or reset — nobody is told 'nothing moved' (2026-11-24)", async () => {
+    const toSigning = async () => {
+      const code = await twoSided()
+      await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", ids: ["1"] }), ctx(code)))
+      const version = ((await (await as(BOB, () => room.GET(get(`/api/trade-room/${code}`), ctx(code)))).json()) as { room: { version: number } }).room.version
+      for (const who of [ALICE, BOB]) await as(who, () => room.POST(post(`/api/trade-room/${code}`, { action: "accept", version, notice_read: true }), ctx(code)))
+      const voucher = {
+        cadence: SWAP_CADENCE, authorizers: [WA.signer, WB.signer], payer: WA.signer,
+        proposalKey: { address: WA.signer, keyId: 0, sequenceNum: 1 }, refBlock: "ab", computeLimit: 9999,
+        arguments: [
+          { type: "Address", value: WA.source }, { type: "UInt64", value: "0" }, { type: "Array", value: [{ type: "UInt64", value: "1" }] },
+          { type: "Address", value: WB.source }, { type: "UInt64", value: "0" }, { type: "Array", value: [] },
+        ],
+        payloadSigs: [],
+      }
+      const signable: Record<string, unknown> = { cadence: SWAP_CADENCE, addr: WB.signer, args: voucher.arguments, voucher, roles: { authorizer: true } }
+      signable.message = encodeMessageFromSignable(signable as never, WB.signer)
+      vi.stubEnv("RPC_TRADE_ROOM_EXECUTE", "1")
+      expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: WB.signer, signable }), ctx(code)))).status).toBe(200)
+      expect(mem.current.tables.trade_rooms[0].status).toBe("signing")
+      return code
+    }
+    const code = await toSigning()
+    await new Promise((r) => setTimeout(r, 0))
+    const before = notices.sent.length
+    // (a) every Moment is already with the other side → both refused, room stays signing, no "cancelled" notice
+    for (const action of ["cancel", "signing_ended"]) {
+      chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: true }])
+      const r = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action }), ctx(code)))
+      expect(r.status).toBe(409)
+      expect(await r.json()).toMatchObject({ code: "already_executed" })
+      expect(mem.current.tables.trade_rooms[0].status).toBe("signing")
+    }
+    // (b) the chain can't be read → refused as retryable, never a cancel on a guess
+    chain.verifySwap.mockRejectedValueOnce(new SwapTestError("access node 502", 502, "chain_unavailable"))
+    expect((await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "cancel" }), ctx(code)))).status).toBe(503)
+    expect(mem.current.tables.trade_rooms[0].status).toBe("signing")
+    await new Promise((r) => setTimeout(r, 0))
+    expect(notices.sent.slice(before).map((n) => n.notice)).not.toContain("cancelled")
+    // (c) nothing moved → the cancel goes through as before
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: false }])
+    const ok = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "cancel" }), ctx(code)))
+    expect(ok.status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0].status).toBe("cancelled")
   })
 
   it("a stranger cannot read a finished room; a cancelled room reads as cancelled", async () => {
