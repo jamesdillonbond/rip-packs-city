@@ -369,7 +369,7 @@ describe("buildSeriesVolumeBars — collection-aware labels (2026-09-25)", () =>
       { series: 7, volume: 100, avg_price: 1, sale_count: 5 },
       { series: 3, volume: 50, avg_price: 1, sale_count: 2 },
     ]
-    expect(buildSeriesVolumeBars(rows, "nfl-all-day").map((b) => b.name)).toEqual(["Series 7", "Series 3"])
+    expect(buildSeriesVolumeBars(rows, "nfl-all-day").map((b) => b.name)).toEqual(["2024 Season", "Series 2"]) // 2026-11-24 re-pin: AllDay.getSeriesData names (7 = 2024 Season, 3 = Series 2)
     expect(buildSeriesVolumeBars(rows, "nba-top-shot").map((b) => b.name)).toEqual(["Series 2024-25", "Summer 2021"])
     expect(buildSeriesVolumeBars(rows).map((b) => b.name)).toEqual(["Series 2024-25", "Summer 2021"])
   })

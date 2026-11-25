@@ -281,7 +281,8 @@ describe("CollectionSetsClient — the tracker", () => {
     expect(txt).toMatch(/COMMON/)
     expect(txt).toMatch(/RARE/)
     expect(txt).toMatch(/S1/)
-    expect(txt).toMatch(/S6/)
+    // 2026-11-24 re-pin: All Day series 6 is the contract's "Historical (2024 Release)" → compact "Hist '24".
+    expect(txt).toMatch(/Hist '24/)
   })
 
   it("⚠ the Top Shot 'Completed Sets' caveat appears on Top Shot only", async () => {

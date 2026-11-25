@@ -46,8 +46,13 @@ function fullMetaFcl(cadence: string): unknown {
       PlayCategory: "Dunk",
       PlayType: "Handles",
       DateOfMoment: "2026-01-15T00:00:00Z",
-      TeamAtMoment: "Portland Trail Blazers",
-      TeamAtMomentOpponent: "Los Angeles Lakers",
+      // 2026-11-24 re-pin: home/away come from the GAME (HomeTeamName/AwayTeamName), never the
+      // player's TeamAtMoment. The player is on the AWAY side here, so a route that read
+      // TeamAtMoment first would write home_team = Lakers and this test goes red.
+      HomeTeamName: "Portland Trail Blazers",
+      AwayTeamName: "Los Angeles Lakers",
+      TeamAtMoment: "Los Angeles Lakers",
+      TeamAtMomentOpponent: "Portland Trail Blazers",
       Tier: "MOMENT_TIER_RARE",
     }
   if (cadence.includes("getNumMomentsInEdition")) return 15000
