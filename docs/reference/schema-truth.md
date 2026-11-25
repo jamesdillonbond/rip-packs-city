@@ -11,7 +11,7 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
-✅ **FULL REGENERATION 2026-11-24 (PT, ~10:05 PM; Claude Code cloud, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live, plus five tables CLAUDE.md now leans on (`sales_market`, `edition_fmv_current`, `candy_listings`, `panini_sales`, `panini_card_serials`). ZERO drift in any fact this file asserts; only the growth counts moved.** Previous full regeneration 2026-10-09 (column kept below).
+✅ **FULL REGENERATION 2026-11-24 (PT, ~7:55 PM — commit time; first written as ~10:05 PM, a future time; Claude Code cloud, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live, plus five tables CLAUDE.md now leans on (`sales_market`, `edition_fmv_current`, `candy_listings`, `panini_sales`, `panini_card_serials`). ZERO drift in any fact this file asserts; only the growth counts moved.** Previous full regeneration 2026-10-09 (column kept below).
 
 *Previous:* **FULL REGENERATION 2026-10-09 (PT, ~11:15 PM; Claude Code, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live. ZERO drift in any fact this file asserts; only the growth counts moved.**
 

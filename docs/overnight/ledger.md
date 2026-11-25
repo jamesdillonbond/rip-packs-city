@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:56 PM PT · 📝 DOCS — catch-up pass: Access Node Error on `/api/wallet-backfill` dispositioned (no fix needed); three inbox filings marked in INDEX; Cowork's 9:20 AM sweep entry landed (Claude Code, attended; Trevor: "get us caught up … work through any recent handoffs")
+
+- **schema-truth.md:** a concurrent cloud session shipped the full regeneration first (`773ad9642`, 7:55 PM PT); my independent live re-run the same minute matched it (tables 838, views 190, matviews 57, functions 1,291, cron 324, `editions` 38 cols, zero asserted drift), so I kept theirs and only corrected its stamp, which read "~10:05 PM" (a future time).
+- **`/api/wallet-backfill` Access Node Error (handoff 11-24 overnight, item 2):** 1,682 `wallet-backfill` runs 11-21 → 11-24, 0 failed, 0 carrying the error; Vercel group still 22, last 1:27 PM PT 11-23. FCL logs the banner on a transient upstream response and the run survives it.
+- **Inbox INDEX:** `2026-11-24T1617Z` → fix applied (`20261125025303`), ⏰ **first verifying run of job 926 at 9:53 PM PT tonight** (read `pipeline_runs` `topshot-misattrib-remap`); `2026-11-23T2206Z` → resolved; `2026-11-23T1913Z` → self-cleared.
+- **Revert:** docs only — `git revert` this commit.
+
 ### 2026-11-24 ~10:00 PM PT · 🔧 SHIPPED (code) — Pinnacle pin pages stop offering "did the pack pay?" for drops the Pack Reality board excludes (Claude Code cloud; Trevor: "Keep going")
 
 - From the second review (18 more commits, one real defect). `pinInsightChips` (`8c15fb38c`) chose any pull opened since Sept 1. Three pins pulled only from dist 8906 "Internal Test" (`LEV1-ICAG-ROSH-S6`, `LEV1-STCH-CHAS-S6`, `LEV3-CARS-FLRA-S6`) showed "Pulled from Internal Test — did the pack pay?", linking to a board that never shows that drop. Five `LEV2-MFGV-*` pins could name dist 8922. `isPackRealityDrop` now mirrors the board's exclusions (`[OLD]`, Internal Test, Distribution Mock Test, 8922). The board's ≥25-opens floor is not mirrored, because the page doesn't read open counts; the code comment says so. A planted bypass turns the test red; preflight green.
