@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:37 AM PT · 🔧 SHIPPED (DB schedule) — fmv-recalc `:08` outlier root-caused; job 924 `panini-scarcer-for-less` moved `8 */2` → `54 */2` (`20261125153639`) (Claude Code, attended; Trevor: "Keep digging and probing to try and figure it out")
+- `:08` penalty is layered by UTC hour (odd ~74 s / even ~86 s / 0,6,12,18 ~102 s vs ~53 s at :28/:48). Job 924 (new 11-24 12:08 AM PT) starts the same minute: :08 even 76 → 94 s across its first run, controls flat (:08 odd 76 → 72, :28/:48 57 → 51). Cadence unchanged; watchlist notes updated. 6-h layer (jobs 330, 208) left for a separate measured move — steer in focus.md.
+- Revert: `SELECT cron.alter_job(924, schedule := '8 */2 * * *');` + watchlist notes replace back (in the migration header).
+
 ### 2026-11-25 ~7:45 AM PT · 🔧 SHIPPED (code) — Binder says "Standard" for the non-parallel printing, never "Base"; the Packs tab uses the same plain stat strip as the Moments header (Claude Code cloud; Trevor: "Keep going" / "the original version of the parallel is called 'Standard', not 'Base'. Base is a set, so that messaging could be confusing")
 
 - **Standard:** `normalizeParallel` defaults an empty parallel to "Base", which the Binder showed in the expanded row and the CSV export, and which the new Set-cell tag keyed on (a row whose source already said "Standard" would have drawn a "Standard" tag). New `parallelLabel` / `isParallelRow` in `lib/collection/helpers.ts`: users see "Standard", only real parallels get the tag, and search matches "standard". The internal "Base" default is unchanged, because scope keys, market matching and the sniper feed compare against it. The rest of the site (badges, edition, moment, rookie board, trade-in) already said Standard.
