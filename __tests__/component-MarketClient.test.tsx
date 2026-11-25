@@ -1360,7 +1360,14 @@ describe("marketSeriesLabel", () => {
     const { marketSeriesLabel } = await import("@/app/(collections)/[collection]/market/MarketClient")
     expect(marketSeriesLabel("2024 Season", "nfl-all-day")).toBe("2024 Season")
     expect(marketSeriesLabel("Series 1", "laliga-golazos")).toBe("Series 1")
-    expect(marketSeriesLabel("8", "nfl-all-day")).toBe("8")
+    expect(marketSeriesLabel("8", "laliga-golazos")).toBe("8")
+  })
+  it("decodes All Day's raw on-chain number to the contract's own name (2026-11-24)", async () => {
+    const { marketSeriesLabel } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    expect(marketSeriesLabel("7", "nfl-all-day")).toBe("2024 Season")
+    expect(marketSeriesLabel("9", "nfl-all-day")).toBe("2025 Season")
+    expect(marketSeriesLabel("8", "nfl-all-day")).toBe("Historical (2025 Release)")
+    expect(marketSeriesLabel("7", "nfl-all-day")).not.toBe("7")
   })
 })
 

@@ -87,10 +87,13 @@ import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 // Series 2025-26". The VALUE stays raw (the RPC filters on `e.series::text =
 // ANY(p_series)`); only what the reader sees is mapped. Other collections'
 // series names are already labels and pass through.
+// 2026-11-24: NFL All Day's market feed ALSO sends the bare on-chain number (153 of
+// 200 live rows read "7"), so its cards said "· 7". It decodes through its contract's
+// own names now ("2024 Season"); an unmapped number or a phrase still passes through.
 export function marketSeriesLabel(raw: string, collectionId: string): string {
-  if (collectionId !== "nba-top-shot") return raw
+  if (collectionId !== "nba-top-shot" && collectionId !== "nfl-all-day") return raw
   const n = Number(raw)
-  return Number.isInteger(n) && /^\d+$/.test(raw.trim()) ? seriesDisplay(n, "nba-top-shot") : raw
+  return Number.isInteger(n) && /^\d+$/.test(raw.trim()) ? seriesDisplay(n, collectionId) : raw
 }
 
 function AskAge({ cachedAt, askPrice, collectionSlug }: {

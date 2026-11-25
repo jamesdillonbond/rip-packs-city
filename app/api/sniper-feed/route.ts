@@ -7,7 +7,7 @@ import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
 import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
 import { applySerialFmvEstimates } from "@/lib/sniper/serial-estimate";
-import { TOPSHOT_SERIES_LABELS, topShotSeriesLabel } from "@/lib/sniper/series-label";
+import { TOPSHOT_SERIES_LABELS, topShotSeriesLabel, allDaySeriesLabel } from "@/lib/sniper/series-label";
 import { feeNetDeal } from "@/lib/marketplace-fees";
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { leagueForEdition } from "@/lib/league";
@@ -1736,7 +1736,7 @@ async function computeAllDaySniperFeed(opts: {
         playerName: r.player_name ?? "",
         teamName: r.team_name ?? "",
         setName: r.set_name ?? "",
-        seriesName: r.series_name ?? "",
+        seriesName: allDaySeriesLabel(r.series_name),
         tier,
         parallel: "Base",
         parallelId: 0,

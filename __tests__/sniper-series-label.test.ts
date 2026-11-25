@@ -19,3 +19,21 @@ describe("topShotSeriesLabel", () => {
     expect(topShotSeriesLabel(null)).toBe("")
   })
 })
+
+describe("allDaySeriesLabel (2026-11-24)", () => {
+  it("decodes All Day's bare on-chain number to the contract's own name", async () => {
+    const { allDaySeriesLabel } = await import("@/lib/sniper/series-label")
+    expect(allDaySeriesLabel("7")).toBe("2024 Season")
+    expect(allDaySeriesLabel("9")).toBe("2025 Season")
+    expect(allDaySeriesLabel("2")).toBe("Historical")
+    expect(allDaySeriesLabel("7")).not.toBe("7")
+  })
+  it("never re-maps an official name — the marketplace's 'Series 2' is on-chain 3", async () => {
+    const { allDaySeriesLabel } = await import("@/lib/sniper/series-label")
+    expect(allDaySeriesLabel("Series 2")).toBe("Series 2")
+    expect(allDaySeriesLabel("2025 Season")).toBe("2025 Season")
+    expect(allDaySeriesLabel("")).toBe("")
+    expect(allDaySeriesLabel(null)).toBe("")
+    expect(allDaySeriesLabel("42")).toBe("42")
+  })
+})
