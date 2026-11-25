@@ -123,6 +123,19 @@ describe("runCollectionsMarket", () => {
     expect(state.daily[0]).toMatchObject({ address: "A", day: "2026-11-09", floor_sol: 0.048614487, listed_count: 2, stats_has_floor: true, sol_usd: 150 })
   })
 
+  it("re-reads 15 min below the mark: a same-second and a late-indexed sale are offered, an older one is not (2026-11-24)", async () => {
+    state.queue = [col()] // mark 2026-11-08T00:00:00Z
+    state.me["/collections/2022_leadoff_icons/stats"] = { floorPrice: 48614487, listedCount: 2, avgPrice24hr: 3900000 }
+    state.me["/collections/2022_leadoff_icons/activities"] = [
+      { type: "buyNow", signature: "SAMESEC", tokenMint: "M1", blockTime: sec("2026-11-08T00:00:00Z"), price: 0.01 },
+      { type: "buyNow", signature: "LATEIDX", tokenMint: "M2", blockTime: sec("2026-11-07T23:50:00Z"), price: 0.01 },
+      { type: "buyNow", signature: "TOOOLD", tokenMint: "M3", blockTime: sec("2026-11-07T23:40:00Z"), price: 0.01 },
+    ]
+    const r = await run()
+    expect(r.ok).toBe(true)
+    expect(state.parks.map((p) => p.p_signature)).toEqual(["SAMESEC", "LATEIDX"])
+  })
+
   it("records ME's floorless zero as AMBIGUOUS, never as a confirmed empty market", async () => {
     state.queue = [col()]
     state.me["/collections/2022_leadoff_icons/stats"] = { symbol: "2022_leadoff_icons", listedCount: 0 }

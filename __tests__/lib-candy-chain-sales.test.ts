@@ -54,6 +54,23 @@ describe("decodeChainFills (real transactions)", () => {
     const d = decodeChainFills(T.signature, T.tx)
     expect(d.fills.map((f) => f.priceSol)).toEqual([0.002])
   })
+  it("a tx with TWO TakeBidCore calls is reported, never priced (decodeTakeBid reads the whole tx) — 2026-11-24", () => {
+    const T = fx("takebidcore-9-sol")
+    const tx = JSON.parse(JSON.stringify(T.tx))
+    const ins = tx.transaction.message.instructions
+    const idx = ins.findIndex((_: unknown, i: number) => (tx.meta.innerInstructions ?? []).some((g: any) => g.index === i))
+    const program = ins[idx].programId
+    ins.push(ins[idx])
+    const group = tx.meta.innerInstructions.find((g: any) => g.index === idx)
+    tx.meta.innerInstructions.push({ ...group, index: ins.length - 1 })
+    const logs: string[] = tx.meta.logMessages
+    const at = logs.indexOf(`Program ${program} invoke [1]`)
+    tx.meta.logMessages = [...logs, logs[at], logs[at + 1]]
+    const d = decodeChainFills(T.signature, tx)
+    expect(d.takeBids).toBe(2)
+    expect(d.fills).toEqual([])
+    expect(d.unknownIx).toEqual([`${CHAIN_MARKETPLACE}:TakeBidCore:multi_in_tx`, `${CHAIN_MARKETPLACE}:TakeBidCore:multi_in_tx`])
+  })
   it("a listing is not a sale", () => {
     expect(decodeChainFills(LIST.signature, LIST.tx).fills).toEqual([])
   })

@@ -190,7 +190,7 @@ export async function runCollectionsMarket(
 
       // 3. Sales feed back to the high-water mark.
       const hwMs = c.sales_high_water_at ? new Date(c.sales_high_water_at).getTime() : null
-      const floorMs = hwMs ?? 0 // no high-water mark: walk the whole feed (page cap reports `truncated`)
+      const floorMs = hwMs !== null ? hwMs - SALES_HW_OVERLAP_MS : 0 // no mark: walk the whole feed (page cap reports `truncated`); else re-read the overlap
       let newestMs: number | null = null
       let reachedFloor = false
       let budgetStop = false
@@ -389,6 +389,12 @@ interface MeListing {
 // signature is already queued or already in `sales`. Shared by the rotating market walk and the
 // hourly sales pass (collections-sales-pass.ts), so both lanes dedupe the same way. Throws on the
 // first failed read or offer; `onOffered` fires once per offer that landed before that.
+// 2026-11-24: both sales lanes re-read this far BELOW a collection's sales_high_water_at. A strict `blockTime <= mark`
+// floor dropped for good (a) a second sale in the same second as the mark and (b) any sale Magic Eden indexed after a
+// newer one had already moved the mark (its blockTime is older). offerSales dedupes by signature against the queue and
+// `sales`, so the overlap re-offers nothing already held; the mark itself still only moves forward.
+export const SALES_HW_OVERLAP_MS = 15 * 60_000
+
 export async function offerSales(db: Db, sales: MeActivity[], onOffered: () => void): Promise<void> {
   const sigs = [...new Set(sales.map((s) => s.signature as string))]
   const known = new Set<string>()

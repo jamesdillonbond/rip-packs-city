@@ -24,13 +24,21 @@
 // (royalties + the venue fee + the seller's proceeds). On this venue the seller pays the fees, so
 // that equals the listed price, and the buyer-paid lane (Magic Eden rows only) never touches it.
 //
-// Not decoded: 7Aru TakeBidCore (a bid filled; the price leaves a program-owned escrow, not a system
-// transfer). Counted in `take_bids_seen`, never guessed. Any other 7Aru instruction name is counted
-// in `unknown_ix` so a new fill shape surfaces instead of disappearing.
+// 7Aru TakeBidCore (a bid filled; the price leaves a program-owned escrow) IS decoded since a2ab151 — see
+// decodeTakeBid — and counted in `take_bids_seen`. ⚠ 2026-11-24: its price is read from the WHOLE transaction's
+// balance changes, so a transaction holding TWO TakeBidCore calls would price both at the larger escrow; such a
+// transaction is recorded in `unknown_ix` (`TakeBidCore:multi_in_tx`), never priced. Any other 7Aru instruction name
+// is counted in `unknown_ix` so a new fill shape surfaces instead of disappearing.
 //
 // Honesty: a collection's cursor advances only behind a walk that read every new signature, fetched
 // every transaction it needed and landed every offer, inside the budget. A failed read fails the
 // collection (and the run); the next run re-reads the same range.
+//
+// ⚠ ROTATION, not hourly coverage (measured 2026-11-24): the route runs hourly, but one run reaches only part of the
+// ~398 collections inside its budget — 24 h to 11-24 8:30 PM PT averaged 103 checked (23–176), `not_reached` ~295.
+// So a given collection is walked about every 4 h, and an off-Magic-Eden fill can take that long to arrive. `ok` means
+// no collection FAILED, not that every collection was read; read `not_reached` for coverage. Nothing is lost while a
+// collection waits: its cursor holds.
 
 import type { FetchFn } from "@/lib/candy/sale-buyer-paid"
 
@@ -108,6 +116,7 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
   const top = tx.transaction.message.instructions
   const names: Record<string, string[]> = {}
   const seen: Record<string, number> = {}
+  const bidFills: ChainFill[] = []
   for (let idx = 0; idx < top.length; idx++) {
     const program = top[idx].programId
     const marketplace = CHAIN_PROGRAMS[program]
@@ -120,7 +129,7 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
       out.takeBids++
       const bid = decodeTakeBid(signature, tx, inner, marketplace)
       if (typeof bid === "string") out.unknownIx.push(`${marketplace}:TakeBidCore:${bid}`)
-      else out.fills.push(bid)
+      else bidFills.push(bid)
       continue
     }
     if (name !== "BuyCore") continue
@@ -141,6 +150,9 @@ export function decodeChainFills(signature: string, tx: ParsedTx): DecodeResult 
     if (!(lamports > 0)) { out.unknownIx.push(`${marketplace}:BuyCore:no_payment`); continue }
     out.fills.push({ signature, asset, collection, blockTime: tx.blockTime ?? 0, priceSol: lamports / 1e9, buyer, seller, marketplace })
   }
+  // decodeTakeBid prices from the whole tx, so it is only sound for a tx with ONE bid fill (see header).
+  if (out.takeBids > 1) for (const b of bidFills) out.unknownIx.push(`${b.marketplace}:TakeBidCore:multi_in_tx`)
+  else out.fills.push(...bidFills)
   return out
 }
 

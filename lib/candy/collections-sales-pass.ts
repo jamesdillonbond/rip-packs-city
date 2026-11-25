@@ -27,7 +27,7 @@
 // whose every offer landed, and only FORWARD (a conditional update: it never moves a mark the
 // rotating lane advanced past ours meanwhile). A failed collection fails the run.
 
-import { meClient, offerSales, SALE_TYPES, type FetchFn, type MeActivity } from "@/lib/candy/collections-market"
+import { meClient, offerSales, SALE_TYPES, SALES_HW_OVERLAP_MS, type FetchFn, type MeActivity } from "@/lib/candy/collections-market"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -120,7 +120,7 @@ export async function runCollectionsSalesPass(
         for (const a of acts) {
           const tMs = (a.blockTime ?? 0) * 1000
           if (newestMs === null || tMs > newestMs) newestMs = tMs
-          if (tMs <= hwMs) { reachedFloor = true; continue }
+          if (tMs <= hwMs - SALES_HW_OVERLAP_MS) { reachedFloor = true; continue } // re-read the overlap (collections-market.ts)
           if (a.type && SALE_TYPES.has(a.type) && a.signature && a.tokenMint) sales.push(a)
         }
         if (reachedFloor || acts.length < SALES_PASS_LIMIT) { reachedFloor = true; break }

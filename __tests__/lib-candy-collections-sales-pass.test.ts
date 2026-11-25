@@ -97,6 +97,20 @@ describe("runCollectionsSalesPass", () => {
     expect(state.meCalls[0]).toContain(`limit=${SALES_PASS_LIMIT}`)
   })
 
+  it("re-reads 15 min below the mark: a same-second sale and a late-indexed older one are offered; older is not (2026-11-24)", async () => {
+    // Mark 2026-11-20T23:26:16Z. A strict `<= mark` floor dropped both of the first two for good.
+    state.me["2025_allstar_icons"] = [
+      sale("SAMESEC", "2026-11-20T23:26:16Z"),
+      sale("LATEIDX", "2026-11-20T23:21:16Z"),
+      sale("TOOOLD", "2026-11-20T23:06:16Z"),
+    ]
+    const r = await run()
+    expect(r.ok).toBe(true)
+    expect(state.parks.map((p) => p.p_signature)).toEqual(["SAMESEC", "LATEIDX"])
+    // Nothing newer than the mark was read, so the mark does not move.
+    expect(state.updates).toEqual([])
+  })
+
   it("never writes the rotating lane's market_checked_at (or anything but the high-water mark)", async () => {
     state.me["2025_allstar_icons"] = [sale("S1", "2026-11-21T22:00:00Z"), sale("OLD", "2026-11-19T00:00:00Z")]
     await run()
