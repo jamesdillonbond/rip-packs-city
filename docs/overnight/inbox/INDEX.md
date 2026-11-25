@@ -1,4 +1,4 @@
-# Inbox index — 703 live filings
+# Inbox index — 704 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -34,9 +34,10 @@ failure it documents.
 
 ---
 
-## 2026-11-25 — 1 filing
+## 2026-11-25 — 2 filings
 
 - [✅ DISPOSITIONED 11-24 ~8:33 PM PT (Claude Code, attended): SESSION PROBES, no lane — `pg_net_request_log` holds only 5 publicnode calls ever (7:17 PM 200, 7:56 PM ×4 403); no function or pg_cron job names publicnode (the one DB Solana caller, `candy_collections_discover_begin`, hits mainnet-beta daily); arm window 2 h, clears ~9:57 PM PT by itself — Daytime monitor — pg_net_http_403 arm reads CRITICAL on 4 Solana RPC 403s to solana-rpc.publicnode.com ("Indexed requests require a personal token"); self-inflicted, candy data fresh (no outage)](2026-11-25T0415Z-rpc-daytime-monitor-pg-net-http-403-publicnode-indexed-token.md)
+- [NEW 11-24 ~11:12 PM PT (rpc-daytime-monitor, LOW): fast-lane wmc writer `refresh_wmc_fmv_changed` hit a deadlock (40P01) at 04:13Z + a lock timeout at 04:18Z — self-cleared (next 10 runs ok), the only non-upstream fails in the 6h window; the 11-10 SKIP-LOCKED deadlock fix covered resync_stuck_wmc_fmv/reconcile but NOT this lane — night pass: confirm the partner from the Postgres log and consider the same ordered-lock treatment](2026-11-25T0712Z-rpc-daytime-monitor-refresh-wmc-fmv-changed-fast-lane-deadlock.md)
 
 ## 2026-11-24 — 3 filings
 
