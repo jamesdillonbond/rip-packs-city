@@ -11,22 +11,24 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
-✅ **FULL REGENERATION 2026-10-09 (PT, ~11:15 PM; Claude Code, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live. ZERO drift in any fact this file asserts; only the growth counts moved.**
+✅ **FULL REGENERATION 2026-11-24 (PT, ~10:05 PM; Claude Code cloud, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live, plus five tables CLAUDE.md now leans on (`sales_market`, `edition_fmv_current`, `candy_listings`, `panini_sales`, `panini_card_serials`). ZERO drift in any fact this file asserts; only the growth counts moved.** Previous full regeneration 2026-10-09 (column kept below).
 
-| fact | 09-08 | **10-09** | note |
-|---|---|---|---|
-| `public` base tables | 423 | **602** | informational |
-| `public` views | 137 | **158** | |
-| `public` materialized views | — | **36** | |
-| `public` functions | 731 | **963** | |
-| active `cron.job` rows | 133 | **221** | |
-| `editions` columns | 36 | **36** | unchanged |
-| `sales` partitions | 2020–2027 | **2020–2027** | unchanged; `fmv_snapshots` = 2025, 2026, 2027 |
-| `public.collections` | 7 (6 active) | **7 (6 active)** | only `panini_blockchain` inactive at this regen — ⚠ **stale since 2026-10-19: all 7 active** (re-read 2026-11-03; table below corrected) |
-| tables with `rowsecurity = false` | 0 | **0** | invariant HOLDS |
-| `check_public_security_invariants()` | 0 rows | **0 rows** | clean |
-| `check_anon_write_surface()` | 0 rows | **0 rows** | clean |
-| `check_secdef_anon_exec_drift()` | — | **array length 0** | clean |
+*Previous:* **FULL REGENERATION 2026-10-09 (PT, ~11:15 PM; Claude Code, Supabase MCP `execute_sql`) — every query in "Regeneration SQL" below re-run against live. ZERO drift in any fact this file asserts; only the growth counts moved.**
+
+| fact | 09-08 | 10-09 | **11-24** | note |
+|---|---|---|---|---|
+| `public` base tables | 423 | 602 | **838** | informational |
+| `public` views | 137 | 158 | **190** | |
+| `public` materialized views | — | 36 | **57** | |
+| `public` functions | 731 | 963 | **1,291** | |
+| active `cron.job` rows | 133 | 221 | **324** | |
+| `editions` columns | 36 | 36 | **38** | +`autographed_at`, +`rarity_label` (11-12) |
+| `sales` partitions | 2020–2027 | 2020–2027 | **2020–2027** | unchanged; `fmv_snapshots` = 2025, 2026, 2027 |
+| `public.collections` | 7 (6 active) | 7 (6 active) | **7 (7 active)** | all 7 active since 2026-10-19 (Panini) |
+| tables with `rowsecurity = false` | 0 | 0 | **0** | invariant HOLDS |
+| `check_public_security_invariants()` | 0 rows | 0 rows | **0 rows** | clean |
+| `check_anon_write_surface()` | 0 rows | 0 rows | **0 rows** | clean |
+| `check_secdef_anon_exec_drift()` | — | array length 0 | **array length 0** | clean |
 
 Enums byte-identical to the table below. FMV homes unchanged: `pinnacle_fmv_snapshots` absent, its `_backup_20260608` present, `pinnacle_catalog` carries the same 9 `fmv_*` columns. Every table named in the existence sweep exists with the same kind; `analytics_sales`, `sales_market` and `fmv_current` are VIEWS, `edition_fmv_current` is a base table, and `sales` / `fmv_snapshots` are partitioned parents. ⚠ The 09-08 note below said the column inventories were 08-22 vintage. This file carries no per-table column inventory beyond the ones the SQL re-reads, so this run covers everything it generates; the dated sections further down (Pinnacle grain, trophy case, …) are prose, not generated.
 
@@ -106,7 +108,7 @@ enum tables, partition lists and column inventories below still date from 2026-0
 
 ## Existence of tables CLAUDE.md names in its "verify before writing queries" block
 
-All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_moments_cache`,
+All present and live (2026-07-16; ✅ re-swept 2026-11-24, none missing, plus `sales_market` view · `edition_fmv_current` · `candy_listings` · `panini_sales` · `panini_card_serials`): `editions`, `pinnacle_editions`, `wallet_moments_cache`,
 `fmv_snapshots`, `sales`, `badge_editions`, `flowty_transactions`, `flowty_loans`,
 `flowty_loan_events`, `players`, `sets`, `linked_accounts`, `collections`, `pinnacle_sales`,
 `pinnacle_catalog`, `pinnacle_fmv_history`, `moments`, `pipeline_runs`,
