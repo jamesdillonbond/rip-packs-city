@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
+  atlasMintedCounts,
+  mintedCountRaises,
   atlasEditionToCatalogRow,
   atlasErrorMessage,
   atlasLowAskCents,
@@ -281,5 +283,30 @@ describe("sweepAtlasOpenListings (2026-11-24)", () => {
     const s = await sweepAtlasOpenListings(async (_m, b) => (Number(b.offset) === 0 ? ok({ transactions: full }) : ok({ error: "upstream hiccup" })), { concurrency: 1 })
     expect(s.complete).toBe(false)
     expect(s.errors.join(" ")).toMatch(/no transactions array/)
+  })
+})
+
+// 2026-11-25: the 6-hourly floors_only run raises pinnacle_catalog.total_minted to Atlas's live numMinted.
+describe("live mint counts — raise-only", () => {
+  it("reads render → numMinted and leaves out an edition with no render id or no count (never 0)", () => {
+    const m = atlasMintedCounts([
+      { renderId: "OEV2-WDMG-WINN-S2", numMinted: "640" },
+      { renderId: "OEV2-WDMG-OWL-S2", numMinted: 603 },
+      { renderId: "NO-COUNT", numMinted: null },
+      { numMinted: 12 },
+      "junk",
+    ])
+    expect([...m.entries()]).toEqual([["OEV2-WDMG-WINN-S2", 640], ["OEV2-WDMG-OWL-S2", 603]])
+  })
+  it("raises a trailing count, fills a NULL one, and never lowers or touches an unknown render", () => {
+    const live = new Map([["A", 640], ["B", 500], ["C", 10], ["D", 7]])
+    const raises = mintedCountRaises(live, [
+      { render_id: "A", total_minted: 606 },
+      { render_id: "B", total_minted: 500 },
+      { render_id: "C", total_minted: 12 },
+      { render_id: "D", total_minted: null },
+      { render_id: "E", total_minted: 3 },
+    ])
+    expect(raises).toEqual([{ render_id: "A", total_minted: 640 }, { render_id: "D", total_minted: 7 }])
   })
 })

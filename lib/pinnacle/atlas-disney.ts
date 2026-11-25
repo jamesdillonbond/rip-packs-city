@@ -240,6 +240,39 @@ export function atlasEditionToCatalogRow(edition: unknown, nowIso: string, limit
 export type AtlasCatalogRow = NonNullable<ReturnType<typeof atlasEditionToCatalogRow>>
 
 /** Dapper's own per-edition low ask, in cents; null when nothing is listed (Atlas sends "0"). */
+/**
+ * Live mint counts from a SearchEditions sweep: render_id → numMinted (2026-11-25). An open edition keeps minting
+ * between the daily catalog sweeps, so pinnacle_catalog.total_minted trailed the chain by ~5 % on a live set
+ * (Mugs Vol.2: 6,145 vs 6,474 on 11-24). An edition with no render id or no numeric count is left out, never 0.
+ */
+export function atlasMintedCounts(editions: unknown[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const e of editions) {
+    const r = rec(e)
+    const renderId = str(r?.renderId)
+    const n = int(r?.numMinted)
+    if (renderId && n != null && n >= 0) out.set(renderId, n)
+  }
+  return out
+}
+
+/**
+ * The catalog rows whose total_minted should RISE to the live count. Raise-only: a mint count never goes down, so a
+ * lower live value (a stale or partial page) is ignored rather than written. A NULL catalog count is filled.
+ */
+export function mintedCountRaises(
+  live: Map<string, number>,
+  current: Array<{ render_id: string; total_minted: number | null }>,
+): Array<{ render_id: string; total_minted: number }> {
+  const out: Array<{ render_id: string; total_minted: number }> = []
+  for (const c of current) {
+    const n = live.get(c.render_id)
+    if (n == null) continue
+    if (c.total_minted == null || n > Number(c.total_minted)) out.push({ render_id: c.render_id, total_minted: n })
+  }
+  return out
+}
+
 export function atlasLowAskCents(edition: unknown): number | null {
   const e = rec(edition)
   const n = Number(e?.lowAskCents)
