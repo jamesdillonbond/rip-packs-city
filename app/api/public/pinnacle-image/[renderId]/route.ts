@@ -33,6 +33,9 @@ const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
 // render_id is an uppercase alnum + dash slug; reject anything else (SSRF guard).
 const RENDER_ID_RE = /^[A-Za-z0-9-]{3,64}$/;
 const CACHE_SECONDS = 1800; // 30m, comfortably under the signature TTL (hours)
+// A request slower than this logs its legs: the OG builder's art budget is 4.5 s for ALL of its
+// fallbacks (lib/og/img-data.ts), so anything near it costs a share card its art.
+const SLOW_LEG_MS = 3000;
 
 const MEDIA_QUERY = `
 query PinnacleImage($rid: String!) {
@@ -120,36 +123,57 @@ export async function GET(
   const v = req.nextUrl.searchParams.get("v");
   const variant: Variant = v === "quarter" ? "quarter" : v === "thumb" ? "thumb" : "front";
 
+  // 2026-11-25 (diagnostic, no behaviour change): which leg answered and how long each took.
+  // Three OG renders on 11-25 (07:56Z, 08:01Z, 11:04Z) died exactly ~7.05 s after the edge took
+  // the request: Vercel's image optimizer gave up waiting for THIS route and fell through to the
+  // function with the `/_next/image` path (MODULE_NOT_FOUND). The route is ~0.5 s p50 / 2.1 s max
+  // when probed, and from the DB the GraphQL leg answers 530, so the slow leg is unknown. Every
+  // leg that fails or takes over SLOW_LEG_MS now logs one line, and the response names its source.
+  const legs: string[] = [];
+  let source = "none";
   let url: string | null = null;
+  const t0 = Date.now();
   try {
     url = await resolveSignedUrl(renderId, variant);
-  } catch {
+    legs.push(`gql:${url ? "ok" : "miss"}:${Date.now() - t0}ms`);
+    if (url) source = "gql";
+  } catch (e) {
     url = null;
+    legs.push(`gql:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t0}ms`);
   }
   // Cache for CACHE_SECONDS unless a fallback signature expires sooner (keep 5 min spare).
   let cacheSeconds = CACHE_SECONDS;
   if (!url) {
+    const t1 = Date.now();
     try {
       const page = await resolveFromEditionPage(renderId, variant);
       const left = page ? page.exp - Math.floor(Date.now() / 1000) - 300 : 0;
       if (page && left > 60) {
         url = page.url;
         cacheSeconds = Math.min(CACHE_SECONDS, left);
+        source = "edition-page";
       }
-    } catch {
+      legs.push(`edition-page:${url ? "ok" : "miss"}:${Date.now() - t1}ms`);
+    } catch (e) {
       url = null;
+      legs.push(`edition-page:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t1}ms`);
     }
+  }
+  const totalMs = Date.now() - t0;
+  if (!url || totalMs > SLOW_LEG_MS) {
+    console.warn(`[pinnacle-image] ${renderId} ${variant} source=${source} total=${totalMs}ms ${legs.join(" ")}`);
   }
   if (!url) {
     // No image resolvable (unknown render_id or upstream fault). 404 so the
     // <img> onError can fall back to a placeholder tile.
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return NextResponse.json({ error: "not found" }, { status: 404, headers: { "x-pinnacle-image-source": source } });
   }
 
   return NextResponse.redirect(url, {
     status: 302,
     headers: {
       "Cache-Control": `public, s-maxage=${cacheSeconds}, stale-while-revalidate=86400`,
+      "x-pinnacle-image-source": source,
     },
   });
 }

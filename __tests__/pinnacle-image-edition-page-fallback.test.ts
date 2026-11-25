@@ -130,6 +130,32 @@ describe("GET /api/public/pinnacle-image/[renderId] — edition-page fallback", 
     expect(db.calls).toEqual([])
   })
 
+  // 2026-11-25: the response names the leg that served it, and a miss or a slow request logs its
+  // legs — three OG renders died ~7.05 s in on 11-25 (the image optimizer's give-up) with no trace
+  // of which upstream was slow.
+  it("names its source: gql, edition-page, or none on a 404 — and a miss logs every leg", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      stub(new Response(asset(RID, "front.png"), { status: 200 }))
+      const viaPage = await GET(req(), params())
+      expect(viaPage.headers.get("x-pinnacle-image-source")).toBe("edition-page")
+
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: { searchPinnacleEditions: { edges: [{ node: { medias: [{ name: "Front_Transparent", url: "https://signed/front" }] } }] } } }), { status: 200 })))
+      const viaGql = await GET(req(), params())
+      expect(viaGql.headers.get("x-pinnacle-image-source")).toBe("gql")
+
+      warn.mockClear()
+      stub(new Response("nope", { status: 403 }))
+      const miss = await GET(req(), params())
+      expect(miss.status).toBe(404)
+      expect(miss.headers.get("x-pinnacle-image-source")).toBe("none")
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0][0])).toMatch(new RegExp(`\\[pinnacle-image\\] ${RID} front source=none total=\\d+ms gql:miss:\\d+ms edition-page:miss:\\d+ms`))
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it("404s when the page carries only another pin's asset", async () => {
     stub(new Response(asset(OTHER, "front.png"), { status: 200 }))
     expect((await GET(req(), params())).status).toBe(404)
