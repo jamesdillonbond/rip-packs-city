@@ -78,6 +78,21 @@ describe("applyDropCorrections — the official page overrides the pack book", (
     applyDropCorrections(d, new Date("2026-11-14T00:00:00Z"), corr)
     expect(d[0].status).toBe("ended")
   })
+  // 2026-11-25: Walt Disney Mugs Vol.2 reached the calendar only as its Open Edition mints — no price, no close, and a
+  // start at the custody pre-mint (11-15 2:24 PM PT) rather than the sale's 11/16 9 AM PT open.
+  it("an Open Edition sold as capsules takes the official price, open and close", () => {
+    const d = [base({ dist_id: "OEV2-WDMG", title: "Walt Disney Mugs Vol.2 (Open Edition)", kind: "open_edition", retail_usd: null, start_time: "2026-11-15T22:24:13Z", end_time: null, status: "open" })]
+    applyDropCorrections(d, new Date("2026-11-25T15:00:00Z"))
+    expect(d[0]).toMatchObject({ title: "Walt Disney Mugs Vol.2", kind: "capsule", retail_usd: 4.99, start_time: "2026-11-16T17:00:00.000Z", end_time: "2026-11-30T17:00:00.000Z", status: "open" })
+    expect(dropStatusLine(d[0])).not.toMatch(/draw/i)
+    applyDropCorrections(d, new Date("2026-11-30T18:00:00Z"))
+    expect(d[0].status).toBe("ended")
+  })
+  it("a correction's price never overwrites a price the feed already carries", () => {
+    const d = [base({ dist_id: "OEV2-WDMG", retail_usd: 9.99 })]
+    applyDropCorrections(d, new Date("2026-11-25T15:00:00Z"))
+    expect(d[0].retail_usd).toBe(9.99)
+  })
   it("every shipped correction names its source and date", () => {
     for (const c of DROP_CORRECTIONS) {
       expect(c.source.length, c.dist_id).toBeGreaterThan(0)

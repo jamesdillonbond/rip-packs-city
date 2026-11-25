@@ -134,7 +134,11 @@ export interface DropCorrection {
   title?: string
   kind?: "capsule" | "rsvp" | "sale"
   detail?: string
+  /** The official open, where the feed's first sighting is not it (a capsule set is pre-minted to custody first). */
+  start_time?: string
   end_time?: string
+  /** The official price, for a feed row that carries none (a Pinnacle Open Edition read from mints). */
+  retail_usd?: number
   source: string
   verified_at: string
 }
@@ -144,10 +148,28 @@ export const DROP_CORRECTIONS: DropCorrection[] = [
     dist_id: "8922",
     title: "Walt Disney Mugs Vol.1",
     kind: "capsule",
-    detail: "6 Mickey & Friends mugs, 4 variants each · 98 Friends-Giving Vol.2 LE pins hidden inside (~1 in 18)",
+    // Official wording (re-read 11-25, disneypinnacle.com/releases/f3454f08-8c70-4997-8827-16d1d324ff40):
+    // 98 LE pins hidden in Mug capsules, "about 1 in 18 while they last". On chain all 98 were opened
+    // 11-09 9:00 AM → 2:45 PM PT, so the odds held only for the first few hours of a two-week sale.
+    detail: "6 Mickey & Friends mugs, 4 variants each · 98 Friends-Giving Vol.2 LE pins hidden inside (~1 in 18 while they last; all 98 were pulled the first day)",
     end_time: "2026-11-23T17:00:00Z",
-    source: "disneypinnacle.com/releases",
-    verified_at: "2026-11-08",
+    source: "disneypinnacle.com/releases/f3454f08-8c70-4997-8827-16d1d324ff40",
+    verified_at: "2026-11-25",
+  },
+  {
+    // Walt Disney Mugs Vol.2 is in no pack feed: the calendar sees it only as the "OEV2-WDMG" Open Edition minting
+    // (buildPinnacleOpenEditionDrops), with no price or close, and starting at the custody pre-mint (11-15 2:24 PM
+    // PT) instead of the sale's open. Official page, read 11-25: $4.99 mystery capsule, 1 pin, open edition set of
+    // six, 11/16 9 AM PT → 11/30 9 AM PT; no hidden LE pins stated.
+    dist_id: "OEV2-WDMG",
+    title: "Walt Disney Mugs Vol.2",
+    kind: "capsule",
+    detail: "$4.99 mystery capsule · 1 of 6 Winnie the Pooh & friends mugs (open edition)",
+    start_time: "2026-11-16T17:00:00Z",
+    end_time: "2026-11-30T17:00:00Z",
+    retail_usd: 4.99,
+    source: "disneypinnacle.com/releases/e74c50f2-1564-44a6-81f0-91d428766d29",
+    verified_at: "2026-11-25",
   },
   {
     dist_id: "8923",
@@ -174,7 +196,9 @@ export function applyDropCorrections(drops: PackCalendarDrop[], now: Date, corre
     if (c.title) d.title = c.title
     if (c.kind) d.kind = c.kind
     if (c.detail) d.detail = c.detail
+    if (c.start_time) d.start_time = new Date(c.start_time).toISOString()
     if (c.end_time) d.end_time = new Date(c.end_time).toISOString()
+    if (c.retail_usd != null && d.retail_usd == null) d.retail_usd = c.retail_usd
     const start = Date.parse(d.start_time)
     const end = d.end_time ? Date.parse(d.end_time) : NaN
     d.status = start > t ? "upcoming" : Number.isFinite(end) && end <= t ? "ended" : "open"
