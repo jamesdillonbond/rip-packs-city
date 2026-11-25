@@ -287,5 +287,11 @@ describe("fetchTeamClosestSeries", () => {
       .toMatchObject({ allComplete: true })
     expect(await fetchTeamClosestSeries(TEAM, "0xabc", rpcClient({ get_team_series_checklists: { error: { message: "boom" } } }).db)).toBeNull()
     expect(await fetchTeamClosestSeries(TEAM, "0xabc", rpcClient({ get_team_series_checklists: { data: { wallet_cached: true, series: [] } } }).db)).toBeNull()
+
+  })
+
+  it("a series with no to_go and no complete flag is unknown, never 'all complete' (2026-11-24)", async () => {
+    const malformed = { wallet_cached: true, series: [{ series_num: 9, players_total: 10, players_owned: null, to_go: null, complete: null, players: [] }] }
+    expect(await fetchTeamClosestSeries(TEAM, "0xabc", rpcClient({ get_team_series_checklists: { data: malformed } }).db)).toBeNull()
   })
 })

@@ -48,5 +48,8 @@ describe("CandyBoardClient — Floor movers tab", () => {
     expect(text).toContain("Bobby Witt Jr.")
     expect(text).toContain("50.0%")
     expect(text).toContain("missed a day inside this window")
+    // 2026-11-24: mv_candy_floor_movers has no set filter, so the copy must not describe it as 2026 Base only.
+    expect(text).toContain("every set, not only 2026 Base")
+    expect(text).not.toContain("each 2026 Base edition")
   })
 })

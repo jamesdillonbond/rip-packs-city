@@ -10,6 +10,7 @@ import {
   MIN_PLAUSIBLE_BID_ACCOUNTS,
   decodeBidState,
   fetchOpenSeaBidStates,
+  rentExemptLamports,
   runOpenSeaChainBids,
 } from "@/lib/candy/opensea-chain-bids"
 import { OPENSEA_SOLANA_PROGRAM, encodeBase58 } from "@/lib/candy/opensea-chain-listings"
@@ -91,7 +92,9 @@ function fakeDb(opts: { wmc: Array<{ moment_id: string; edition_key: string | nu
 
 const filler = (n: number) => Array.from({ length: n }, (_, i) => ({ pda: 100 + (i % 100), data: bidState({ owner: 9, targetId: 200 + (i % 40), amount: BigInt(1) }), lamports: SOL }))
 const NOW = Date.UTC(2026, 10, 24, 14, 0, 0)
-const wmc = [11, 12, 13, 14, 15, 16, 17].map((n) => ({ moment_id: b58(n), edition_key: "key-1" }))
+// Rent-exempt minimum of the 200-byte fixture account: lamports up to here are rent, never bid money (2026-11-24).
+const RENT = rentExemptLamports(200)
+const wmc = [11, 12, 13, 14, 15, 16, 17, 18].map((n) => ({ moment_id: b58(n), edition_key: "key-1" }))
 
 describe("decodeBidState", () => {
   it("reads bidder, single-card target, quantity, amount and expiry; skips a Some(field)", () => {
@@ -107,16 +110,25 @@ describe("decodeBidState", () => {
   })
 })
 
+describe("rentExemptLamports", () => {
+  it("is Solana's rent-exempt minimum: (128 + bytes) x 6,960 lamports — 3,626,160 for a 393-byte BidState (read on-chain 11-24)", () => {
+    expect(rentExemptLamports(393)).toBe(BigInt(3_626_160))
+  })
+})
+
 describe("runOpenSeaChainBids", () => {
   it("writes funded single-card Candy bids only and retires every OpenSea offer it did not confirm", async () => {
     const accounts = [
-      { pda: 51, data: bidState({ owner: 1, targetId: 11, amount: SOL / BigInt(4) }), lamports: SOL / BigInt(4) + BigInt(2_000_000) }, // funded → WRITTEN
+      { pda: 51, data: bidState({ owner: 1, targetId: 11, amount: SOL / BigInt(4) }), lamports: SOL / BigInt(4) + RENT },               // funded above rent → WRITTEN
       { pda: 52, data: bidState({ owner: 1, targetId: 12, amount: SOL }), lamports: BigInt(2_000_000) },                                  // margin-funded → skipped
       { pda: 53, data: bidState({ owner: 1, targetId: 13, amount: SOL, expiry: BigInt(1_000) }), lamports: SOL * BigInt(2) },              // expired
       { pda: 54, data: bidState({ owner: 1, targetId: 14, amount: SOL, qty: 2, filled: 2 }), lamports: SOL * BigInt(2) },                  // filled
       { pda: 55, data: bidState({ owner: 1, targetId: 15, amount: SOL, currency: 7 }), lamports: SOL * BigInt(2) },                        // non-SOL
       { pda: 56, data: bidState({ owner: 1, target: 1, targetId: 16, amount: SOL }), lamports: SOL * BigInt(2) },                          // collection bid
       { pda: 57, data: bidState({ owner: 1, targetId: 17, amount: SOL, qty: 3, filled: 1 }), lamports: SOL },                             // 2 left, 1 SOL held → under-funded
+      // The 11-24 production shape: rent + 20,520 lamports against a 0.001 SOL bid. The rent alone exceeds the bid, so the
+      // pre-fix check (total lamports >= amount) wrote it as live; only lamports above rent can fund it.
+      { pda: 58, data: bidState({ owner: 1, targetId: 18, amount: BigInt(1_000_000) }), lamports: RENT + BigInt(20_520) },             // rent-only → under-funded
       ...filler(MIN_PLAUSIBLE_BID_ACCOUNTS),
     ]
     const stale = new Date(NOW - 3600_000).toISOString()
@@ -126,7 +138,7 @@ describe("runOpenSeaChainBids", () => {
     expect(rep.ok).toBe(true)
     expect(upserts.map((r) => r.pda_address)).toEqual([b58(51)])
     expect(upserts[0]).toMatchObject({ token_mint: b58(11), edition_id: "ed-1", buyer: b58(1), venue: "opensea", price_sol: 0.25, price_usd: 50, token_size: 1, is_active: true })
-    expect(rep).toMatchObject({ collection_bids: 1, candy_matched: 6, written: 1, skipped_unfunded: 2, skipped_expired: 1, skipped_filled: 1, skipped_not_sol: 1, retired: 2 })
+    expect(rep).toMatchObject({ collection_bids: 1, candy_matched: 7, written: 1, skipped_unfunded: 3, skipped_expired: 1, skipped_filled: 1, skipped_not_sol: 1, retired: 2 })
     expect(retireVenue()).toBe("opensea")
     expect([...active.keys()]).toEqual([b58(51)])
   })

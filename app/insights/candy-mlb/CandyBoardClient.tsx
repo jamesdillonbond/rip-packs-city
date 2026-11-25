@@ -919,7 +919,7 @@ export default function CandyBoardClient({
       {tab === "movers" && (
         <>
           <div className="cdy-blurb">
-            <b>Floor movers · 7 days</b> — each 2026 Base edition&apos;s confirmed floor (the cheapest Magic Eden or
+            <b>Floor movers · 7 days</b> — each Candy edition&apos;s confirmed floor (every set, not only 2026 Base) (the cheapest Magic Eden or
             OpenSea ask seen in the last 12 hours) on two days a week apart, where both floors are $2 or more and they
             differ. An edition with no confirmed ask on either day is left out — an ask nobody re-read is not a price
             move. A floor can rise because the cheapest copy <b>sold</b> or was delisted, not only because asks went up.
@@ -934,7 +934,7 @@ export default function CandyBoardClient({
             empty={sectionEmptyCopy(
               "Floor movers",
               degraded,
-              "No floor movers to show. OpenSea asks joined Candy's book on Nov 23, 2026, so the first honest 7-day window closes with the Dec 1 daily record — a window that starts earlier would show the second venue being added, not the market. After that, an empty tab means no 2026 Base edition's floor moved."
+              "No floor movers to show. OpenSea asks joined Candy's book on Nov 23, 2026, so the first honest 7-day window closes with the Dec 1 daily record — a window that starts earlier would show the second venue being added, not the market. After that, an empty tab means no Candy edition with a $2-or-more floor moved."
             )}
           />
         </>

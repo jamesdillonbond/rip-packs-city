@@ -285,7 +285,9 @@ export async function fetchTeamClosestSeries(
   if (parsed.wallet_cached !== true || parsed.series.length === 0) return null
   const closest = closestSeries(parsed.series, true)
   if (closest == null) {
-    return parsed.series.every((s) => s.to_go === 0)
+    // `complete` is the RPC's own flag (to_go = 0 with a wallet). Not `to_go === 0`: the parser defaults a missing
+    // to_go to 0, so a malformed row would read as "every series finished" (2026-11-24 review).
+    return parsed.series.every((s) => s.complete === true)
       ? { allComplete: true, series_num: null, to_go: 0, players_total: 0, cost_to_go_usd: 0, unlisted: 0 }
       : null
   }
