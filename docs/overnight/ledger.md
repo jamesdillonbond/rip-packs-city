@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:05 PM PT · 🔧 SHIPPED (code) — Binder source bar spans the whole wallet: an "Other" share for moments whose source is unknown, plus Gifts (Claude Code cloud; Trevor: "Keep going")
+
+- Live check of `6917969` on Disney Pinnacle: a 187-pin wallet drew one full-width teal "Packs 31" bar, a 100 %-packs claim about 156 pins whose source nobody knew. The bar now spans the moment count, and the unknown remainder is a grey "Other" share. Gifts (`gift_count`, already fetched) were dropped from the bar and now show. Tested both ways (Other appears for 187 vs 33 known; none when all are known); planting the old behaviour turns the test red.
+- Also verified live: light theme reads correctly; Pinnacle shows no Unlocked stat.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~7:56 PM PT · 📝 DOCS — catch-up pass: Access Node Error on `/api/wallet-backfill` dispositioned (no fix needed); three inbox filings marked in INDEX; Cowork's 9:20 AM sweep entry landed (Claude Code, attended; Trevor: "get us caught up … work through any recent handoffs")
 
 - **schema-truth.md:** a concurrent cloud session shipped the full regeneration first (`773ad9642`, 7:55 PM PT); my independent live re-run the same minute matched it (tables 838, views 190, matviews 57, functions 1,291, cron 324, `editions` 38 cols, zero asserted drift), so I kept theirs and only corrected its stamp, which read "~10:05 PM" (a future time).
