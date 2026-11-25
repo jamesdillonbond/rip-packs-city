@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~9:56 PM PT · ✅ VERIFIED (docs only) — `rpc-topshot-misattrib-remap` (job 926, `cron_heavy` since `20261125025303`) first run succeeded, 102.5 s (Claude Code, attended; Trevor: "keep going")
+
+- Old job 721 history: ok 55.6–98.5 s on 11-16 → 11-22, failed at exactly 120.1 s on 11-19 and 11-23 (`statement_timeout`). Tonight's 102.5 s is inside the old ok band, so the 600 s `cron_heavy` budget is in place but not yet exercised; a later run > 120 s that succeeds proves it. Durations trend up (~60 → ~100 s over a week). Inbox `2026-11-24T1617Z` marked.
+- **Revert:** docs only.
+
 ### 2026-11-24 ~10:05 PM PT · 🗄 APPLIED (`20261125055322`) + 🔧 SHIPPED (code) — the last All Day surfaces still printing the raw series number now use the official names (Claude Code cloud; Trevor: "Keep going")
 
 - Live sweep of /nfl-all-day/{overview,sets,market,analytics,sniper} after `1197ce1`: the "Explore the catalog" Series pills still read "Series 3…10". The component already used `seriesPageLabel`; the `unstable_cache` entry (1 h, outlives a deploy) held the old computed labels → key bumped `popular-on-collection-v2` → `v3`.
