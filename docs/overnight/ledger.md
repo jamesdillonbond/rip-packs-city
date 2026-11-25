@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~9:55 PM PT · 🔧 SHIPPED (code) — All Day series page <title>/og:title use the official name too ("2025 Season — NFL All Day…", not "Series 9 (Season 2025)") (Claude Code cloud; Trevor: "Keep going. Connect to the repo and take care of this")
+
+- After `4754a01` deployed READY, /nfl-all-day/series/series-9 rendered H1 "2025 Season" and /series-2 "Historical", but `seriesPageMetadata` (lib/seo.ts) still decoded only Top Shot. It now reads `ALLDAY_SERIES_DISPLAY`, and a Historical release's `season` (its release year) is no longer called "Season 20xx". seo.test re-pinned (it asserted the raw "Series 7"); new `__tests__/allday-series-page-title-uses-the-official-name.test.ts`.
+- Revert: revert the commit by message "All Day series page title uses the official series name".
+
 ### 2026-11-24 ~10:10 PM PT · 🔧 SHIPPED (CSS) — Binder desktop table fits every laptop width: binder-scoped cell padding 12 px, 8 px below 1536 px (Claude Code cloud; Trevor: "Keep going")
 
 - A live measurement after `ca49b09` showed real rows ran the 13-column table to ~1,370 px: 190 px of sideways scroll at 1280, 100 at 1366, 8 at 1440, and 27 past the page's 1,342 px content cap at 1536+. The generic 16 px cell padding (416 px across 13 columns) was the lever. A `.rpc-table--binder` rule (two-class specificity, so it beats the later `.rpc-table th/td`) sets 12 px, and 8 px below 1536 px.
