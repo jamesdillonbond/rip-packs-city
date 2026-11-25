@@ -13,6 +13,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:41 AM PT · 🔧 SHIPPED (code, diagnostic) — pinnacle-image names the leg that served it and logs slow or failed legs (Claude Code cloud; Trevor: "Keep digging and probing to try and figure it out")
+
+- **Finding.** The `/_next/image` `MODULE_NOT_FOUND` on Pinnacle renders is **not** contained, which corrects this morning's handoff disposition. All 3 of 11-25's cases died **7.05 s** after the edge took the request (07:56:26.706 → 07:56:33.759Z, 08:01:53.993 → 08:02:01.064Z, 11:04:26.666 → 11:04:33.727Z). That fixed interval is Vercel's image optimizer giving up on our route, then falling through to the function with the `/_next/image` path. The OG builder (`lib/og/img-data.ts`) has ONE 4.5 s budget for every leg, so it had already returned no art: the share card got an art-unavailable tile. Only full cards are stored, so it is not pinned.
+- **Not found yet: which leg is slow.**
+  - The route probes fast: 40 uncached calls, p50 0.46 s, p90 0.92 s, max 2.1 s; 8 optimizer MISSes 200 in 1.5–2.0 s.
+  - From the DB, Dapper's GraphQL answers **530** on 20/20 calls, so production may be serving every image from the edition-page fallback.
+  - `pinnacle_render_cache` holds 2 rows (newest 9-29) and covers nothing.
+  - Side finding: both `flow-chain` renders (GEN-20CG-AVTR-S0, GEN-20CG-ALIN-S0) 404 directly.
+- **What.** The response carries `x-pinnacle-image-source: gql | edition-page | none`. A miss, or any request over 3 s, logs `[pinnacle-image] <id> <variant> source=… total=…ms` with each leg's result and ms. No behaviour change. A planted defect (log removed) turns the new test red; `npm run preflight`: 5 steps, 0 failed.
+- **Revert.** `git revert` this commit.
+
 ### 2026-11-25 ~7:55 AM PT · 📊 READ (docs only) — fmv-recalc `:08` historical-fallback error rate for PT 11-24: 4/24 = 16.7 % → over 10 %, job-704 move alone did NOT fix it (scheduled task; owed by inbox 2026-11-23T1545Z §6 row 2)
 - 24 `fmv-recalc` runs at :08 PT 11-24 (all ok=true, all carry the key); 4 non-null `historical_fallback_error`, all one string: `canceling statement due to statement timeout` (04:08, 07:08, 10:08, 16:08 PT; 103–131 s). :28/:48 = 0/48.
 - 3 of 4 errors fall in the 4 hours job 330 `rpc-thp-leg-panini` (`9 0,6,12,18 * * *` UTC) fired (04/10/16/22:09 PT) vs 1 of the other 20 — n=4, a candidate, not a proof. Also even-hour neighbours: 924 (`8 */2`, moved to :54 at 7:37 AM PT today — after this window), 235 (`7 */2`), 807 (`9 */2`). Other minute-7–9 slots: 20, 22, 77, 220 (weekly), 303, 408, 443, 484, 527, 586, 596, 602, 630, 650, 802, 836, 853, 878 + every-minute lanes. Nothing changed; re-read PT 11-26 for 924's effect.
