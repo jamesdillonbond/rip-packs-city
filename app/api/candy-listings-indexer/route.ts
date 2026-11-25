@@ -340,6 +340,10 @@ async function handleSweep(req: NextRequest) {
     // Listings ME returned this sweep that are already retired for a moved owner —
     // skipped, so the upsert does not re-activate them.
     let ownerMovedSkipped = 0
+    // Every PDA skipped above, across all pages — the ONLY asks whose owner-moved mark has a reader this run,
+    // so the retirer judges lifting the mark for these alone (audit_20261125: the ever-marked set, 11.7k and
+    // growing, timed the unbounded clear out).
+    const ownerMovedReturnedPdas = new Set<string>()
     let sweepComplete = false
     try {
       const rate = await solUsd()
@@ -501,6 +505,7 @@ async function handleSweep(req: NextRequest) {
           if (!l.pdaAddress || !l.tokenMint || l.price == null || l.price <= 0) continue
           if (ownerMovedPdas.has(l.pdaAddress)) {
             ownerMovedSkipped++
+            ownerMovedReturnedPdas.add(l.pdaAddress)
             continue
           }
 
@@ -797,6 +802,7 @@ async function handleSweep(req: NextRequest) {
       // ask, shows a different owner than the seller — the ask cannot fill.
       const { data: movedData, error: movedErr } = await (supabaseAdmin as any).rpc(
         "candy_retire_listings_owner_moved",
+        { p_returned_pdas: [...ownerMovedReturnedPdas] },
       )
       if (movedErr) {
         writeErrors.push(`owner-moved retire: ${movedErr.message}`)

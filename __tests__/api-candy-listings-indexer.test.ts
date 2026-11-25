@@ -841,6 +841,22 @@ describe("candy-listings-indexer — owner-moved asks (audit_20261108)", () => {
     expect(extra.listings_found).toBe(0)
   })
 
+  // audit_20261125: the mark clear is bounded to the asks skipped THIS run — the unbounded form probed
+  // every ever-marked row (11.7k, growing) and timed out. The skipped PDA must reach the retirer, and an
+  // ask ME let through (different seller) must not.
+  it("hands the retirer exactly the PDAs it skipped as owner-moved this run", async () => {
+    const other: MeListing = { ...ask, pdaAddress: "pdaY", tokenMint: "mintY", seller: "NewOwner222" }
+    fetchMock = installFetchMock([jsonRoute("/listings", [ask, other]), jsonRoute("/activities", [])])
+    const spy = install({
+      ...resolve,
+      [MOVED_PDAS_RPC]: { data: [{ pda_address: "pdaX", seller: "OldOwner111" }, { pda_address: "pdaY", seller: "OldOwner111" }], error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    const call = spy.rpcCalls.find((c) => c.name === "candy_retire_listings_owner_moved")
+    expect(call?.args).toEqual({ p_returned_pdas: ["pdaX"] })
+  })
+
   it("lets the same listing account through when ME now names a DIFFERENT seller (new evidence)", async () => {
     fetchMock = installFetchMock([jsonRoute("/listings", [{ ...ask, seller: "NewOwner222" }]), jsonRoute("/activities", [])])
     const spy = install({ ...resolve, [MOVED_PDAS_RPC]: { data: [{ pda_address: "pdaX", seller: "OldOwner111" }], error: null } })

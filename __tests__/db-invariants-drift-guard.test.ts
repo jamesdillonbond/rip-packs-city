@@ -3749,7 +3749,8 @@ const PINS = [
     // 11-23: both retire arms scoped to venue 'magic_eden' — an OpenSea ask escrows the card.
     fn: "candy_retire_listings_owner_moved",
     test: "supabase/tests/candy_retire_listings_owner_moved.sql",
-    migration: "supabase/migrations/20261124044913_audit_20261123_candy_owner_moved_retirer_magic_eden_only.sql",
+    // 11-25: the card mark clear takes p_returned_pdas (the asks skipped this run) — the ever-marked set timed it out.
+    migration: "supabase/migrations/20261125154323_audit_20261125_candy_owner_moved_clear_bounded_to_returned_asks.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is

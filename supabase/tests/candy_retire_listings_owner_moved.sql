@@ -13,7 +13,7 @@
 -- seller), so it is never retired here; its own lane confirms the escrow hourly.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261124044913_audit_20261123_candy_owner_moved_retirer_magic_eden_only.sql);
+-- (supabase/migrations/20261125154323_audit_20261125_candy_owner_moved_clear_bounded_to_returned_asks.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -31,7 +31,7 @@ CREATE TABLE public.candy_pack_listings (pda_address text PRIMARY KEY, token_min
   is_active boolean, first_seen_at timestamptz, owner_moved_at timestamptz);
 
 -- >>> BEGIN verbatim candy_retire_listings_owner_moved >>>
-CREATE OR REPLACE FUNCTION public.candy_retire_listings_owner_moved()
+CREATE OR REPLACE FUNCTION public.candy_retire_listings_owner_moved(p_returned_pdas text[] DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql
 SET search_path = public
@@ -99,14 +99,28 @@ BEGIN
   GET DIAGNOSTICS v_packs = ROW_COUNT;
 
   -- The seller owns it again (census confirmed): lift the mark; the next sweep restores it.
-  UPDATE candy_listings l
-     SET owner_moved_at = NULL
-    FROM wallet_moments_cache w
-   WHERE l.owner_moved_at IS NOT NULL
-     AND w.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid
-     AND w.moment_id = l.token_mint
-     AND w.wallet_address = l.seller
-     AND w.last_seen_at > l.owner_moved_at;
+  -- 11-25: judged only for the asks ME returned this run (p_returned_pdas) — the mark's only reader is the
+  -- indexer's skip of a RETURNED ask, and the ever-marked set (11.7k, growing) timed this statement out.
+  IF p_returned_pdas IS NULL THEN
+    UPDATE candy_listings l
+       SET owner_moved_at = NULL
+      FROM wallet_moments_cache w
+     WHERE l.owner_moved_at IS NOT NULL
+       AND w.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid
+       AND w.moment_id = l.token_mint
+       AND w.wallet_address = l.seller
+       AND w.last_seen_at > l.owner_moved_at;
+  ELSE
+    UPDATE candy_listings l
+       SET owner_moved_at = NULL
+      FROM wallet_moments_cache w
+     WHERE l.pda_address = ANY (p_returned_pdas)
+       AND l.owner_moved_at IS NOT NULL
+       AND w.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid
+       AND w.moment_id = l.token_mint
+       AND w.wallet_address = l.seller
+       AND w.last_seen_at > l.owner_moved_at;
+  END IF;
   GET DIAGNOSTICS v_cards_cleared = ROW_COUNT;
 
   UPDATE candy_pack_listings pl
@@ -191,6 +205,32 @@ BEGIN
   PERFORM _assert((SELECT owner_moved_at IS NULL FROM public.candy_listings WHERE pda_address = 'P_BACK'), 'mark lifted');
   PERFORM _assert((SELECT is_active AND owner_moved_at IS NULL FROM public.candy_listings WHERE pda_address = 'OS_LISTSTATE'),
     '⚠ an escrowed OpenSea ask is never retired here, though both arms'' evidence (holder <> seller, rewritten after first_seen, a completed walk) holds for it');
+END
+$t$;
+
+-- 11-25: the card mark clear is judged only for the asks the indexer was RETURNED this run (p_returned_pdas).
+-- Two marked asks, both back with their seller; only P_BACK_RETURNED is in the returned set.
+INSERT INTO public.wallet_moments_cache VALUES
+  (:CANDY::uuid, 'SELLER', 'M_BACK_RETURNED', now() - interval '5 minutes'),
+  (:CANDY::uuid, 'SELLER', 'M_BACK_UNSEEN',   now() - interval '5 minutes');
+INSERT INTO public.candy_listings VALUES
+  ('P_BACK_RETURNED', 'M_BACK_RETURNED', '20000000-0000-0000-0000-000000000001', 'SELLER', false, now() - interval '3 days', now() - interval '1 day'),
+  ('P_BACK_UNSEEN',   'M_BACK_UNSEEN',   '20000000-0000-0000-0000-000000000001', 'SELLER', false, now() - interval '3 days', now() - interval '1 day');
+
+DO $t$
+DECLARE v jsonb;
+BEGIN
+  v := public.candy_retire_listings_owner_moved(ARRAY[]::text[]);
+  PERFORM _assert_eq(v->>'cards_cleared', '0', '⚠ an EMPTY returned set clears nothing — it is not NULL, which would judge every mark');
+  PERFORM _assert((SELECT bool_and(owner_moved_at IS NOT NULL) FROM public.candy_listings WHERE pda_address IN ('P_BACK_RETURNED','P_BACK_UNSEEN')),
+    'both marks survive an empty returned set');
+
+  v := public.candy_retire_listings_owner_moved(ARRAY['P_BACK_RETURNED']);
+  PERFORM _assert_eq(v->>'cards_cleared', '1', 'only the returned ask is judged');
+  PERFORM _assert((SELECT owner_moved_at IS NULL FROM public.candy_listings WHERE pda_address = 'P_BACK_RETURNED'),
+    'a returned ask back with its seller has its mark lifted');
+  PERFORM _assert((SELECT owner_moved_at IS NOT NULL FROM public.candy_listings WHERE pda_address = 'P_BACK_UNSEEN'),
+    '⚠ an ask ME did not return keeps its mark — judged on the run it is returned');
 END
 $t$;
 
