@@ -73,6 +73,8 @@ import { editionHref } from "@/lib/entity-href"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import InteractiveSlab from "@/components/InteractiveSlab"
+import { finishFromBadges } from "@/lib/slab-3d"
 import { proxyIpfsUrl, proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { joinMetaParts, metaField } from "@/lib/format"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
@@ -846,22 +848,30 @@ export default async function MomentPage(
         }}
         className="rpc-moment-hero"
       >
-        <div
-          style={{
-            border: `2px solid ${tierColor}`,
-            borderRadius: 12,
-            overflow: "hidden",
-            background: "var(--rpc-surface, #0a0a0a)",
-            aspectRatio: "1 / 1",
-            position: "relative",
-          }}
+        {/* 2026-11-25: the hero is an InteractiveSlab — drag / flip / tilt, opt-in
+            via ?slab=1 (or NEXT_PUBLIC_MOMENT_SLAB_3D=1). Off, it renders the same
+            tier-bordered square as before. */}
+        <InteractiveSlab
+          frameColor={tierColor}
+          title={subject}
+          eyebrow={collectionDisplay}
+          subtitle={joinMetaParts([tier || null, e.series != null ? seriesDisplay(e.series, e.collection_slug) : null], " · ") || null}
+          serialLine={serial ? `#${serial}${mint ? ` / ${mint}` : ""}` : null}
+          finish={finishFromBadges(specialSerials.map((x) => x.badge_type))}
+          rows={[
+            e.set_name ? { label: "Set", value: e.set_name } : null,
+            e.play_type ? { label: "Play", value: e.play_type } : null,
+            { label: "Date", value: fmtAbsDate(parseGameDate(e.game_date)) },
+            !serial && mint ? { label: "Minted", value: mint.toLocaleString("en-US") } : null,
+            showHeroFmv ? { label: "FMV", value: fmtUsd(f?.fmv_usd) } : null,
+          ].filter((x): x is { label: string; value: string } => x != null && x.value !== "")}
         >
           <MomentHeroMedia
             imageCandidates={heroImageCandidates}
             videoUrl={proxyIpfsUrl(e.video_url)}
             alt={subject}
           />
-        </div>
+        </InteractiveSlab>
 
         <div
           style={{
