@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:10 PM PT · 🔧 SHIPPED (CSS) — Binder desktop table fits every laptop width: binder-scoped cell padding 12 px, 8 px below 1536 px (Claude Code cloud; Trevor: "Keep going")
+
+- A live measurement after `ca49b09` showed real rows ran the 13-column table to ~1,370 px: 190 px of sideways scroll at 1280, 100 at 1366, 8 at 1440, and 27 past the page's 1,342 px content cap at 1536+. The generic 16 px cell padding (416 px across 13 columns) was the lever. A `.rpc-table--binder` rule (two-class specificity, so it beats the later `.rpc-table th/td`) sets 12 px, and 8 px below 1536 px.
+- Measured by injecting the exact rules into the live page, wallet `0xbd94cade097e50ac`, scroll/client: 1280 → 1182/1182, 1366 → 1268/1268, 1440 → 1342/1342, 1536 and 1920 → 1342/1342. No other `.rpc-table` user is touched.
+- Tests pin the class on the table and both CSS arms; the 11 suites that read `rpc-tokens.css` all pass.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~9:39 PM PT · 🔧 SHIPPED (code) — trade room: a trade that executed on chain can no longer be cancelled ("Nothing moved" email); a seal's landing record is never rewritten from later holdings; the co-signer's panel must show exactly what is signed (Claude Code cloud; Trevor: "Keep going")
 
 - From a focused security review of the trade room (signing live since 10-31): **no critical or high finding.** RLS on every table, no anon or authenticated access, the relay guard binds cadence, signers, payer, sources and the exact Moments, the kill switch is enforced server-side, and seals are chain facts.
