@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:05 PM PT · 🗄 APPLIED (`20261125055322`) + 🔧 SHIPPED (code) — the last All Day surfaces still printing the raw series number now use the official names (Claude Code cloud; Trevor: "Keep going")
+
+- Live sweep of /nfl-all-day/{overview,sets,market,analytics,sniper} after `1197ce1`: the "Explore the catalog" Series pills still read "Series 3…10". The component already used `seriesPageLabel`; the `unstable_cache` entry (1 h, outlives a deploy) held the old computed labels → key bumped `popular-on-collection-v2` → `v3`.
+- `analytics_sets_series_overview` hardcoded its own label CASE (Top Shot only; All Day got "Series N"). Added the All Day names (`20261125055322`, CREATE OR REPLACE from the live body, ACL unchanged: anon=false). Verified: allday rows 1..10 read Series 1 … 2025 Season … Historical (2026 Release); Top Shot rows unchanged.
+- `lib/analytics/series-labels.ts` `seriesLabel()` (analytics set pages, Sets dashboard, trophy slab) decodes All Day via `ALLDAY_SERIES_DISPLAY`; test re-pinned.
+- Not touched: `sync_cached_listings_from_atlas` writes `'Series ' || e.series` into cached_listings.series_name — Top Shot raw numbers, a separate (Top Shot) instance of the same class.
+- Revert: DB — re-apply `20261018162955_audit_20261018_series_2026_27_season_and_label_in_db_functions.sql`'s body for this function. Code — revert the commit by message "Remaining All Day series surfaces use the official names".
+
 ### 2026-11-24 ~9:53 PM PT · 🧪 SHIPPED (tests) — main CI red since 4754a0110 (All Day official series names): 3 tests re-pinned to the new premise (Claude Code cloud; Trevor: "Keep going")
 
 - **Why.** 4754a0110 renamed All Day series to the contract's names and moved backfill-edition-names home/away to `HomeTeamName`/`AwayTeamName`. Three tests still pinned the old premise, so vitest shards 2/3/4 and component shard 2/2 went red on 4754a0110, 986662365 and every later commit. The trade-room commit was not the cause: each shard had exactly 1 failure, all in these files.
