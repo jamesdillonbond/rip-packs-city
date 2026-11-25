@@ -213,17 +213,15 @@ describe("Disney Pinnacle shows no lock state anywhere", () => {
       />,
     ).container.textContent ?? ""
 
-  it("the wallet stat row has no Unlocked / Locked tiles on Pinnacle", () => {
+  it("the wallet stat row has no Unlocked stat on Pinnacle", () => {
     const text = statRow("disney-pinnacle")
-    expect(text).toMatch(/Wallet FMV/)
-    expect(text).toMatch(/Best Offer Total/)
+    expect(text).toMatch(/Collection value/)
+    expect(text).toMatch(/Top offers/)
     expect(text).not.toMatch(/locked/i)
   })
-  it("control: Top Shot keeps both tiles", () => {
+  it("control: Top Shot keeps its Unlocked stat (2026-11-24: one stat, was two tiles)", () => {
     const text = statRow("nba-top-shot")
-    expect(text).toMatch(/Unlocked FMV/)
-    expect(text).toMatch(/Locked FMV/)
-    expect(text).toMatch(/6 locked/)
+    expect(text).toMatch(/Unlocked/)
   })
 
   const filterBar = (slug: string) =>

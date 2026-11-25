@@ -7,7 +7,7 @@ import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { collectionHasLocking } from "@/lib/collections"
 import { FLOW_MIGRATE_NOTE, isUfcAptosBinder } from "@/lib/ufc-aptos"
 
-// Shared four-tile wallet analytics row used by every collection's
+// The binder's value header (2026-11-24: one big number + plain stats, was four tiles), used by every collection's
 // /[collection]/collection page (and the standalone Pinnacle page until
 // it migrates onto the dynamic route).
 //
@@ -59,6 +59,10 @@ export type WalletStatRowProps = {
   loading?: boolean
   loadProgress?: { loaded: number; total: number; pct: number } | null
   walletFmvAccessory?: ReactNode
+  /** The WHOLE wallet's profit/loss on moments with a known cost; null/absent hides the stat. */
+  pnl?: { amount: number; pct: number } | null
+  /** Where the moments came from — drawn as one bar under the stats. */
+  acquisition?: { packs: number; market: number; rewards: number; total: number } | null
 }
 
 const PULSE_DOT_STYLE = {
@@ -76,46 +80,35 @@ function PulseDot() {
   )
 }
 
+// Whole dollars in the hero (2026-11-24, "digestible"): $41,039 reads at a glance, $41,039.07 does
+// not, and the cents carry nothing on a five-figure wallet. Same three states as formatCurrency:
+// null → "—", a real zero → "$0", otherwise signed with separators.
+export function formatUsdWhole(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—"
+  const r = Math.round(value)
+  if (r === 0) return value === 0 ? "$0" : formatCurrency(value)
+  return (r < 0 ? "-" : "") + "$" + Math.abs(r).toLocaleString("en-US")
+}
+
 function unitNoun(slug: string): string {
   return slug === "disney-pinnacle" ? "pins" : "moments"
-}
-
-// 2026-11-09: a null count read "n/a for this collection" — but this tile only renders when the
-// collection HAS locking (`hasLocking`), so the phrase was never true where it showed. It printed
-// on Top Shot for the first seconds of every load, before the summary arrived. Null is "not known
-// yet", the same em dash the Unlocked tile uses.
-function lockedCaption(count: number | null): string {
-  if (count === null) return "—"
-  return formatCount(count) + " locked"
-}
-
-function unlockedCaption(count: number | null): string {
-  if (count === null) return "—"
-  return formatCount(count) + " unlocked"
 }
 
 export default function WalletStatRow(props: WalletStatRowProps) {
   const {
     walletFmv,
     unlockedFmv,
-    lockedFmv,
     bestOfferTotal,
     momentCount,
-    unlockedCount,
-    lockedCount,
     lockUnknownFmv,
     lockUnknownCount,
-    spreadGap,
-    bestOfferCount,
-    bestOfferUnit,
-    staleNetted,
     staleFmv,
-    staleCount,
-    staleUnknown,
     collectionSlug,
     loading,
     loadProgress,
     walletFmvAccessory,
+    pnl,
+    acquisition,
   } = props
 
   const showProgress = loadProgress && loadProgress.loaded < loadProgress.total
@@ -176,113 +169,106 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     )
   }
 
-  // Best Offer caption: only render the FMV gap when both sides are
-  // genuinely-positive numbers; otherwise stay quiet.
-  const showSpreadGap =
-    typeof walletFmv === "number" && walletFmv > 0 &&
-    typeof bestOfferTotal === "number" && bestOfferTotal > 0 &&
-    typeof spreadGap === "number"
+  // 2026-11-24 (Trevor): "very simple and digestible, no subtext". One big value that covers the
+  // whole wallet (the 11-22 one-number rule — the stale-priced share is IN it, not a caption), then
+  // up to four plain stats. Every honesty rule still holds in the numbers themselves: null renders
+  // "—", a real zero renders "$0", the unchecked-lock FMV is never added into Unlocked, and the
+  // P&L only renders when it is the whole wallet's (PortfolioSummary passes null otherwise).
+  const headline = walletFmv === null
+    ? null
+    : walletFmv + (typeof staleFmv === "number" && staleFmv > 0 ? staleFmv : 0)
+
+  type Stat = { key: string; label: string; value: string; tone?: "up" | "down"; title?: string }
+  const stats: Stat[] = [
+    { key: "count", label: noun === "pins" ? "Pins" : "Moments", value: formatCount(momentCount) },
+  ]
+  // ⛔ Moments whose lock state was never checked are NOT in Unlocked (register #112) — that figure
+  // is what the collector is told they could sell. Named on hover rather than as a caption line.
+  if (hasLocking) stats.push({
+    key: "unlocked",
+    label: "Unlocked",
+    value: formatUsdWhole(unlockedFmv),
+    title: lockUnknownCount != null && lockUnknownCount > 0
+      ? formatCount(lockUnknownCount) + " " + noun + " not checked yet" + (lockUnknownFmv != null ? " (" + formatCurrency(lockUnknownFmv) + ")" : "") + " — not counted here"
+      : undefined,
+  })
+  stats.push({ key: "offers", label: "Top offers", value: formatUsdWhole(bestOfferTotal) })
+  if (pnl) {
+    const pct = Number.isFinite(pnl.pct) ? " (" + (pnl.pct >= 0 ? "+" : "") + Math.round(pnl.pct) + "%)" : ""
+    stats.push({
+      key: "pnl",
+      label: "Profit / Loss",
+      value: (pnl.amount >= 0 ? "+" : "") + formatUsdWhole(pnl.amount) + pct,
+      tone: pnl.amount >= 0 ? "up" : "down",
+    })
+  }
+
+  const src = acquisition && acquisition.total > 0 ? acquisition : null
+  const segments = src
+    ? [
+        { key: "packs", label: "Packs", n: src.packs, color: "rgb(20,184,166)" },
+        { key: "market", label: "Market", n: src.market, color: "var(--rpc-text-secondary)" },
+        { key: "rewards", label: "Rewards", n: src.rewards, color: "rgb(245,158,11)" },
+      ].filter(function(seg) { return seg.n > 0 })
+    : []
+  const segTotal = segments.reduce(function(a, seg) { return a + seg.n }, 0)
 
   return (
     <div>
-    <div className={hasLocking ? "grid gap-3 grid-cols-2 xl:grid-cols-4" : "grid gap-3 grid-cols-2"}>
-      <div className="rpc-stat-tile">
-        <div className="rpc-stat-eyebrow">
-          <span>Wallet FMV</span>
+      <section className="rpc-binder-hero" data-testid="binder-hero" aria-label="Collection value">
+        <div className="rpc-binder-hero-label">
+          <span>Collection value</span>
           {loading && <PulseDot />}
           {walletFmvAccessory}
         </div>
-        <div className="rpc-stat-value">{formatCurrency(walletFmv)}</div>
+        <div className="rpc-binder-hero-value" data-testid="binder-hero-value">{formatUsdWhole(headline)}</div>
         {showProgress ? (
-          <div className="rpc-stat-caption">
+          <div style={{ marginTop: 10, maxWidth: 320 }} className="rpc-stat-caption">
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span>{formatCount(loadProgress.loaded)} / {formatCount(loadProgress.total)} {noun}</span>
+              <span>Loading {formatCount(loadProgress.loaded)} / {formatCount(loadProgress.total)} {noun}</span>
               <span>·</span>
               <span>{loadProgress.pct}%</span>
             </div>
-            <div
-              style={{
-                marginTop: 4,
-                height: 2,
-                width: "100%",
-                background: "var(--rpc-border)",
-                borderRadius: 1,
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  width: Math.max(0, Math.min(100, loadProgress.pct)) + "%",
-                  background: "var(--rpc-red)",
-                  transition: "width 0.3s",
-                }}
-              />
+            <div style={{ marginTop: 4, height: 3, width: "100%", background: "var(--rpc-border)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: Math.max(0, Math.min(100, loadProgress.pct)) + "%", background: "var(--rpc-red)", transition: "width 0.3s" }} />
             </div>
           </div>
-        ) : (
-          <div className="rpc-stat-caption">
-            {formatCount(momentCount)} {noun}
-            {typeof staleFmv === "number" && staleFmv > 0 ? (
-              <span style={{ display: "block" }}>
-                + {formatCurrency(staleFmv)} across {formatCount(staleCount ?? 0)} stale-priced
-              </span>
-            ) : staleUnknown && walletFmv !== null ? (
-              <span style={{ display: "block" }}>
-                raw total — stale-priced split unavailable
-              </span>
-            ) : null}
+        ) : null}
+
+        <div className="rpc-binder-hero-stats" data-cols={String(stats.length)}>
+          {stats.map(function(st) {
+            return (
+              <div key={st.key} className="rpc-binder-hero-stat" data-testid={"binder-stat-" + st.key} title={st.title}>
+                <div className="rpc-binder-hero-stat-label">{st.label}</div>
+                <div className={"rpc-binder-hero-stat-value" + (st.tone ? " rpc-binder-hero-stat-value--" + st.tone : "")}>{st.value}</div>
+              </div>
+            )
+          })}
+        </div>
+
+        {segTotal > 0 ? (
+          <div className="rpc-binder-source" data-testid="binder-source">
+            <div className="rpc-binder-source-bar" role="img" aria-label={segments.map(function(seg) { return seg.label + " " + formatCount(seg.n) }).join(", ")}>
+              {segments.map(function(seg) {
+                return <span key={seg.key} style={{ flexGrow: seg.n, flexBasis: 0, minWidth: 4, background: seg.color }} />
+              })}
+            </div>
+            <div className="rpc-binder-source-legend" aria-hidden="true">
+              {segments.map(function(seg) {
+                return (
+                  <span key={seg.key}>
+                    <i className="rpc-binder-source-dot" style={{ background: seg.color }} />
+                    {seg.label} {formatCount(seg.n)}
+                  </span>
+                )
+              })}
+            </div>
           </div>
-        )}
+        ) : null}
+      </section>
+      <div style={{ marginTop: 8 }}>
+        <FmvDisclaimer variant="short" />
       </div>
-
-      {hasLocking && (<>
-      <div className="rpc-stat-tile">
-        <div className="rpc-stat-eyebrow">
-          <span>Unlocked FMV</span>
-          {loading && <PulseDot />}
-        </div>
-        <div className="rpc-stat-value">{formatCurrency(unlockedFmv)}</div>
-        <div className="rpc-stat-caption">{unlockedCaption(unlockedCount)}</div>
-        {/* ⛔ Disclosed, never added in. This figure is what the collector is
-            told they could sell, so an unverified moment must not inflate it. */}
-        {lockUnknownCount != null && lockUnknownCount > 0 && (
-          <div className="rpc-stat-caption">
-            {formatCount(lockUnknownCount)} not checked
-            {lockUnknownFmv != null ? ` (${formatCurrency(lockUnknownFmv)})` : ""}
-          </div>
-        )}
-      </div>
-
-      <div className="rpc-stat-tile">
-        <div className="rpc-stat-eyebrow">
-          <span>Locked FMV</span>
-          {loading && <PulseDot />}
-        </div>
-        <div className="rpc-stat-value">{formatCurrency(lockedFmv)}</div>
-        <div className="rpc-stat-caption">{lockedCaption(lockedCount)}</div>
-        {/* 2026-11-09: Wallet FMV leaves stale-priced moments out and names them beside it; the
-            locked / unlocked split counts them. On a real wallet that read Locked $54,437 above
-            a Wallet FMV of $52,275 with nothing saying why. Say it where the sum is visible. */}
-        {typeof staleFmv === "number" && staleFmv > 0 && !staleNetted && (
-          <div className="rpc-stat-caption">locked + unlocked include the stale-priced</div>
-        )}
-      </div>
-      </>)}
-
-      <div className="rpc-stat-tile">
-        <div className="rpc-stat-eyebrow">Best Offer Total</div>
-        <div className="rpc-stat-value">{formatCurrency(bestOfferTotal)}</div>
-        <div className="rpc-stat-caption">
-          {typeof bestOfferCount === "number" && bestOfferCount > 0
-            ? "on " + formatCount(bestOfferCount) + " " + (bestOfferUnit === "editions" ? (bestOfferCount === 1 ? "edition" : "editions") : noun) + (showSpreadGap ? " · vs their FMV: " + formatCurrency(-(spreadGap as number)) : "")
-            : showSpreadGap ? "vs their FMV: " + formatCurrency(-(spreadGap as number)) : ""}
-        </div>
-      </div>
-    </div>
-    <div style={{ marginTop: 8 }}>
-      <FmvDisclaimer variant="short" />
-    </div>
     </div>
   )
 }

@@ -305,7 +305,8 @@ export default function CollectionMomentTable(props: {
     <>
         {/* Main table / mobile cards */}
         {isMobile ? (
-          <div className="flex flex-col gap-2">
+          // rpc-binder-cards (2026-11-24): two sleeves per row once they fit (≥600px), art on top.
+          <div className="rpc-binder-cards flex flex-col gap-2">
             {!hasSearched && !loading && rows.length === 0 ? (
               <div className="rpc-table-empty" data-testid="binder-not-searched">{notSearchedCopy}</div>
             ) : filteredRows.length === 0 && hasSearched && !loading ? (
@@ -341,8 +342,8 @@ export default function CollectionMomentTable(props: {
                 // disclosure <button> beside the player name (#196), so this div
                 // deliberately carries no role or key handler.
                 // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden flex flex-col cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} data-rpc-mobile-card="">
-                  <div className="flex items-stretch" data-rpc-mobile-card-body="">
+                <div key={row.momentId} className="rpc-binder-card rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden flex flex-col cursor-pointer" style={row.tier ? ({ "--rpc-binder-tier": momentTierColor(row.tier) } as React.CSSProperties) : undefined} onClick={function() { toggleExpanded(row.momentId) }} data-rpc-mobile-card="">
+                  <div className="rpc-binder-card-body flex items-stretch" data-rpc-mobile-card-body="">
                   {/* Left column: the art alone, full card height. The fallback
                       (initials on the collection accent) holds the column when a
                       row has no art or the image fails, so the text column never
@@ -360,8 +361,9 @@ export default function CollectionMomentTable(props: {
                         href={momentRowHref(collectionSlug, row)}
                         prefetch={false}
                         aria-label={row.playerName ?? "Open moment"}
-                        className="relative shrink-0 self-stretch flex items-center justify-center border-r border-[color:var(--rpc-border)]"
-                        style={{ /* labelOn/accentFill: initials that read on every collection accent */ width: 104, minHeight: 120, background: mThumb ? "var(--rpc-surface-raised)" : accentFill(accent), color: labelOn(accent), fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em" }}
+                        className="rpc-binder-card-art relative shrink-0 self-stretch flex items-center justify-center border-r border-[color:var(--rpc-border)]"
+                        // Art sits on a soft glow in its tier colour (2026-11-24) instead of a flat grey box.
+                        style={{ /* labelOn/accentFill: initials that read on every collection accent */ background: mThumb ? (row.tier ? "radial-gradient(circle at 50% 45%, color-mix(in srgb, " + momentTierColor(row.tier) + " 26%, transparent) 0%, var(--rpc-surface-raised) 72%)" : "var(--rpc-surface-raised)") : accentFill(accent), color: labelOn(accent), fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em" }}
                         onClick={function(e) { e.stopPropagation() }}
                         data-rpc-mobile-thumb=""
                       >

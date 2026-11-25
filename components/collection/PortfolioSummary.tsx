@@ -13,8 +13,6 @@ import {
   computeCostBasisSummary,
 } from "@/lib/portfolio-summary-compute"
 import { usdSignFirst } from "@/lib/usd-format"
-import { fmtSignedFixed } from "@/lib/collection-moment-cells"
-import { accentText } from "@/lib/accent-text"
 
 // 2026-09-24: the P&L strip printed "$113124.59" (no separators) and called a
 // cost-basis subset "wallet-wide totals" while its Current FMV ($34k) sat
@@ -153,6 +151,22 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
             staleUnknown,
             staleNetted,
           } = computeWalletStatRow({ walletSummary, walletTotalFmv, totals, paginatedTotal, collectionSlug })
+          // 2026-11-24 (Trevor, "very simple and digestible, no subtext"): the cost-basis strip and the
+          // three acquisition tiles fold into the hero as one Profit / Loss stat and one source bar.
+          // P&L shows only when it is the WHOLE wallet's (get_wallet_summary) — a loaded page's sum
+          // needed a caveat to be honest, and a caveat is the subtext being removed, so it waits.
+          const cbs = !isMarketClosed(collectionSlug) && walletSummary && walletSummary.cost_basis > 0
+            ? computeCostBasisSummary(walletSummary, rows, costBasis, paginatedTotal)
+            : null
+          const pnl = cbs && cbs.walletWide ? { amount: cbs.totalPl, pct: cbs.plPct } : null
+          const acquisition = acquisitionStats && acquisitionStats.total_count > 0
+            ? {
+                packs: acquisitionStats.pack_pull_count,
+                market: acquisitionStats.marketplace_count,
+                rewards: acquisitionStats.challenge_reward_count,
+                total: acquisitionStats.total_count,
+              }
+            : null
           return (
           <div className="mb-5 space-y-3">
             <WalletStatRow
@@ -174,6 +188,8 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               staleUnknown={staleUnknown}
               collectionSlug={collectionSlug}
               loading={walletSummaryLoading}
+              pnl={pnl}
+              acquisition={acquisition}
               walletFmvAccessory={
                 <ExplainButton
                   context={`Wallet ${connectedWallet || ownerKey || input.trim()} on ${collectionSlug}`}
@@ -182,23 +198,6 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               }
             />
 
-            {acquisitionStats && acquisitionStats.total_count > 0 && (
-              <div className="grid grid-cols-3 gap-3 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 font-mono">
-                <div className="flex flex-col">
-                  <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Packs</span>
-                  <span className="text-lg font-black" style={{ color: accentText("rgb(20,184,166)") }}>{acquisitionStats.pack_pull_count.toLocaleString("en-US")}</span>
-                </div>
-                <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
-                  <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Market</span>
-                  <span className="text-lg font-black text-[color:var(--rpc-text-secondary)]">{acquisitionStats.marketplace_count.toLocaleString("en-US")}</span>
-                </div>
-                <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
-                  <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Rewards</span>
-                  <span className="text-lg font-black" style={{ color: accentText("rgb(245,158,11)") }}>{acquisitionStats.challenge_reward_count.toLocaleString("en-US")}</span>
-                </div>
-              </div>
-            )}
-
             {/* 2026-11-14 (Trevor): the loan-default callout is gone. It counted only the LOADED rows
                 ("1 acquired via loan default" on a wallet holding 12), and the principal already enters
                 Cost Basis as the moment's buy price (moment_acquisitions.buy_price = loan_principal). */}
@@ -206,44 +205,20 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
           )
         })()}
 
-        {/* Cost basis / P&L summary — suppressed on closed markets, where a
-             "Current FMV" / P&L figure would assert a live valuation that no
-             longer exists (WalletStatRow already shows the count + closure note). */}
-        {hasSearched && !isMarketClosed(collectionSlug) && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
-          const summary = computeCostBasisSummary(walletSummary, rows, costBasis, paginatedTotal)
-          if (!summary) return null
-          const { totalCost, totalFmv, totalPl, plPct, count, walletWide, partial, staleExcluded } = summary
-          const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
-          return (
-            <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm font-mono">
-              <div><span className="text-[color:var(--rpc-text-muted)]">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd2(totalCost)}</span></div>
-              <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd2(totalFmv)}</span></div>
-              <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : "-"}{fmtUsd2(Math.abs(totalPl))} ({fmtSignedFixed(plPct, 0)}%)</span></div>
-              {walletWide
-                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count > 0 ? `${count.toLocaleString("en-US")} ${count === 1 ? "moment" : "moments"} with a known cost` : "moments with a known cost"} — FMV here is theirs, not the whole wallet{staleExcluded > 0 ? ` · ${staleExcluded.toLocaleString("en-US")} stale-priced left out` : ""}</div>
-                : partial
-                  // 2026-11-14: a page's sum, not the wallet's — the wallet-wide summary is
-                  // still loading or failed. It read as the wallet's P&L before.
-                  ? <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data among the {partial.loaded.toLocaleString("en-US")} loaded of {partial.total.toLocaleString("en-US")} — not the whole wallet</div>
-                  : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
-            </div>
-          )
-        })()}
-
-        {/* Close to Completing callout */}
+        {/* Close to Completing — 2026-11-24 restyle: one chip per set (was a 10px grey run-on line). */}
         {nearCompleteSets.length > 0 && hasSearched && (
-          <div style={{ borderLeft: "3px solid #22c55e", background: "var(--rpc-surface)", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accentText("#22c55e"), letterSpacing: "0.1em", marginBottom: 4 }}>◉ CLOSE TO COMPLETING</div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText("#a1a1aa") }}>
+          <div className="rpc-binder-near" data-testid="binder-near-complete">
+            <div className="rpc-binder-near-label">◉ CLOSE TO COMPLETING</div>
+            <div className="rpc-binder-near-chips">
               {nearCompleteSets.map(function(s: any, i: number) {
                 return (
                   <span key={s.setId ?? s.setName}>
-                    {i > 0 && " · "}
+                    {i > 0 && <span className="sr-only"> · </span>}
                     {/* The collection's own Sets tab (was hardcoded to Top Shot; All Day and Pinnacle feed
                         this callout since 2026-10-26). */}
-                    <a href={"/" + collectionSlug + "/sets"} style={{ color: accentText("#a1a1aa"), textDecoration: "none" }}>
+                    <a href={"/" + collectionSlug + "/sets"} className="rpc-binder-near-chip">
                       {/* All Day's tracker sums FMV, not asks — no dollar figure rather than a cost it is not (2026-10-26). */}
-                      {s.setName} — {s.missingCount} away{collectionSlug === "nfl-all-day" ? "" : nearCompleteCostLabel(s)}
+                      <strong>{s.setName}</strong> — {s.missingCount} away{collectionSlug === "nfl-all-day" ? "" : nearCompleteCostLabel(s)}
                     </a>
                   </span>
                 )

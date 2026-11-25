@@ -41,21 +41,51 @@ function props(overrides: Partial<WalletStatRowProps> = {}): WalletStatRowProps 
 }
 
 describe("WalletStatRow", () => {
-  it("renders formatted currency for each tile and the moment count caption", () => {
-    const { container } = render(<WalletStatRow {...props()} />)
+  // 2026-11-24 (Trevor, "very simple and digestible, no subtext"): one big Collection value, then
+  // plain stats — Moments · Unlocked · Top offers (· Profit / Loss). No captions.
+  it("renders one headline value and the plain stats", () => {
+    const { container, getByTestId } = render(<WalletStatRow {...props()} />)
+    expect(getByTestId("binder-hero-value").textContent).toBe("$1,000")
+    expect(getByTestId("binder-stat-count").textContent).toBe("Moments12")
+    expect(getByTestId("binder-stat-unlocked").textContent).toBe("Unlocked$600")
+    expect(getByTestId("binder-stat-offers").textContent).toBe("Top offers$800")
     const txt = container.textContent!
-    expect(txt).toContain("$1,000")
-    expect(txt).toContain("$600")
-    expect(txt).toContain("$400")
-    expect(txt).toContain("$800")
-    expect(txt).toContain("12 moments")
-    expect(txt).toContain("8 unlocked")
-    expect(txt).toContain("4 locked")
+    expect(txt).not.toContain("Locked FMV")
+    expect(txt).not.toContain("vs their FMV")
   })
 
-  it("uses 'pins' as the unit noun for Disney Pinnacle", () => {
-    const { container } = render(<WalletStatRow {...props({ collectionSlug: "disney-pinnacle" })} />)
-    expect(container.textContent).toContain("12 pins")
+  it("uses 'Pins' as the count label for Disney Pinnacle and shows no Unlocked stat", () => {
+    const { container, getByTestId } = render(<WalletStatRow {...props({ collectionSlug: "disney-pinnacle" })} />)
+    expect(getByTestId("binder-stat-count").textContent).toBe("Pins12")
+    expect(container.textContent).not.toMatch(/locked/i)
+  })
+
+  it("renders Profit / Loss only when given the wallet's P&L, signed and coloured", () => {
+    const none = render(<WalletStatRow {...props()} />)
+    expect(none.container.textContent).not.toContain("Profit / Loss")
+    none.unmount()
+    const down = render(<WalletStatRow {...props({ pnl: { amount: -81941.27, pct: -68.39 } })} />)
+    const el = down.getByTestId("binder-stat-pnl")
+    expect(el.textContent).toBe("Profit / Loss-$81,941 (-68%)")
+    expect(el.innerHTML).toContain("rpc-binder-hero-stat-value--down")
+    down.unmount()
+    const up = render(<WalletStatRow {...props({ pnl: { amount: 1000, pct: 25 } })} />)
+    expect(up.getByTestId("binder-stat-pnl").textContent).toBe("Profit / Loss+$1,000 (+25%)")
+  })
+
+  it("draws the where-it-came-from bar and skips empty sources", () => {
+    const { getByTestId } = render(<WalletStatRow {...props({ acquisition: { packs: 6746, market: 8712, rewards: 0, total: 15458 } })} />)
+    const txt = getByTestId("binder-source").textContent!
+    expect(txt).toContain("Packs 6,746")
+    expect(txt).toContain("Market 8,712")
+    expect(txt).not.toContain("Rewards")
+  })
+
+  it("keeps the unchecked-lock FMV out of Unlocked and names it on hover only", () => {
+    const { getByTestId } = render(<WalletStatRow {...props({ unlockedFmv: 600, lockUnknownFmv: 50, lockUnknownCount: 3 })} />)
+    const el = getByTestId("binder-stat-unlocked")
+    expect(el.textContent).toBe("Unlocked$600")
+    expect(el.getAttribute("title")).toBe("3 moments not checked yet ($50.00) — not counted here")
   })
 
   // 2026-11-09 INVERTED: this pinned "n/a for this collection" for a null locked count. The Locked
@@ -73,21 +103,6 @@ describe("WalletStatRow", () => {
   it("distinguishes a real computed $0 from missing data", () => {
     const { container } = render(<WalletStatRow {...props({ unlockedFmv: 0 })} />)
     expect(container.textContent).toContain("$0")
-  })
-
-  it("renders the vs-FMV spread gap only when both sides are positive numbers", () => {
-    const shown = render(<WalletStatRow {...props({ walletFmv: 1000, bestOfferTotal: 800, spreadGap: 200 })} />)
-    // 2026-11-14: the gap is against the FMV of the moments carrying an offer — "their" FMV.
-    expect(shown.container.textContent).toContain("vs their FMV: -$200")
-    cleanup()
-    // bestOfferTotal 0 → gap suppressed.
-    const hidden = render(<WalletStatRow {...props({ bestOfferTotal: 0 })} />)
-    expect(hidden.container.textContent).not.toContain("FMV: -")
-  })
-
-  it("names how many moments the offer total covers", () => {
-    const { container } = render(<WalletStatRow {...props({ walletFmv: 1000, bestOfferTotal: 800, spreadGap: 200, bestOfferCount: 42 })} />)
-    expect(container.textContent).toContain("on 42 moments · vs their FMV: -$200")
   })
 
   it("shows a count + closure note (no dollar total) for a closed market", () => {
@@ -131,7 +146,7 @@ describe("WalletStatRow", () => {
     expect(container.textContent).not.toMatch(/\$0(?![.,\d])/)
   })
 
-  it("still shows the full dollar tiles for a live market", () => {
+  it("still shows the dollar headline for a live market", () => {
     const { container } = render(<WalletStatRow {...props({ collectionSlug: "nba-top-shot" })} />)
     expect(container.textContent).toContain("$1,000")
     expect(container.textContent).not.toContain("Market closed")
@@ -142,33 +157,36 @@ describe("WalletStatRow", () => {
       <WalletStatRow {...props({ loadProgress: { loaded: 30, total: 120, pct: 25 } })} />
     )
     const txt = container.textContent!
-    expect(txt).toContain("30 / 120 moments")
+    expect(txt).toContain("Loading 30 / 120 moments")
     expect(txt).toContain("25%")
-    // The plain "N moments" caption is replaced by the progress UI.
-    expect(txt).not.toContain("12 moments")
   })
 
-  // 2026-09-06: the headline is total − stale with the split disclosed. When the
-  // split is KNOWN, the caption carries it; when the summary never arrived and the
-  // tile is a raw total, the caption must SAY so — never a bare number that reads
-  // as the same basis as the dashboard's.
-  it("captions the stale split when it is known", () => {
-    const { container } = render(<WalletStatRow {...props({ walletFmv: 46638.96, staleFmv: 41243.97, staleCount: 93 })} />)
-    const txt = container.textContent ?? ""
-    expect(txt).toContain("$46,638.96")
-    expect(txt).toContain("+ $41,243.97 across 93 stale-priced")
-    expect(txt).not.toContain("split unavailable")
+  // 2026-11-24: the 11-22 one-number rule reaches the binder — the stale-priced share is IN the
+  // headline, not a caption under it (was: total − stale, split disclosed beside it).
+  it("folds the stale-priced share into the one headline, with no caption", () => {
+    const { container, getByTestId } = render(<WalletStatRow {...props({ walletFmv: 41039.07, staleFmv: 5224.5, staleCount: 8 })} />)
+    expect(getByTestId("binder-hero-value").textContent).toBe("$46,264")
+    expect(container.textContent).not.toContain("stale")
   })
-  it("labels a raw total whose stale split never arrived, and does NOT invent a split", () => {
-    const { container } = render(<WalletStatRow {...props({ walletFmv: 87786.31, staleUnknown: true })} />)
-    const txt = container.textContent ?? ""
-    expect(txt).toContain("$87,786.31")
-    expect(txt).toContain("raw total — stale-priced split unavailable")
-    expect(txt).not.toMatch(/across \d+ stale-priced/)
+  it("a raw total whose split never arrived is still just the number", () => {
+    const { container, getByTestId } = render(<WalletStatRow {...props({ walletFmv: 87786.31, staleUnknown: true })} />)
+    expect(getByTestId("binder-hero-value").textContent).toBe("$87,786")
+    expect(container.textContent).not.toMatch(/across \d+ stale-priced/)
   })
   it("a known ZERO split is silent — no caption, no 'unavailable'", () => {
     const { container } = render(<WalletStatRow {...props({ walletFmv: 500, staleFmv: 0, staleCount: 0, staleUnknown: false })} />)
     const txt = container.textContent ?? ""
     expect(txt).not.toContain("stale")
+  })
+})
+
+describe("formatUsdWhole", () => {
+  it("keeps the three states and rounds to whole dollars", async () => {
+    const { formatUsdWhole } = await import("@/components/wallet-stat-row")
+    expect(formatUsdWhole(null)).toBe("—")
+    expect(formatUsdWhole(0)).toBe("$0")
+    expect(formatUsdWhole(0.4)).toBe("$0.40") // a real non-zero never rounds to "$0"
+    expect(formatUsdWhole(41039.07)).toBe("$41,039")
+    expect(formatUsdWhole(-81941.27)).toBe("-$81,941")
   })
 })

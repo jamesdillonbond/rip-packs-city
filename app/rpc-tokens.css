@@ -1313,6 +1313,156 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   letter-spacing: 0.05em;
 }
 
+/* ── Binder hero (2026-11-24, Trevor: "very simple and digestible, no subtext") ──
+   One big value, four plain stats, and a where-it-came-from bar. */
+.rpc-binder-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--rpc-border);
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--rpc-red) 16%, transparent) 0%, transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, color-mix(in srgb, var(--rpc-red) 7%, transparent) 0%, transparent 60%),
+    var(--rpc-surface);
+}
+.rpc-binder-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--rpc-red), color-mix(in srgb, var(--rpc-red) 0%, transparent));
+}
+.rpc-binder-hero-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rpc-binder-hero-value {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(36px, 7vw, 56px);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--rpc-text-primary);
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.rpc-binder-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--rpc-border);
+  border: 1px solid var(--rpc-border);
+}
+@media (min-width: 640px) {
+  .rpc-binder-hero-stats[data-cols="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .rpc-binder-hero-stats[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.rpc-binder-hero-stat {
+  background: color-mix(in srgb, var(--rpc-surface) 92%, var(--rpc-black));
+  padding: 12px 14px;
+  min-width: 0;
+}
+.rpc-binder-hero-stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+}
+.rpc-binder-hero-stat-value {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 22px;
+  line-height: 1.15;
+  margin-top: 4px;
+  color: var(--rpc-text-primary);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.rpc-binder-hero-stat-value--up { color: var(--rpc-success-text); }
+.rpc-binder-hero-stat-value--down { color: var(--rpc-red-text); }
+.rpc-binder-source {
+  margin-top: 16px;
+}
+.rpc-binder-source-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--rpc-border);
+  gap: 2px;
+}
+.rpc-binder-source-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--rpc-text-secondary);
+}
+.rpc-binder-source-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.rpc-binder-source-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+
+.rpc-binder-near {
+  border: 1px solid var(--rpc-border);
+  border-radius: 12px;
+  background: var(--rpc-surface);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.rpc-binder-near-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--rpc-success-text);
+  margin-bottom: 8px;
+}
+.rpc-binder-near-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.rpc-binder-near-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--rpc-success-text) 35%, var(--rpc-border));
+  background: color-mix(in srgb, var(--rpc-success-text) 8%, transparent);
+  color: var(--rpc-text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+}
+.rpc-binder-near-chip strong { color: var(--rpc-text-primary); font-weight: 600; }
+.rpc-binder-near-chip:hover { border-color: var(--rpc-success-text); color: var(--rpc-text-primary); }
+
+/* Binder moment cards: a sleeve grid once two fit side by side (art on top, tier glow). */
+.rpc-binder-card-art { width: 104px; min-height: 120px; }
+@media (min-width: 600px) {
+  .rpc-binder-cards { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px !important; align-items: start; }
+  .rpc-binder-cards > :not([data-rpc-mobile-card]) { grid-column: 1 / -1; }
+  .rpc-binder-card-body { flex-direction: column; }
+  .rpc-binder-card-art { width: 100%; height: 210px; min-height: 0; border-right: 0 !important; border-bottom: 1px solid var(--rpc-border); }
+  .rpc-binder-card-art img { padding: 12px; }
+}
+.rpc-binder-card { transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
+.rpc-binder-card:hover {
+  border-color: color-mix(in srgb, var(--rpc-binder-tier, var(--rpc-border-hover)) 60%, var(--rpc-border));
+  box-shadow: 0 6px 24px -12px color-mix(in srgb, var(--rpc-binder-tier, transparent) 60%, transparent);
+  transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rpc-binder-card, .rpc-binder-card:hover { transition: none; transform: none; }
+}
+
 /* ── Table region — wallet analytics ──────────────────────── */
 .rpc-table-wrapper {
   border: 1px solid var(--rpc-border);

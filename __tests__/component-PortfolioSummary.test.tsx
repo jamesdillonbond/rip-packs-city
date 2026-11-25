@@ -53,9 +53,10 @@ describe("PortfolioSummary", () => {
   it("renders the wallet stat tiles once searched (client-computed fallback)", () => {
     const { container } = render(<PortfolioSummary {...base} />)
     const txt = container.textContent!
-    expect(txt).toContain("Wallet FMV")
-    expect(txt).toContain("Locked FMV")
-    expect(txt).toContain("8 locked")
+    // 2026-11-24: one Collection value + plain stats (was four captioned tiles).
+    expect(txt).toContain("Collection value")
+    expect(txt).toContain("$5,000")
+    expect(txt).toContain("Unlocked$3,800")
   })
 
   // ⛔ INVERTED 2026-09-13, NOT DELETED. This assertion is what held the All Day
@@ -68,7 +69,7 @@ describe("PortfolioSummary", () => {
   it("⛔ RENDERS All Day locks — the suppression premise was re-derived and is false", () => {
     const { container } = render(<PortfolioSummary {...base} collectionSlug="nfl-all-day" />)
     const txt = container.textContent!
-    expect(txt).toContain("8 locked")
+    expect(txt).toContain("Unlocked$3,800")
     expect(txt).not.toContain("n/a for this collection")
   })
 
@@ -88,9 +89,11 @@ describe("PortfolioSummary", () => {
       />,
     )
     const txt = container.textContent!
-    expect(txt).toContain("From Packs")
-    expect(txt).toContain("From Market")
-    expect(txt).toContain("Rewards")
+    // 2026-11-24: one source bar in the hero, not three tiles.
+    expect(txt).toContain("Packs 12")
+    expect(txt).toContain("Market 20")
+    expect(txt).toContain("Rewards 8")
+    expect(txt).not.toContain("From Packs")
   })
 
   it("renders a positive P&L with a + sign and percent from walletSummary", () => {
@@ -110,37 +113,10 @@ describe("PortfolioSummary", () => {
       />,
     )
     const txt = container.textContent!
-    expect(txt).toContain("Cost Basis:")
-    expect(txt).toContain("+$1,000.00")
-    expect(txt).toContain("+25%") // 1000 / 4000
-    // 2026-09-24: the caption says what the subset IS (moments with a known
-    // cost) instead of "wallet-wide totals" — its Current FMV is the priced
-    // subset's, which on a real wallet sat at $34k beside a $58k Wallet FMV.
-    expect(txt).toContain("moments with a known cost")
-    expect(txt).not.toContain("wallet-wide totals")
-    // thousands separators: the strip printed "$113124.59" live
-    expect(txt).toContain("$4,000.00")
-  })
-
-  it("prints the summary's own count beside the cost basis — plural, and singular for one", () => {
-    // 2026-11-10: live Golazos read "1 moments with a known cost".
-    const ws = { wallet_fmv: 5000, unlocked_fmv: 3800, unlocked_count: 32, locked_fmv: 1200, locked_count: 8, cost_basis: 4000, current_fmv: 5000, pnl: 1000 }
-    const many = render(<PortfolioSummary {...base} walletSummary={{ ...ws, moments_with_cost: 6628 }} />)
-    expect(many.container.textContent).toContain("6,628 moments with a known cost")
-    many.unmount()
-    const one = render(<PortfolioSummary {...base} walletSummary={{ ...ws, moments_with_cost: 1 }} />)
-    expect(one.container.textContent).toContain("1 moment with a known cost")
-    expect(one.container.textContent).not.toContain("1 moments")
-  })
-
-  it("names the stale-priced moments the P&L leaves out, and says nothing when there are none", () => {
-    // 2026-11-17: P&L follows the headline's rule (STALE prices out); the panel says how many left.
-    const ws = { wallet_fmv: 5000, unlocked_fmv: 3800, unlocked_count: 32, locked_fmv: 1200, locked_count: 8, cost_basis: 4000, current_fmv: 4500, pnl: 500, moments_with_cost: 15463 }
-    const some = render(<PortfolioSummary {...base} walletSummary={{ ...ws, stale_with_cost_count: 1207 }} />)
-    expect(some.container.textContent).toContain("1,207 stale-priced left out")
-    some.unmount()
-    const none = render(<PortfolioSummary {...base} walletSummary={{ ...ws, stale_with_cost_count: 0 }} />)
-    expect(none.container.textContent).not.toContain("stale-priced left out")
+    // 2026-11-24: the cost-basis strip folds into one Profit / Loss stat, no caption.
+    expect(txt).toContain("Profit / Loss+$1,000 (+25%)") // 1000 / 4000
+    expect(txt).not.toContain("Cost Basis:")
+    expect(txt).not.toContain("moments with a known cost")
   })
 
   it("suppresses the wallet totals and cost-basis/P&L block for a closed market", () => {
@@ -169,8 +145,8 @@ describe("PortfolioSummary", () => {
     // market is marked closed — that half of the property is unchanged.
     expect(txt).toContain("On Flow · current FMV")
     expect(txt).toContain("Still on Flow — migrate to Aptos to trade")
-    expect(txt).not.toContain("Cost Basis:") // P&L block suppressed
-    expect(txt).not.toContain("Wallet FMV")  // the four live-market tiles are not shown
+    expect(txt).not.toContain("Profit / Loss") // P&L suppressed
+    expect(txt).not.toContain("Collection value")  // the live-market hero is not shown
   })
 
   // 2026-11-14 (Trevor): the callout is retired — it counted only the LOADED rows ("1 acquired via
@@ -187,55 +163,26 @@ describe("PortfolioSummary", () => {
     expect(txt).not.toContain("principal)")
   })
 
-  it("renders a NEGATIVE client-computed P&L (per-row cost path, not wallet-wide)", () => {
-    // walletSummary null → the cost-basis block enters via `rows.some(costBasis != null)`
-    // and computeCostBasisSummary uses the per-row else branch → walletWide false.
+  // 2026-11-24: a P&L summed over the LOADED rows needed a "not the whole wallet" caveat to be
+  // honest; with captions gone it is not shown at all until the wallet-wide summary arrives.
+  it("shows no Profit / Loss from a page's rows — only the wallet-wide summary's", () => {
     const rows = [
       { flowId: "1", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 100, fmv: 40 },
       { flowId: "2", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 50, fmv: 30 },
     ] as unknown as MomentRow[]
-    const { container } = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} />)
-    const txt = container.textContent!
-    expect(txt).toContain("Cost Basis:")
-    expect(txt).toContain("$150.00") // 100 + 50 cost
-    expect(txt).toContain("$70.00") // 40 + 30 fmv
-    // totalPl = 70 - 150 = -80 → red, no "+", pct = -53%
-    expect(txt).toContain("-$80.00")
-    expect(txt).toContain("-53%")
-    // non-wallet-wide → "moments with cost data" caption (2 qualifying rows)
-    expect(txt).toContain("2 moments with cost data")
-    expect(txt).not.toContain("wallet-wide totals")
+    for (const total of [40, 2]) {
+      const r = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} paginatedTotal={total} />)
+      expect(r.container.textContent).toContain("Collection value")
+      expect(r.container.textContent).not.toContain("Profit / Loss")
+      expect(r.container.textContent).not.toContain("Cost Basis:")
+      r.unmount()
+    }
   })
 
-  it("says a page's cost sum is a page's when the wallet summary is absent (2026-11-14)", () => {
-    // The wallet-wide summary timed out / is still loading; 2 of 40 moments are loaded.
-    const rows = [
-      { flowId: "1", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 100, fmv: 40 },
-      { flowId: "2", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 50, fmv: 30 },
-    ] as unknown as MomentRow[]
-    const txt = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} paginatedTotal={40} />).container.textContent!
-    expect(txt).toContain("among the 2 loaded of 40 — not the whole wallet")
-  })
-
-  it("no partial caveat when the loaded rows ARE the wallet (2026-11-14)", () => {
-    const rows = [
-      { flowId: "1", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 100, fmv: 40 },
-      { flowId: "2", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 50, fmv: 30 },
-    ] as unknown as MomentRow[]
-    const txt = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} paginatedTotal={2} />).container.textContent!
-    expect(txt).toContain("2 moments with cost data")
-    expect(txt).not.toContain("not the whole wallet")
-  })
-
-  it("enters the cost block via a non-empty costBasis Map but renders nothing when the summary is null", () => {
-    // costBasis.size > 0 opens the block gate, but with no rows the summary
-    // computes totalCost 0 → computeCostBasisSummary returns null → block emits null.
-    const costBasis = new Map([["1", { buyPrice: 25, acquiredDate: "", fmvAtAcquisition: null, acquisitionMethod: null, costBasisLabel: null }]])
-    const { container } = render(<PortfolioSummary {...base} walletSummary={null} rows={[]} costBasis={costBasis} />)
-    const txt = container.textContent!
-    // Wallet tiles still render, but no cost-basis/P&L figures.
-    expect(txt).toContain("Wallet FMV")
-    expect(txt).not.toContain("Cost Basis:")
+  it("a negative wallet-wide P&L renders signed and red", () => {
+    const ws = { wallet_fmv: 37874.69, unlocked_fmv: 1435.28, unlocked_count: 35, locked_fmv: 36439.41, locked_count: 15841, cost_basis: 119815.96, current_fmv: 37874.69, pnl: -81941.27 }
+    const { getByTestId } = render(<PortfolioSummary {...base} walletSummary={ws} />)
+    expect(getByTestId("binder-stat-pnl").textContent).toBe("Profit / Loss-$81,941 (-68%)")
   })
 
   it("renders the Close-to-Completing callout with and without a missing-cost figure", () => {
