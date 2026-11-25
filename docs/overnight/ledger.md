@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:06 AM PT · 🗄 APPLIED (`20261125154732`) + 🔧 SHIPPED (code) — Pinnacle Pack Reality: a drop whose opens were priced late gets its "value at open" rebuilt from `pinnacle_fmv_history`; Predator Vol.1 (450 packs) and the Super Bowl LXI Squad LEE drop (240) go from blank to $55.22 / $52.15 (Claude Code cloud; Trevor: "Keep digging and probing", approved the apply in chat)
+
+- Cause (probed): the 10-26 → 11-08 Pinnacle opens reached `pinnacle_pack_opens` only on 11-08 (the chain-opens lane backfilled them), so the pricer priced them ~10 days after the open and the board's "priced within 3 days" rule left them blank. RPC had priced those pins on 10-29 (`pinnacle_fmv_history`).
+- `get_pinnacle_pack_reality`: where the stored value at open is missing, each pin's render FMV from `pinnacle_fmv_history` at the open (else the first within 3 days after); a pack with any pin unpriced stays unknown; a stored value always wins. New field `n_at_open_rebuilt`. Control before applying: on the 4,073 opens with a stored value, rebuilt avg $67.66 vs $67.74, median |diff| $0.00, 75 % exact. Live after: 8 drops unchanged except Predator 0 → 450 and Super Bowl 0 → 240; anon EXECUTE still false. The 13 Villains / 6 Stitch late opens stay blank (pins with no FMV in the window).
+- Code: board shape carries `n_at_open_rebuilt`; the page's Method note says how "at open" is filled. Preflight green (incl. component coverage + migration parse).
+- Revert: re-apply the body + COMMENT of `20261123210500_audit_20261123_pinnacle_pack_reality.sql`; `git revert` the code commit.
+- Also probed, no action: (a) per-drop pin counts match every dist's slot count; the chain lane and `pinnacle_pack_opens` agree 1,658 = 1,658 since 10-23. (b) 65 pins appear in two opens — 63 in Disney Treasures Vol.1 (dist 780, Dec 2023 beta), 2 re-packed by Dapper into "Internal Test"; both dists are excluded from every board. (c) Pinnacle has no `pack_nft_identity` / `pack_purchases` rows; packs are minted per drop in one batch into custody and opened at purchase, so the binder's sealed Pinnacle count is empty by construction.
+
 ### 2026-11-25 ~7:54 AM PT · 🗄 APPLIED (`20261125155001`) + 🔧 SHIPPED (code) — Pinnacle share cards stop losing their art: signed image URLs are stored and served without the slow upstream (Claude Code cloud; Trevor: "Figure it out")
 
 - **Root cause (measured).** Vercel external-API metrics on `/api/public/pinnacle-image`:
