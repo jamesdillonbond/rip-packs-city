@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:55 AM PT · 📊 READ (docs only) — fmv-recalc `:08` historical-fallback error rate for PT 11-24: 4/24 = 16.7 % → over 10 %, job-704 move alone did NOT fix it (scheduled task; owed by inbox 2026-11-23T1545Z §6 row 2)
+- 24 `fmv-recalc` runs at :08 PT 11-24 (all ok=true, all carry the key); 4 non-null `historical_fallback_error`, all one string: `canceling statement due to statement timeout` (04:08, 07:08, 10:08, 16:08 PT; 103–131 s). :28/:48 = 0/48.
+- 3 of 4 errors fall in the 4 hours job 330 `rpc-thp-leg-panini` (`9 0,6,12,18 * * *` UTC) fired (04/10/16/22:09 PT) vs 1 of the other 20 — n=4, a candidate, not a proof. Also even-hour neighbours: 924 (`8 */2`, moved to :54 at 7:37 AM PT today — after this window), 235 (`7 */2`), 807 (`9 */2`). Other minute-7–9 slots: 20, 22, 77, 220 (weekly), 303, 408, 443, 484, 527, 586, 596, 602, 630, 650, 802, 836, 853, 878 + every-minute lanes. Nothing changed; re-read PT 11-26 for 924's effect.
+- Revert: docs only — delete this entry.
+
 ### 2026-11-25 ~7:37 AM PT · 🔧 SHIPPED (DB schedule) — fmv-recalc `:08` outlier root-caused; job 924 `panini-scarcer-for-less` moved `8 */2` → `54 */2` (`20261125153639`) (Claude Code, attended; Trevor: "Keep digging and probing to try and figure it out")
 - `:08` penalty is layered by UTC hour (odd ~74 s / even ~86 s / 0,6,12,18 ~102 s vs ~53 s at :28/:48). Job 924 (new 11-24 12:08 AM PT) starts the same minute: :08 even 76 → 94 s across its first run, controls flat (:08 odd 76 → 72, :28/:48 57 → 51). Cadence unchanged; watchlist notes updated. 6-h layer (jobs 330, 208) left for a separate measured move — steer in focus.md.
 - Revert: `SELECT cron.alter_job(924, schedule := '8 */2 * * *');` + watchlist notes replace back (in the migration header).
