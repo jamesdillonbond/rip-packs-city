@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:20 AM PT · 🔧 SHIPPED (DB + code) — Pack history v36: Disney Pinnacle and Golazos packs priced at retail inside their drop window (Cowork cloud; Trevor: "Keep going")
+
+- DB (applied ~7:12 AM PT): `20261125151148` v36 — a pack with no buy row is priced at retail inside its drop window for Pinnacle (no secondary pack market: 0 of 164 drops ever listed or bought on Atlas) and Golazos (drops from 2022-10-26, where our marketplace history starts); before, only Top Shot / All Day were. Opened packs costed: alxo 81 → 376, tetrisLblock 1,665 → 1,855, wizwit 4,565 → 4,632; Rigged (Top Shot only, control) unchanged.
+- Code: literal migration file (prosrc md5 2be1f25a…6839 == live), pin V36-1..3 (V36-1 red on v35), drift-guard pointer → 20261125151148.
+- Opened / Sold census (57 wallets): 101,967 opened, 44,249 no cost — 43,505 are custodial Top Shot rips with no pack NFT (2020-21). Inferring their drop from the pool was MEASURED and REJECTED: on 514 packs whose drop we know, a single-price match was right 98 / 122 (80 %) and the true drop was missing from the candidates 11 % of the time. They stay blank. Sold: 39,193, proceeds known on all, 4,832 no cost (sold before our purchase records, dated only by the sale).
+- Still pending: `drop function public.audit_20261124_gwph_v34(...)` — the drop waited on Trevor's confirmation and timed out again.
+- Revert: re-apply get_wallet_pack_history from 20261125055459_audit_20261124_pack_history_v35_box_pack_not_a_cost_basis.sql; revert the commit by message "pack history v36".
+
 ### 2026-11-25 ~7:12 AM PT · 🔧 SHIPPED (code + workflow) — UFC wallet rows the enrichment chain can't reach in time now go to the NULL-key drain, which gets a caller again (Claude Code cloud; Trevor: "Keep going")
 
 - **Why.** Trust arm `ufc_wmc_null_edition_key_aged_rows` is breaching: 114 rows on `0x9a26549ac659995d`, walked at 1:44 AM PT. Vercel shows the per-wallet chain enriched 350 rows over 7 pages, then `deadline reached … the rest stays NULL for the next run`. There is no next run: `/api/cron/ufc-enrichment-drain`, which reads only NULL-key rows, has had no caller since cron-job.org disabled it on 10-18 (0 `pipeline_runs` rows in retention). The 11-23 fix (`f04a8cd`) made the chain resumable but left the remainder stranded.
