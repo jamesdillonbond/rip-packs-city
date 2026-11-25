@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:40 PM PT · 🗄 APPLIED (`20261125032943`) — Candy Squeeze "Listings as of …" now shows the OLDEST venue's newest read, so a stalled Magic Eden sweep can't hide behind the hourly OpenSea lane (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- From the evening review. `listings_seen_at` was `max(last_seen_at)` over all active `candy_listings`. Since 11-23 the OpenSea lane writes hourly beside Magic Eden's 3-hourly sweep (about 1,500 active rows each), so a stalled Magic Eden sweep would show its editions as "0 listed" under a fresh stamp. The stamp is now the minimum of the per-venue maxima; live it reads 5:51 PM PT (Magic Eden), not 6:41 PM (OpenSea). 282 editions ranked, body md5 asserted before and matched after, anon still has no EXECUTE.
+- Revert: re-apply the function block of `20261124034000`.
+
 ### 2026-11-24 ~8:30 PM PT · 🔧 SHIPPED (code) — three fixes from a review of the 11-22 → 11-24 feature wave: Candy OpenSea bids stop counting account rent as funding; the Candy Floor movers copy names its real population; My Teams "every series complete" trusts the RPC's flag (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - **OpenSea bids (`lib/candy/opensea-chain-bids.ts`, from `0485bc317`):** a BidState account always holds its rent-exempt minimum (393 bytes → 3,626,160 lamports, about 0.0036 SOL), and the funding check counted that rent. Via `pg_net` `getMultipleAccounts`, the three cheapest live OpenSea offers (0.001–0.0014 SOL) held rent plus 20,520–464,980 lamports, so they were unfunded but published. The check now uses lamports above rent; the next hourly sweep retires those offers (behind its plausible-census gate). A planted revert turns the test red.
