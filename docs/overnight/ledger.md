@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~8:15 PM PT · 📏 READS (docs only) — Pinnacle ask-cap backtest (owed since 11-02): `min(FMV, ask)` beats FMV slightly on every priced tier, gated on #193; Top Shot series relabel needs no change (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Pinnacle: 5,849 sales since 10-21, each scored against FMV and floor ask as they stood a day before. Within ±25 %: HIGH 69.9 → 70.7, MEDIUM 67.9 → 69.1, LOW 66.2 → 68.5. WAPE down 2.6–3.8 points. The ask alone and a blend are both worse. No price change (gated on #193). Detail in disney-pinnacle.md.
+- Top Shot series labels: every surface a reader sees already shows the season names (`seriesPageLabel`, 09-24). Only three URL slugs keep the ordinals, so the relabel would move indexed URLs for no visible change. Recommend closing; nba-top-shot.md updated.
+- Revert: `git revert` this commit (docs only).
+
 ### 2026-11-24 ~7:45 PM PT · 📏 READS (docs only) — Top Shot ingest p90 9.5 min after the promote-gap fix (target met); demand re-read for 11-17 → 11-24; index re-bloat read (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Top Shot: on-chain p50 3.8 / p90 8.3 min since 12 AM PT 11-24 (n 2,662). Parked path sold → resolved p90 9.5 min (drain p90 4.8). Detail in focus.md.
