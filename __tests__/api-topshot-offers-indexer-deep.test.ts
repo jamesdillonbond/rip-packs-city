@@ -26,6 +26,18 @@ import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 //   - cursor advancement, already-up-to-date, fatal -> honest ok=false log.
 
 const state = vi.hoisted(() => ({ sb: null as unknown }))
+// 2026-11-24: pass-through over the REAL builder, so a test can overlay a path-5 chain outcome on its result.
+const fillOverride = vi.hoisted(() => ({ value: null as null | Record<string, number> }))
+vi.mock("@/lib/chains/flow/topshot-offer-fill", async (importOriginal) => {
+  const m = await importOriginal<typeof import("@/lib/chains/flow/topshot-offer-fill")>()
+  return {
+    ...m,
+    buildOfferFillSales: async (...args: Parameters<typeof m.buildOfferFillSales>) => {
+      const r = await m.buildOfferFillSales(...args)
+      return fillOverride.value ? { ...r, ...fillOverride.value } : r
+    },
+  }
+})
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
@@ -134,6 +146,7 @@ let fetchMock: ReturnType<typeof installFetchMock> | null = null
 afterEach(() => {
   fetchMock?.restore()
   fetchMock = null
+  fillOverride.value = null
 })
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "ts-offers-token"
@@ -905,5 +918,57 @@ describe("topshot-offers-indexer — a failed cursor write is not reported as pr
     const res = await POST(req())
     expect(res.status).toBe(200)
     expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: true, p_cursor_after: "1250" })
+  })
+})
+
+describe("topshot-offers-indexer — path-5 chain outcomes decide ok and the cursor (2026-11-24)", () => {
+  function setup() {
+    const fillTx = "9".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        compl: [
+          eventBlock({
+            height: 1100,
+            txId: fillTx,
+            eventType: OFFER_COMPLETED,
+            payload: offerCompletedPayload({
+              offerId: "501", purchased: true, amount: "25.00000000",
+              buyer: "0xABCDEF0123456789", seller: "0xFEDCBA9876543210", nftId: "555",
+              params: { _type: "TopShotEdition", setId: "10", playId: "20" },
+            }),
+          }),
+        ],
+      }),
+    )
+    return install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      offers: [{ error: null, count: 1 } as never, { data: [], error: null }, { error: null }],
+      editions: [
+        { data: [{ external_id: "10:20", id: "uuid-ext" }], error: null },
+        { data: [{ id: "uuid-ext", external_id: "10:20", circulation_count: 15000 }, { id: "uuid-e", external_id: "10:20", circulation_count: 15000 }], error: null },
+      ],
+      moments: { data: [{ nft_id: "555", edition_id: "uuid-e", serial_number: 7 }], error: null },
+      sales: { data: null, error: null },
+    })
+  }
+
+  it("a failed chain read holds the cursor and fails the run (the fill is recoverable on the re-scan)", async () => {
+    fillOverride.value = { chainErrors: 1 }
+    const spy = setup()
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toContain("offer-fill chain read(s) failed")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeUndefined()
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: false })
+  })
+
+  it("fills the chain budget left untried advance the cursor but never read as an ok run", async () => {
+    fillOverride.value = { chainSkipped: 2 }
+    const spy = setup()
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toContain("2 offer fill(s) not resolved: chain lookup budget spent")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeDefined()
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: false })
   })
 })

@@ -147,6 +147,7 @@ export async function POST(req: NextRequest) {
   let salesResolvedViaAtlas = 0
   let salesResolvedViaChain = 0
   let salesChainErrors = 0
+  let salesChainSkipped = 0
   let fillsSeen = 0
   const byType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
   let fetchError: string | null = null
@@ -330,9 +331,14 @@ export async function POST(req: NextRequest) {
       salesResolvedViaAtlas = built.resolvedViaAtlas
       salesResolvedViaChain = built.resolvedViaChain ?? 0
       salesChainErrors = built.chainErrors ?? 0
+      salesChainSkipped = built.chainSkipped ?? 0
       const ins = await insertOfferFillSales(built.rows)
       salesWritten = ins.inserted
       salesDuped = ins.duped
+      // 2026-11-24: a failed path-5 chain read is a transport failure (a moved-on moment returns nil, it does not
+      // throw), so the fill it left unresolved is recoverable. Throw AFTER the insert: the outer catch marks the run
+      // ok:false and the cursor stays, and the re-scan is idempotent (sales transaction_hash unique index).
+      if (salesChainErrors > 0) throw new Error(`${salesChainErrors} offer-fill chain read(s) failed; holding the cursor to re-scan`)
     }
 
     // 4c. stamp the fill tx onto the offer row for provenance (best-effort,
@@ -384,7 +390,11 @@ export async function POST(req: NextRequest) {
     console.log(`[${PIPELINE_NAME}] best_offer_at sync failed (non-fatal):`, bidAgeError)
   }
 
-  await logRun(startTime, offersSeen, offersWritten, fetchError === null, fetchError, cursorBefore, cursorAfter, {
+  // A fill the chain budget left untried is a DROPPED sale (the cursor moved on; a re-scan would hit the same budget),
+  // so the run is not ok and says how many — never a green run over a lost write (R120/R123).
+  const budgetLoss = salesChainSkipped > 0 ? `${salesChainSkipped} offer fill(s) not resolved: chain lookup budget spent` : null
+  const runOk = fetchError === null && budgetLoss === null
+  await logRun(startTime, offersSeen, offersWritten, runOk, fetchError ?? budgetLoss, cursorBefore, cursorAfter, {
     // Paired count + error, so a 0 here cannot be read as "nothing to do" when it
     // was actually "the call failed" — the null-instrument shape this repo keeps
     // finding in `rows_written`.
@@ -411,11 +421,12 @@ export async function POST(req: NextRequest) {
     sales_resolved_via_atlas: salesResolvedViaAtlas,
     sales_resolved_via_chain: salesResolvedViaChain,
     sales_chain_errors: salesChainErrors,
+    sales_chain_skipped: salesChainSkipped,
     duration_ms: Date.now() - startTime,
   })
 
   return NextResponse.json({
-    ok: fetchError === null,
+    ok: runOk,
     pages,
     offersWritten,
     byType,
@@ -429,7 +440,7 @@ export async function POST(req: NextRequest) {
     salesUnresolved,
     cursorBefore,
     cursorAfter,
-    error: fetchError,
+    error: fetchError ?? budgetLoss,
     durationMs: Date.now() - startTime,
   })
 }

@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
   let editionsCleared = 0
   // #70: accepted offers written as offer_fill sales (counted from rows the DB returned).
   let fillsSeen = 0
-  let fillSales = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 }
+  let fillSales = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0, chainSkipped: 0 }
   let fetchError: string | null = null
 
   try {
@@ -374,6 +374,9 @@ export async function POST(req: NextRequest) {
     //     non-duplicate insert, so the cursor below never passes an unwritten fill.
     fillsSeen = fills.length
     fillSales = await writeAllDayOfferFillSales(fills)
+    // 2026-11-24: a failed chain read is a transport failure (a moved-on moment returns nil, it does not throw), so the
+    // fill it left unresolved is recoverable: hold the cursor and re-scan (inserts are idempotent on the fill tx).
+    if (fillSales.chainErrors > 0) throw new Error(`${fillSales.chainErrors} offer-fill chain read(s) failed; holding the cursor to re-scan`)
 
     // 4. advance cursor.
     const { error: cursorWriteErr } = await (supabaseAdmin as any)
@@ -393,7 +396,11 @@ export async function POST(req: NextRequest) {
     console.log(`[${PIPELINE_NAME}] error:`, fetchError)
   }
 
-  await logRun(startTime, offersSeen, editionsWritten, fetchError === null, fetchError, cursorBefore, cursorAfter, {
+  // A fill the chain budget left untried is a DROPPED sale (the cursor moved on; a re-scan would hit the same budget),
+  // so the run is not ok and says how many — never a green run over a lost write (R120/R123).
+  const budgetLoss = fillSales.chainSkipped > 0 ? `${fillSales.chainSkipped} offer fill(s) not resolved: chain lookup budget spent` : null
+  const runOk = fetchError === null && budgetLoss === null
+  await logRun(startTime, offersSeen, editionsWritten, runOk, fetchError ?? budgetLoss, cursorBefore, cursorAfter, {
     pages,
     offers_seen: offersSeen,
     offers_completed: offersCompleted,
@@ -406,11 +413,12 @@ export async function POST(req: NextRequest) {
     fill_sales_unresolved: fillSales.unresolved,
     fill_sales_resolved_on_chain: fillSales.resolvedOnChain,
     fill_sales_chain_errors: fillSales.chainErrors,
+    fill_sales_chain_skipped: fillSales.chainSkipped,
     duration_ms: Date.now() - startTime,
   })
 
   return NextResponse.json({
-    ok: fetchError === null,
+    ok: runOk,
     pages,
     offersSeen,
     offersCompleted,
@@ -420,7 +428,7 @@ export async function POST(req: NextRequest) {
     fillSales,
     cursorBefore,
     cursorAfter,
-    error: fetchError,
+    error: fetchError ?? budgetLoss,
     durationMs: Date.now() - startTime,
   })
 }

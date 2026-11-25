@@ -42,7 +42,7 @@ const H = vi.hoisted(() => {
       if (ctx.select === "id, external_id") return { data: state.baseEditions, error: null }
       return { data: state.editionsByExt, error: null } // "external_id, id"
     }
-    if (ctx.table === "moments") return { data: state.moments, error: null }
+    if (ctx.table === "moments") return state.momentsError ? { data: null, error: state.momentsError } : { data: state.moments, error: null }
     if (ctx.table === "offers") return { data: state.offers, error: null }
     if (ctx.table === "wallet_moments_cache") return { data: state.wmc, error: null }
     if (ctx.table === "topshot_atlas_market_events") return { data: state.atlas, error: null }
@@ -222,6 +222,7 @@ function fill(over: Partial<OfferFillEvent> = {}): OfferFillEvent {
 beforeEach(() => {
   H.state.editionsByExt = []
   H.state.moments = []
+  H.state.momentsError = null
   H.state.offers = []
   H.state.wmc = []
   H.state.atlas = []
@@ -360,6 +361,13 @@ describe("buildOfferFillSales", () => {
     expect(out.rows).toHaveLength(0)
   })
 
+  it("a failed lookup read THROWS (so the indexer holds its cursor) — never a fill dropped as unresolved (2026-11-24)", async () => {
+    // Nine reads here ignored `error`: a failed moments read left momByNft empty, the fill fell through to
+    // "unresolved", the run read ok and the cursor moved past it for good.
+    H.state.momentsError = { message: "canceling statement due to statement timeout" }
+    await expect(buildOfferFillSales([fill({ nftId: "8" })])).rejects.toThrow(/moments read failed/)
+  })
+
   it("path 5 stops at the wall-clock budget (2026-11-22: a hanging Flow REST cannot run past the route's limit)", async () => {
     let now = 0
     let calls = 0
@@ -371,6 +379,7 @@ describe("buildOfferFillSales", () => {
     })
     expect(calls).toBe(2)
     expect(out.unresolved).toBe(3)
+    expect(out.chainSkipped).toBe(1) // 2026-11-24: the untried fill is counted, not silent
   })
 
   it("F1 guard: redirects an impossible-serial parallel onto its base edition", async () => {

@@ -68,6 +68,8 @@ export interface AllDayFillWriteResult {
   unresolved: number // no edition could be placed (NOT NULL on sales) — skipped
   resolvedOnChain: number // an NFT-type offer PLACED via an edition read from the chain (buyer's collection)
   chainErrors: number // chain reads that failed (the fill stays unresolved)
+  /** Fills that needed a chain read but were not tried (lookup or wall-clock budget spent) — dropped, not resolved. */
+  chainSkipped: number
 }
 
 /**
@@ -79,7 +81,7 @@ export async function writeAllDayOfferFillSales(
   fills: AllDayOfferFill[],
   opts?: { chainLookups?: number; chainBudgetMs?: number; now?: () => number; runScript?: (code: string, args: Array<{ type: string; value: unknown }>) => Promise<unknown> },
 ): Promise<AllDayFillWriteResult> {
-  const out: AllDayFillWriteResult = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 }
+  const out: AllDayFillWriteResult = { written: 0, suppressed: 0, duped: 0, unresolved: 0, resolvedOnChain: 0, chainErrors: 0, chainSkipped: 0 }
   if (fills.length === 0) return out
 
   // editions by external_id (EDITION offers)
@@ -134,9 +136,12 @@ export async function writeAllDayOfferFillSales(
   const chainDeadline = now() + (opts?.chainBudgetMs ?? 90_000)
   const chainPlaced = new Set<string>()
   let chainTried = 0
+  // ⚠ 2026-11-24: a fill the budget left untried used to vanish into `unresolved` with the run still ok. It is now
+  // counted (chainSkipped) so the caller can report the loss; a failed read (chainErrors) is the caller's cue to hold
+  // its cursor, since a moved-on moment returns nil rather than throwing, so a throw is a transport/chain failure.
   for (const f of fills) {
-    if (chainTried >= chainBudget || now() >= chainDeadline) break
     if (!f.nftId || !f.buyer || f.editionExternalId || byNft.has(f.nftId)) continue
+    if (chainTried >= chainBudget || now() >= chainDeadline) { out.chainSkipped++; continue }
     chainTried++
     try {
       const r = (await (opts?.runScript ?? runAllDayScript)(BORROW_MOMENT_SCRIPT, [

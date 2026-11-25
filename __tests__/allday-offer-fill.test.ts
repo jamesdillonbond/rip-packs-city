@@ -72,14 +72,14 @@ describe("writeAllDayOfferFillSales", () => {
       { data: null, error: { code: "23505", message: "dup" } }, // already there
     ]
     const out = await writeAllDayOfferFillSales([fill({ fillTx: "t1" }), fill({ fillTx: "t2" }), fill({ fillTx: "t3" })])
-    expect(out).toEqual({ written: 1, suppressed: 1, duped: 1, unresolved: 0, resolvedOnChain: 0, chainErrors: 0 })
+    expect(out).toEqual({ written: 1, suppressed: 1, duped: 1, unresolved: 0, resolvedOnChain: 0, chainErrors: 0, chainSkipped: 0 })
   })
 
   it("an unplaceable fill is skipped and counted, never inserted with a NULL edition", async () => {
     state.editions = []
     // The chain read finds nothing either (the buyer moved the moment on): still skipped, counted.
     const out = await writeAllDayOfferFillSales([fill({ editionExternalId: null, nftId: "999" })], { runScript: async () => null })
-    expect(out).toEqual({ written: 0, suppressed: 0, duped: 0, unresolved: 1, resolvedOnChain: 0, chainErrors: 0 })
+    expect(out).toEqual({ written: 0, suppressed: 0, duped: 0, unresolved: 1, resolvedOnChain: 0, chainErrors: 0, chainSkipped: 0 })
     expect(state.inserts).toHaveLength(0)
   })
 
@@ -115,7 +115,7 @@ describe("writeAllDayOfferFillSales", () => {
       runScript: async () => { calls++; t += 15_000; throw new Error("timeout") },
     })
     expect(calls).toBe(2)
-    expect(out).toMatchObject({ unresolved: 4, chainErrors: 2 })
+    expect(out).toMatchObject({ unresolved: 4, chainErrors: 2, chainSkipped: 2 }) // 2026-11-24: the untried two are counted, not silent
   })
 
   it("a failed chain read is counted and leaves the fill unresolved — never a guessed edition", async () => {

@@ -25,6 +25,18 @@ import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 //     honest ok=false log with no cursor advance.
 
 const state = vi.hoisted(() => ({ sb: null as unknown }))
+// 2026-11-24: pass-through over the REAL writer, so a test can overlay a chain outcome on its result.
+const fillOverride = vi.hoisted(() => ({ value: null as null | Record<string, number> }))
+vi.mock("@/lib/chains/flow/allday-offer-fill", async (importOriginal) => {
+  const m = await importOriginal<typeof import("@/lib/chains/flow/allday-offer-fill")>()
+  return {
+    ...m,
+    writeAllDayOfferFillSales: async (...args: Parameters<typeof m.writeAllDayOfferFillSales>) => {
+      const r = await m.writeAllDayOfferFillSales(...args)
+      return fillOverride.value ? { ...r, ...fillOverride.value } : r
+    },
+  }
+})
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
@@ -118,6 +130,7 @@ let fetchMock: ReturnType<typeof installFetchMock> | null = null
 afterEach(() => {
   fetchMock?.restore()
   fetchMock = null
+  fillOverride.value = null
 })
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "ad-offers-token"
@@ -671,5 +684,59 @@ describe("allday-offers-indexer — decode edges + write-error isolation", () =>
       .flatMap((w) => w.rows)
     expect(openUpserts).toHaveLength(1)
     expect(openUpserts[0]).toMatchObject({ offer_id: "51", edition_id: "222", amount: 3 })
+  })
+})
+
+describe("allday-offers-indexer — chain outcomes decide ok and the cursor (2026-11-24)", () => {
+  function setup() {
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        compl: [
+          eventBlock({
+            height: 1100,
+            txId: "e".repeat(64),
+            eventType: OFFER_COMPLETED,
+            payload: cdcEvent(OFFER_COMPLETED, {
+              purchased: cdc.bool(true),
+              acceptingAddress: { type: "Optional", value: address("0xSSSSSSSSSSSSSSSS") },
+              offerAddress: address("0xBBBBBBBBBBBBBBBB"),
+              offerId: cdc.uint64("31"),
+              nftType: cdc.nftType(ALLDAY_NFT),
+              offerAmount: cdc.ufix64("12.00000000"),
+              offerParamsString: paramsDict({ _type: "EDITION", editionId: "777" }),
+              nftId: { type: "Optional", value: cdc.uint64("555") },
+            }),
+          }),
+        ],
+      }),
+    )
+    return install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      allday_open_offers: [{ data: [{ edition_id: "777" }], error: null }, { data: null, error: null }, { data: [], error: null }],
+      edition_offers: { data: null, error: null },
+      editions: { data: [{ external_id: "777", id: "uuid-777" }], error: null },
+      moments: { data: [{ nft_id: "555", edition_id: "uuid-777", serial_number: 12 }], error: null },
+      sales: { data: [{ id: "new-sale" }], error: null },
+    })
+  }
+
+  it("a failed chain read holds the cursor and fails the run (the fill is recoverable on the re-scan)", async () => {
+    fillOverride.value = { chainErrors: 1 }
+    const spy = setup()
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toContain("offer-fill chain read(s) failed")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeUndefined()
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: false })
+  })
+
+  it("fills the chain budget left untried advance the cursor but never read as an ok run", async () => {
+    fillOverride.value = { chainSkipped: 3 }
+    const spy = setup()
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toContain("3 offer fill(s) not resolved: chain lookup budget spent")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeDefined()
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: false, p_extra: expect.objectContaining({ fill_sales_chain_skipped: 3 }) })
   })
 })

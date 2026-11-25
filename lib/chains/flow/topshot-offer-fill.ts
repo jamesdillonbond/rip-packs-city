@@ -152,6 +152,8 @@ export interface BuiltOfferFillSales {
   resolvedViaAtlas: number // path 4: edition from Atlas's own (set, play, parallel) for the nft
   resolvedViaChain?: number // path 5: edition read from the chain (the buyer's collection) for the nft
   chainErrors?: number // path 5 reads that failed (the fill stays unresolved)
+  /** Fills path 5 needed but did not try (lookup or wall-clock budget spent) — dropped, not resolved. */
+  chainSkipped?: number
 }
 
 // Build sale rows from fills, resolving edition_id + serial via:
@@ -216,11 +218,12 @@ export async function buildOfferFillSales(
   const edByExt = new Map<string, string>()
   for (let i = 0; i < extKeys.length; i += DB_IN_CHUNK) {
     const chunk = extKeys.slice(i, i + DB_IN_CHUNK)
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("editions")
       .select("external_id, id")
       .eq("collection_id", TS_COLLECTION_ID)
       .in("external_id", chunk)
+    if (error) throw new Error(`offer-fill editions read failed: ${error.message}`)
     for (const r of (data as Array<{ external_id: string; id: string }> | null) ?? []) edByExt.set(r.external_id, r.id)
   }
 
@@ -228,10 +231,11 @@ export async function buildOfferFillSales(
   const momByNft = new Map<string, { editionId: string; serial: number | null }>()
   for (let i = 0; i < nftIds.length; i += DB_IN_CHUNK) {
     const chunk = nftIds.slice(i, i + DB_IN_CHUNK)
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("moments")
       .select("nft_id, edition_id, serial_number")
       .in("nft_id", chunk)
+    if (error) throw new Error(`offer-fill moments read failed: ${error.message}`)
     for (const r of (data as Array<{ nft_id: string; edition_id: string; serial_number: number | null }> | null) ?? []) {
       if (r.edition_id) momByNft.set(r.nft_id, { editionId: r.edition_id, serial: r.serial_number ?? null })
     }
@@ -241,11 +245,12 @@ export async function buildOfferFillSales(
   const offRow = new Map<string, { editionId: string | null; serial: number | null; buyer: string | null; amount: number | null }>()
   for (let i = 0; i < offerIds.length; i += DB_IN_CHUNK) {
     const chunk = offerIds.slice(i, i + DB_IN_CHUNK)
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("offers")
       .select("offer_id, edition_id, serial_number, buyer_address, offer_amount_usd")
       .eq("collection_id", TS_COLLECTION_ID)
       .in("offer_id", chunk)
+    if (error) throw new Error(`offer-fill offers read failed: ${error.message}`)
     for (const r of (data as Array<{ offer_id: string; edition_id: string | null; serial_number: number | null; buyer_address: string | null; offer_amount_usd: number | null }> | null) ?? [])
       offRow.set(r.offer_id, { editionId: r.edition_id, serial: r.serial_number, buyer: r.buyer_address ? normAddr(r.buyer_address) : null, amount: r.offer_amount_usd != null ? Number(r.offer_amount_usd) : null })
   }
@@ -259,12 +264,13 @@ export async function buildOfferFillSales(
   const nftIdsNeedingSerial = nftIds.filter((n) => !(momByNft.get(n)?.serial))
   for (let i = 0; i < nftIdsNeedingSerial.length; i += DB_IN_CHUNK) {
     const chunk = nftIdsNeedingSerial.slice(i, i + DB_IN_CHUNK)
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("wallet_moments_cache")
       .select("moment_id, serial_number")
       .eq("collection_id", TS_COLLECTION_ID)
       .in("moment_id", chunk)
       .gt("serial_number", 0)
+    if (error) throw new Error(`offer-fill wallet_moments_cache read failed: ${error.message}`)
     for (const r of (data as Array<{ moment_id: string; serial_number: number }> | null) ?? [])
       if (!wmcSerByNft.has(r.moment_id)) wmcSerByNft.set(r.moment_id, r.serial_number)
   }
@@ -280,23 +286,26 @@ export async function buildOfferFillSales(
   const viaChain = new Set<string>()
   let chainTried = 0
   let chainErrors = 0
+  let chainSkipped = 0
   const needAtlas = list
     .filter((f) => f.nftId && !momByNft.has(f.nftId) && !(f.externalId && edByExt.has(f.externalId)) && !offRow.get(f.offerId)?.editionId)
     .map((f) => f.nftId!)
   if (needAtlas.length) {
     const evs: Array<{ nft_id: string; set_id_onchain: number | null; play_id_onchain: number | null; parallel: string | null; serial_number: number | null }> = []
     for (let i = 0; i < needAtlas.length; i += DB_IN_CHUNK) {
-      const { data } = await (supabaseAdmin as any)
+      const { data, error } = await (supabaseAdmin as any)
         .from("topshot_atlas_market_events")
         .select("nft_id, set_id_onchain, play_id_onchain, parallel, serial_number")
         .eq("product", "nba")
         .in("nft_id", needAtlas.slice(i, i + DB_IN_CHUNK))
+      if (error) throw new Error(`offer-fill topshot_atlas_market_events read failed: ${error.message}`)
       evs.push(...((data as typeof evs | null) ?? []))
     }
     const names = new Set(evs.map((e) => e.parallel).filter((p): p is string => !!p && p !== "Standard"))
     const subIdByName = new Map<string, number>()
     if (names.size) {
-      const { data } = await (supabaseAdmin as any).from("topshot_subeditions").select("subedition_id, name").in("name", [...names])
+      const { data, error } = await (supabaseAdmin as any).from("topshot_subeditions").select("subedition_id, name").in("name", [...names])
+      if (error) throw new Error(`offer-fill topshot_subeditions read failed: ${error.message}`)
       for (const r of (data as Array<{ subedition_id: number; name: string }> | null) ?? []) subIdByName.set(r.name, r.subedition_id)
     }
     const byNft = new Map<string, typeof evs>()
@@ -320,9 +329,11 @@ export async function buildOfferFillSales(
     // Flow REST would reach the route's 300 s maxDuration — a kill with no cursor write and no run row).
     const now = opts?.now ?? Date.now
     const chainDeadline = now() + (opts?.chainBudgetMs ?? 90_000)
+    // ⚠ 2026-11-24: a fill the budget left untried is counted (chainSkipped), not silently dropped; a thrown read
+    // (chainErrors) is a transport/chain failure — a moved-on moment returns nil — so the caller holds its cursor.
     for (const f of list) {
-      if (chainTried >= chainBudget || now() >= chainDeadline) break
       if (!f.nftId || !f.buyer || atlasByNft.has(f.nftId) || !needAtlas.includes(f.nftId)) continue
+      if (chainTried >= chainBudget || now() >= chainDeadline) { chainSkipped++; continue }
       chainTried++
       try {
         const r = (await (opts?.runScript ?? runTopShotScript)(TS_BORROW_SCRIPT, [
@@ -342,11 +353,12 @@ export async function buildOfferFillSales(
     }
     const atlasExts = [...new Set([...atlasByNft.values()].map((v) => v.ext))].filter((e) => !edByExt.has(e))
     for (let i = 0; i < atlasExts.length; i += DB_IN_CHUNK) {
-      const { data } = await (supabaseAdmin as any)
+      const { data, error } = await (supabaseAdmin as any)
         .from("editions")
         .select("external_id, id")
         .eq("collection_id", TS_COLLECTION_ID)
         .in("external_id", atlasExts.slice(i, i + DB_IN_CHUNK))
+      if (error) throw new Error(`offer-fill editions read failed: ${error.message}`)
       for (const r of (data as Array<{ external_id: string; id: string }> | null) ?? []) edByExt.set(r.external_id, r.id)
     }
   }
@@ -363,10 +375,11 @@ export async function buildOfferFillSales(
   const assignableArr = Array.from(assignableEdIds)
   for (let i = 0; i < assignableArr.length; i += DB_IN_CHUNK) {
     const chunk = assignableArr.slice(i, i + DB_IN_CHUNK)
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("editions")
       .select("id, external_id, circulation_count")
       .in("id", chunk)
+    if (error) throw new Error(`offer-fill editions read failed: ${error.message}`)
     for (const r of (data as Array<{ id: string; external_id: string; circulation_count: number | null }> | null) ?? [])
       edIdToMeta.set(r.id, { ext: r.external_id, circ: r.circulation_count ?? null })
   }
@@ -380,11 +393,12 @@ export async function buildOfferFillSales(
   const baseArr = Array.from(baseKeysNeeded)
   for (let i = 0; i < baseArr.length; i += DB_IN_CHUNK) {
     const chunk = baseArr.slice(i, i + DB_IN_CHUNK)
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("editions")
       .select("id, external_id")
       .eq("collection_id", TS_COLLECTION_ID)
       .in("external_id", chunk)
+    if (error) throw new Error(`offer-fill editions read failed: ${error.message}`)
     for (const r of (data as Array<{ id: string; external_id: string }> | null) ?? [])
       baseKeyToId.set(r.external_id, r.id)
   }
@@ -482,7 +496,7 @@ export async function buildOfferFillSales(
     })
   }
 
-  return { rows, unresolved, serialsResolved, parallelRedirects, resolvedViaAtlas, resolvedViaChain, chainErrors }
+  return { rows, unresolved, serialsResolved, parallelRedirects, resolvedViaAtlas, resolvedViaChain, chainErrors, chainSkipped }
 }
 
 // Stamp the OfferCompleted (fill) tx onto the matching offer rows for provenance.
