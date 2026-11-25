@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~9:25 PM PT · 🔧 SHIPPED (code) — Binder desktop table: the Series label stays on one line ("Series 2024-25"), breaking only before an older series' season (Claude Code cloud; Trevor: "Do what you think is best")
+
+- After `ecc4c89` removed the doubled season, "Series 2024-25" still wrapped over three lines in the narrow column. Each part of the label is now an unbreakable span; the only break allowed is before the season ("Series 1 / 2019-20").
+- Measured locally on the real CSS: no change at 1440 px (no overflow). At 1280 px the table already overflowed by 42 px, and this adds 52 px of horizontal scroll there. A fully nowrap cell costs the same width, so the per-part version is kept for its cleaner break.
+- Test `component-CollectionMomentTable-series-cell-stays-whole` fails (2/2) with the nowrap removed.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~9:02 PM PT · 🗄 APPLIED (`20261125050221`) — All Day drop windows fed from Atlas (`atlas_pack_market`) instead of the dead Studio GraphQL; Sentinel "Zero-Yield Lanes" WARN source fixed (Claude Code cloud; Trevor: "Keep going")
 
 - `run_allday_drop_windows_lane` (pg_cron 623, every 5 min) still walked Studio `searchDistributions`, which has returned HTTP 530 since 4:23 PM PT 11-17. The 11-18 Atlas port (`016418226`) covered the edge functions and missed this DB lane. Since then it found nothing, with one 530 failure a day and ok the rest. No user impact yet: all 3,228 All Day distributions have a date, and no new drop has appeared since. But 3,077 of them get their date only from this table, so the next drop would show undated in wallet pack history and summary.
