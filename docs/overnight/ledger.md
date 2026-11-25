@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:45 AM PT · 🔧 SHIPPED (data) — WNBA Finals Trade Ticket Pack (dist 8940) gets its ticket count, so held packs price at 10 tickets (Cowork cloud; Trevor: "Keep going")
+
+- `pack_distributions` (Top Shot, dist 8940): `metadata.retail_price_usd = '10'` + `ticket_count_source` — the count is the drop's own description ("holds 4 Moments, for 10 trade tickets"); it was seeded from the Atlas book with no count, so every held copy read no cost. Verified live: Coach_P0625's copies now read $1.70 (trade_tickets). The only other trade-ticket dist without a count (1571, "Run It Back: Quick Rips August") has no description to read it from — left NULL.
+- Opened-pack pull values, investigated (not shipped): 1,553 Top Shot opened packs read no pull value; 1,509 have a pull whose edition is unknown. 1,503 of those were opened before block 130290659 (the mainnet27 root — older Flow access nodes are retired, #181), and their moments are absent from `moments`, `checkpoint_nft_meta` (5 of 2,316), wmc and chain reads — consistent with moments burned since (trade-ins). The only remaining source is Dune's `flow.cadence_events` (TopShot.MomentMinted), and the Dune plan is at 4,000 / 4,000 credits until 2026-12-14 (Trevor 11-15: no more Dune credits). Left blank.
+- Revert: `update pack_distributions set metadata = metadata - 'retail_price_usd' - 'ticket_count_source' where collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' and dist_id = '8940';`
+
 ### 2026-11-25 ~7:20 AM PT · 🔧 SHIPPED (DB + code) — Pack history v36: Disney Pinnacle and Golazos packs priced at retail inside their drop window (Cowork cloud; Trevor: "Keep going")
 
 - DB (applied ~7:12 AM PT): `20261125151148` v36 — a pack with no buy row is priced at retail inside its drop window for Pinnacle (no secondary pack market: 0 of 164 drops ever listed or bought on Atlas) and Golazos (drops from 2022-10-26, where our marketplace history starts); before, only Top Shot / All Day were. Opened packs costed: alxo 81 → 376, tetrisLblock 1,665 → 1,855, wizwit 4,565 → 4,632; Rigged (Top Shot only, control) unchanged.
