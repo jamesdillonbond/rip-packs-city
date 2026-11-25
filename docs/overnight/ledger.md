@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~10:00 PM PT · 🔧 SHIPPED (code) — Pinnacle pin pages stop offering "did the pack pay?" for drops the Pack Reality board excludes (Claude Code cloud; Trevor: "Keep going")
+
+- From the second review (18 more commits, one real defect). `pinInsightChips` (`8c15fb38c`) chose any pull opened since Sept 1. Three pins pulled only from dist 8906 "Internal Test" (`LEV1-ICAG-ROSH-S6`, `LEV1-STCH-CHAS-S6`, `LEV3-CARS-FLRA-S6`) showed "Pulled from Internal Test — did the pack pay?", linking to a board that never shows that drop. Five `LEV2-MFGV-*` pins could name dist 8922. `isPackRealityDrop` now mirrors the board's exclusions (`[OLD]`, Internal Test, Distribution Mock Test, 8922). The board's ≥25-opens floor is not mirrored, because the page doesn't read open counts; the code comment says so. A planted bypass turns the test red; preflight green.
+- The rest of that review came back clean: RPC Index day boundary, franchise 3× cap (agrees across both RPCs, $25,621), market-cap Characters/Franchises, squeeze census, serial premiums, pack reality, All Day / Panini price carries, ownership walk, Candy `fetchTx`.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-24 ~7:50 PM PT · 🔧 SHIPPED (code) — My Binder: one big Collection value with four plain stats and a source bar (no captions), set chips for Close to completing, two-up sleeve cards (`6917969`; Claude Code cloud; Trevor: "very simple and digestible, no subtext" / "Connect to the repo yourself")
 
 - Hero: Collection value in whole dollars with the stale-priced share folded in (11-22 one-number rule), then Moments · Unlocked · Top offers · Profit / Loss and a Packs / Market / Rewards bar. Removed the Locked FMV tile, the "vs their FMV" / stale captions, the cost-basis strip and the three acquisition tiles. P&L shows only from the wallet-wide summary; unchecked-lock FMV stays out of Unlocked (named in a tooltip). Closed-market and UFC-on-Aptos branches unchanged.
