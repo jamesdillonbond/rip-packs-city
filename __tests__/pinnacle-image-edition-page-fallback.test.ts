@@ -25,7 +25,23 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
+// 2026-11-25: the signed-url store sits in front of every upstream. Default: empty (a miss), so the
+// fallback tests below exercise the upstream legs exactly as before.
+const store = vi.hoisted(() => ({
+  row: null as { url: string; exp: number } | null,
+  writes: [] as Array<{ renderId: string; variant: string; url: string; exp: number; source: string }>,
+}))
+vi.mock("@/lib/pinnacle/signed-media-store", async (orig) => ({
+  ...(await orig<typeof import("@/lib/pinnacle/signed-media-store")>()),
+  readSignedMedia: async () => store.row,
+  writeSignedMedia: async (renderId: string, variant: string, url: string, exp: number, source: string) => {
+    store.writes.push({ renderId, variant, url, exp, source })
+    return true
+  },
+}))
+
 import { signedMediaFromEditionPage } from "@/lib/pinnacle/edition-page-media"
+import { expOfSignedUrl } from "@/lib/pinnacle/signed-media-store"
 import { GET } from "@/app/api/public/pinnacle-image/[renderId]/route"
 
 const RID = "LGEV2-DVHA-MALE-S9"
@@ -91,6 +107,8 @@ describe("GET /api/public/pinnacle-image/[renderId] — edition-page fallback", 
     db.error = null
     db.calls = []
     fetched = []
+    store.row = null
+    store.writes = []
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -154,6 +172,58 @@ describe("GET /api/public/pinnacle-image/[renderId] — edition-page fallback", 
     } finally {
       warn.mockRestore()
     }
+  })
+
+  it("⚠ serves a stored signature WITHOUT touching any upstream (the slow page is off the path)", async () => {
+    store.row = { url: "https://assets.disneypinnacle.com/render/X/front.png?exp=1&sig=s", exp: FUTURE }
+    stub(() => {
+      throw new Error("no upstream may be called")
+    })
+    const res = await GET(req(), params())
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toBe(store.row.url)
+    expect(res.headers.get("x-pinnacle-image-source")).toBe("store")
+    expect(fetched).toEqual([])
+    expect(store.writes).toEqual([])
+  })
+
+  it("re-resolves a stored signature with under 30 min left, and stores the fresh one", async () => {
+    store.row = { url: "https://old", exp: Math.floor(Date.now() / 1000) + 600 }
+    stub(new Response(asset(RID, "front.png"), { status: 200 }))
+    const res = await GET(req(), params())
+    expect(res.headers.get("x-pinnacle-image-source")).toBe("edition-page")
+    expect(res.headers.get("location")).toContain(`/render/${RID}/front.png?exp=${FUTURE}`)
+    expect(store.writes).toHaveLength(1)
+    expect(store.writes[0]).toMatchObject({ renderId: RID, variant: "front", exp: FUTURE, source: "edition-page" })
+  })
+
+  it("stores a GraphQL signature with the exp from its url, and the variant asked for", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: { searchPinnacleEditions: { edges: [{ node: { medias: [{ name: "Front_Cropped", url: `https://signed/c.png?exp=${FUTURE}&sig=z` }] } }] } } }), { status: 200 })))
+    await GET(req("?v=thumb"), params())
+    expect(store.writes).toEqual([{ renderId: RID, variant: "thumb", url: `https://signed/c.png?exp=${FUTURE}&sig=z`, exp: FUTURE, source: "gql" }])
+  })
+
+  it("when every upstream fails, a stored signature with time left still beats a placeholder — and is not re-written", async () => {
+    store.row = { url: "https://still-valid/x.png", exp: Math.floor(Date.now() / 1000) + 1200 }
+    stub(new Response("nope", { status: 403 }))
+    const res = await GET(req(), params())
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toBe("https://still-valid/x.png")
+    expect(res.headers.get("x-pinnacle-image-source")).toBe("store-stale")
+    expect(store.writes).toEqual([])
+  })
+
+  it("a stored signature about to expire is never served, even as a last resort", async () => {
+    store.row = { url: "https://dying", exp: Math.floor(Date.now() / 1000) + 120 }
+    stub(new Response("nope", { status: 403 }))
+    expect((await GET(req(), params())).status).toBe(404)
+  })
+
+  it("expOfSignedUrl reads the exp parameter and refuses anything that is not a unix time", () => {
+    expect(expOfSignedUrl(`https://a/b.png?exp=${FUTURE}&sig=x`)).toBe(FUTURE)
+    expect(expOfSignedUrl("https://a/b.png?sig=x")).toBeNull()
+    expect(expOfSignedUrl("https://a/b.png?exp=12abc")).toBeNull()
+    expect(expOfSignedUrl("not a url")).toBeNull()
   })
 
   it("404s when the page carries only another pin's asset", async () => {

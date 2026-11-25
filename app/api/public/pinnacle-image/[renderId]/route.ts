@@ -25,6 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { signedMediaFromEditionPage } from "@/lib/pinnacle/edition-page-media";
+import { expOfSignedUrl, readSignedMedia, writeSignedMedia } from "@/lib/pinnacle/signed-media-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,6 +37,8 @@ const CACHE_SECONDS = 1800; // 30m, comfortably under the signature TTL (hours)
 // A request slower than this logs its legs: the OG builder's art budget is 4.5 s for ALL of its
 // fallbacks (lib/og/img-data.ts), so anything near it costs a share card its art.
 const SLOW_LEG_MS = 3000;
+// Serve a stored signature only while it has at least this long left; under it, re-resolve.
+const STORE_SERVE_MIN_LEFT_S = 1800;
 
 const MEDIA_QUERY = `
 query PinnacleImage($rid: String!) {
@@ -123,20 +126,32 @@ export async function GET(
   const v = req.nextUrl.searchParams.get("v");
   const variant: Variant = v === "quarter" ? "quarter" : v === "thumb" ? "thumb" : "front";
 
-  // 2026-11-25 (diagnostic, no behaviour change): which leg answered and how long each took.
-  // Three OG renders on 11-25 (07:56Z, 08:01Z, 11:04Z) died exactly ~7.05 s after the edge took
-  // the request: Vercel's image optimizer gave up waiting for THIS route and fell through to the
-  // function with the `/_next/image` path (MODULE_NOT_FOUND). The route is ~0.5 s p50 / 2.1 s max
-  // when probed, and from the DB the GraphQL leg answers 530, so the slow leg is unknown. Every
-  // leg that fails or takes over SLOW_LEG_MS now logs one line, and the response names its source.
+  // 2026-11-25: the signed-url STORE comes first. Root cause of Pinnacle share cards losing their art:
+  // the GraphQL leg has answered 530 since ~11-17 (fails in ≤251 ms), so every image was read from
+  // disneypinnacle.com's ~270 KB edition page, whose tail reaches the 10 s timeout in the evening
+  // (Vercel external-API metrics: max 10,001 ms in 4 of 24 hours; p95 ~1 s). Vercel's image optimizer
+  // gives up on a local source at ~7 s (three 11-25 OG renders died 7.05 s in, MODULE_NOT_FOUND on
+  // /_next/image) and the OG builder's art budget is 4.5 s. A signature lives ~24 h, so serving the
+  // stored one takes the page off the path for every request but the first of the day per pin.
+  const now = () => Math.floor(Date.now() / 1000);
+  const stored = await readSignedMedia(renderId, variant);
+  if (stored && stored.exp - now() > STORE_SERVE_MIN_LEFT_S) {
+    return redirectTo(stored.url, Math.min(CACHE_SECONDS, stored.exp - now() - 300), "store");
+  }
+
+  // Which leg answered and how long each took: a miss or a slow request logs every leg.
   const legs: string[] = [];
-  let source = "none";
+  let source: "gql" | "edition-page" | "store-stale" | "none" = "none";
   let url: string | null = null;
+  let exp: number | null = null;
   const t0 = Date.now();
   try {
     url = await resolveSignedUrl(renderId, variant);
     legs.push(`gql:${url ? "ok" : "miss"}:${Date.now() - t0}ms`);
-    if (url) source = "gql";
+    if (url) {
+      source = "gql";
+      exp = expOfSignedUrl(url);
+    }
   } catch (e) {
     url = null;
     legs.push(`gql:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t0}ms`);
@@ -147,9 +162,10 @@ export async function GET(
     const t1 = Date.now();
     try {
       const page = await resolveFromEditionPage(renderId, variant);
-      const left = page ? page.exp - Math.floor(Date.now() / 1000) - 300 : 0;
+      const left = page ? page.exp - now() - 300 : 0;
       if (page && left > 60) {
         url = page.url;
+        exp = page.exp;
         cacheSeconds = Math.min(CACHE_SECONDS, left);
         source = "edition-page";
       }
@@ -158,6 +174,12 @@ export async function GET(
       url = null;
       legs.push(`edition-page:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t1}ms`);
     }
+  }
+  // Every upstream failed: a stored signature with at least 6 min left still beats a placeholder.
+  if (!url && stored && stored.exp - now() > 360) {
+    url = stored.url;
+    cacheSeconds = Math.min(CACHE_SECONDS, stored.exp - now() - 300);
+    source = "store-stale";
   }
   const totalMs = Date.now() - t0;
   if (!url || totalMs > SLOW_LEG_MS) {
@@ -168,7 +190,14 @@ export async function GET(
     // <img> onError can fall back to a placeholder tile.
     return NextResponse.json({ error: "not found" }, { status: 404, headers: { "x-pinnacle-image-source": source } });
   }
+  // Remember a FRESH signature (never re-write one we just served from the store).
+  if ((source === "gql" || source === "edition-page") && exp != null) {
+    await writeSignedMedia(renderId, variant, url, exp, source);
+  }
+  return redirectTo(url, cacheSeconds, source);
+}
 
+function redirectTo(url: string, cacheSeconds: number, source: string): NextResponse {
   return NextResponse.redirect(url, {
     status: 302,
     headers: {
