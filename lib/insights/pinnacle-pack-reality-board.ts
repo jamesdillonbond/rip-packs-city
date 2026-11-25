@@ -5,8 +5,8 @@
 // Backing function: get_pinnacle_pack_reality (20261123210500) — per purchasable drop since 2026-09
 // (the first drops valued at open), retail price vs the pulls' value at open and today.
 //
-// Honesty: the function's NULLs stay NULL here (a pack whose pulls were priced late has no "at open"
-// value; a pack with an unpriced pin has no "today" value). `num` never turns null into 0.
+// Honesty: the function's NULLs stay NULL here (a pack whose pulls were priced late, and whose pins have no
+// price in pinnacle_fmv_history at the open either, has no "at open" value; a pack with an unpriced pin has no "today" value). `num` never turns null into 0.
 
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -18,6 +18,8 @@ export interface PinnacleDropReality {
   first_open_at: string
   last_open_at: string
   n_at_open: number
+  /** Of n_at_open, the packs whose value at open was rebuilt from pinnacle_fmv_history (priced late; 2026-11-25). */
+  n_at_open_rebuilt: number
   avg_value_at_open: number | null
   n_today: number
   avg_value_today: number | null
@@ -50,6 +52,7 @@ export function shapePinnacleReality(raw: unknown): PinnacleRealityPayload {
       first_open_at: String(d.first_open_at ?? ""),
       last_open_at: String(d.last_open_at ?? ""),
       n_at_open: Number(d.n_at_open ?? 0),
+      n_at_open_rebuilt: Number(d.n_at_open_rebuilt ?? 0),
       avg_value_at_open: num(d.avg_value_at_open),
       n_today: Number(d.n_today ?? 0),
       avg_value_today: num(d.avg_value_today),

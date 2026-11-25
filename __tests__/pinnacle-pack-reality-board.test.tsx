@@ -32,6 +32,11 @@ describe("shape + ratio", () => {
     expect(num(null)).toBeNull()
     expect(num("")).toBeNull()
   })
+  it("carries the rebuilt-at-open count, and a payload without it reads 0, never NaN", () => {
+    const p = shapePinnacleReality({ since: "x", min_opens: 25, drops: [{ ...drop, n_at_open_rebuilt: 450 }, unknownDrop] })
+    expect(p.drops[0].n_at_open_rebuilt).toBe(450)
+    expect(p.drops[1].n_at_open_rebuilt).toBe(0)
+  })
   it("throws on a body that is not the function's shape", () => {
     expect(() => shapePinnacleReality(null)).toThrow()
     expect(() => shapePinnacleReality({ rows: [] })).toThrow()

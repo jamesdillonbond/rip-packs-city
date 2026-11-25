@@ -17,7 +17,7 @@ import PinnacleDropReality, { dropForDist } from "@/components/pinnacle/Pinnacle
 
 const drop = {
   drop_name: "Summer Sunset - Standard", price_usd: 4.99, dist_ids: ["8871", "8872", "8873"], packs_opened: 2411,
-  first_open_at: "2026-09-25T16:00:30Z", last_open_at: "2026-10-02T15:59:59Z", n_at_open: 2410, avg_value_at_open: 26.58,
+  first_open_at: "2026-09-25T16:00:30Z", last_open_at: "2026-10-02T15:59:59Z", n_at_open: 2410, n_at_open_rebuilt: 0, avg_value_at_open: 26.58,
   n_today: 2410, avg_value_today: 16.11, median_value_today: 9, best_pull_today: 80, pct_today_at_or_above_price: 100,
 }
 

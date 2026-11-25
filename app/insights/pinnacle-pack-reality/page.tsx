@@ -134,8 +134,9 @@ export default async function PinnaclePackRealityPage() {
       <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
         <p style={{ margin: 0 }}>
           Method: every opened pack counts once. <strong>At open</strong> = the first price RPC put on the pulls, used only
-          when it was set within 3 days of the open (earlier drops were priced later, so their &ldquo;at open&rdquo; is
-          blank, not zero). <strong>Today</strong> = the sum of each pulled pin&rsquo;s current FMV; a pack with any
+          when it was set within 3 days of the open; where a pack was priced later, each pin&rsquo;s price from RPC&rsquo;s
+          price history at the open (or within 3 days after) is used instead, and a pack with no such price is left
+          blank, not zero. <strong>Today</strong> = the sum of each pulled pin&rsquo;s current FMV; a pack with any
           unpriced pin is left out — the number in brackets is how many packs a figure covers when it is not all of them.
           A &ldquo;Standard&rdquo; pack that Disney Pinnacle splits into several pools is one row, because a buyer
           can&rsquo;t pick a pool. Drops need {min_opens}+ opens. Excluded: Disney&rsquo;s internal test distributions,
