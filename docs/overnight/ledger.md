@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~9:53 PM PT · 🧪 SHIPPED (tests) — main CI red since 4754a0110 (All Day official series names): 3 tests re-pinned to the new premise (Claude Code cloud; Trevor: "Keep going")
+
+- **Why.** 4754a0110 renamed All Day series to the contract's names and moved backfill-edition-names home/away to `HomeTeamName`/`AwayTeamName`. Three tests still pinned the old premise, so vitest shards 2/3/4 and component shard 2/2 went red on 4754a0110, 986662365 and every later commit. The trade-room commit was not the cause: each shard had exactly 1 failure, all in these files.
+- **What.** These are premise re-pins, not inversions.
+  - `lib-analytics-shape`: All Day 7/3 now read "2024 Season" / "Series 2".
+  - `component-CollectionSetsClient`: series 6 now reads "Hist '24", and the two same-named sets are still told apart in words.
+  - `api-backfill-edition-names-deep`: the fixture now carries `HomeTeamName`/`AwayTeamName`, with the player's `TeamAtMoment` on the **away** side. A planted defect proves it: reverting the route to read `TeamAtMoment` first turns the test red (verified, then restored).
+- **Revert.** `git revert` this commit (test files only).
+
 ### 2026-11-24 ~9:55 PM PT · 🔧 SHIPPED (code) — All Day series page <title>/og:title use the official name too ("2025 Season — NFL All Day…", not "Series 9 (Season 2025)") (Claude Code cloud; Trevor: "Keep going. Connect to the repo and take care of this")
 
 - After `4754a01` deployed READY, /nfl-all-day/series/series-9 rendered H1 "2025 Season" and /series-2 "Historical", but `seriesPageMetadata` (lib/seo.ts) still decoded only Top Shot. It now reads `ALLDAY_SERIES_DISPLAY`, and a Historical release's `season` (its release year) is no longer called "Season 20xx". seo.test re-pinned (it asserted the raw "Series 7"); new `__tests__/allday-series-page-title-uses-the-official-name.test.ts`.
