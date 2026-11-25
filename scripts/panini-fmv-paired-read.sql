@@ -15,6 +15,15 @@
 -- Columns: n · pub_within25 / naive3_within25 (% within ±25 %) · pub_wape / naive3_wape
 -- (dollar-weighted abs error %) · pub_ratio (median published / realised). Read the GAP
 -- (pub − naive) per tier, and the order HIGH > MEDIUM > LOW on pub_within25.
+--
+-- ⚠ 2026-11-24 (Claude Code cloud): naive now uses only sales INGESTED before the scored sale
+-- (`first_seen_at < t`). Before this, naive read sales that had sold earlier but landed later
+-- (Panini's 12–160 h ingest lag), i.e. data the engine could not have seen. On the 11-10 cutoff
+-- that look-ahead was worth +10 points to naive on HIGH (61.4 vs 51.3); without it the two are
+-- identical (51.3 / 51.3, n 2,184). Of 2,262 1.4.2 rows whose naive window held a sale newer than
+-- the snapshot, only 17 had that sale in the DB before the scored sale. Reads before 11-24 that
+-- report a naive gap (10-20, 10-23, 10-24, 10-29) carry this bias. The published price is not
+-- affected.
 
 WITH tgt AS (
   SELECT s.edition_external_id AS ed, s.sold_at AS t, s.amount_usd::numeric AS p
@@ -35,6 +44,7 @@ WITH tgt AS (
   CROSS JOIN LATERAL (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY x.amount_usd::double precision) AS med3
                         FROM (SELECT s2.amount_usd FROM panini_sales s2
                                WHERE s2.edition_external_id = g.ed AND s2.sold_at < g.t AND s2.amount_usd > 0
+                                 AND s2.first_seen_at < g.t   -- no look-ahead: see header (2026-11-24)
                                  AND NOT EXISTS (SELECT 1 FROM panini_card_serials x WHERE x.sku = s2.sku AND x.is_special)
                                ORDER BY s2.sold_at DESC LIMIT 3) x) n3
   WHERE f.fmv_usd > 0 AND n3.med3 IS NOT NULL

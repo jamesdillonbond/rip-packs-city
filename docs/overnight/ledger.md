@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:30 PM PT · 📏 READ + 🔧 SCRIPT — Panini FMV paired read (owed since 11-03): the "engine trails naive" gap was look-ahead in `scripts/panini-fmv-paired-read.sql`, now fixed; the real drop is in HIGH accuracy, and ingest lag explains it (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- As first run (1.4.2, cutoff 11-10 noon PT): HIGH n 2,184 51.3 % within ±25 % vs naive 61.4. But naive's edge came from sales that landed a median ~90 h after the scored sale: 17 of 2,262 were in the DB in time. With naive limited to `first_seen_at < t`, the two read 51.3 / 51.3. Earlier naive gaps (10-20 → 10-29) carry the same bias. What's real: published HIGH fell 72.8 → 66.5 → 51.3, and no price built from data on hand does better, so the lever is ingest latency (Later 6, Trevor's). Full read: panini.md (Later 7). No production change.
+- Docs: `code-todos.md` notes `ownership-onchain-walk` is healthy (the 08-16 freeze is history). `known-issues-archive.md` #115 notes the advisor's `function_search_path_mutable` count of 9 is expected: all three drift arms read `[]`.
+- Revert: `git revert` this commit (docs + one read-only script).
+
 ### 2026-11-24 ~7:00 PM PT · 🗄 APPLIED (`20261125025303`) — `rpc-topshot-misattrib-remap` moved to `cron_heavy`: it died at exactly 120 s on 11-20 and 11-24 because the function's declared 300 s is inert on pg_cron (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Inbox `2026-11-24T1617Z` (daytime monitor). Both failures ran 120.0 s, and successful runs take 52–98 s over a 50,736-row map. The job ran as `postgres`, so the 120 s global applied and the function's `statement_timeout=300s` did nothing. The monitor's option 1 (raise the function's timeout) would therefore have changed nothing. Fix: run the job as `cron_heavy` (600 s), like jobs 919 and 383, and grant it EXECUTE (it had none). The function is SECURITY DEFINER, so no table grants are needed. Job is now 926, `cron_heavy`, same schedule.
