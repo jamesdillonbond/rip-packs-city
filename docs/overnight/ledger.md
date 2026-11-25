@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-24 ~7:10 PM PT · 🗄 APPLIED (`20261125030623`) — `fmv_recalc_historical_candidates()` answers Candy from one capped scan instead of 18k per-edition probes: 688k → 354k buffers, same rows (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- The owed read from the 11-22 handoff (item 8): fmv-recalc's `:08` run still lost its historical fallback to the 60 s timeout on 7 of 48 runs in 48 h (0 at `:28`/`:48`). The call cost 688k buffers / 21.6 s for 0 rows. ~400k of that was probing 19,063 stale editions across 8 sales partitions, and 18,434 of them are Candy, which has only 18,905 paid-sale rows in all of `sales`.
+- Fix: new CTE `coll_scan` reads at most `n_stale × 8 + 1` of each stale collection's paid sales. If the cap isn't reached, it holds the complete set and the test is answered from it; otherwise the probes continue as before. Equivalence was proven on a non-empty population (1-day staleness: 8,582 vs 8,582 rows, EXCEPT both ways 0). Body md5 asserted before and after; ACL unchanged.
+- Revert: in the migration header. Target metric: `:08` `historical_fallback_error` under 1 in 48 runs; read the next production `duration_ms`, not this session's call.
+
 ### 2026-11-24 ~7:30 PM PT · 📏 READ + 🔧 SCRIPT — Panini FMV paired read (owed since 11-03): the "engine trails naive" gap was look-ahead in `scripts/panini-fmv-paired-read.sql`, now fixed; the real drop is in HIGH accuracy, and ingest lag explains it (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - As first run (1.4.2, cutoff 11-10 noon PT): HIGH n 2,184 51.3 % within ±25 % vs naive 61.4. But naive's edge came from sales that landed a median ~90 h after the scored sale: 17 of 2,262 were in the DB in time. With naive limited to `first_seen_at < t`, the two read 51.3 / 51.3. Earlier naive gaps (10-20 → 10-29) carry the same bias. What's real: published HIGH fell 72.8 → 66.5 → 51.3, and no price built from data on hand does better, so the lever is ingest latency (Later 6, Trevor's). Full read: panini.md (Later 7). No production change.
