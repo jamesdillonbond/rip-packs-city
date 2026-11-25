@@ -584,7 +584,8 @@ export function packCoverage(t: PackCoverageTotals): {
 // the unopened, opened, and sold tabs." Every helper below renders an UNKNOWN as "—"
 // (never $0) and names the basis or the coverage of every number it shows.
 
-export type PackValueBasis = "ask" | "ask_capped" | "last_sale" | "rip_ev" | "opened_avg"
+export type PackValueBasis =
+  | "ask" | "ask_capped" | "last_sale" | "rip_ev" | "opened_avg" | "atlas_last_sale" | "opened_few"
 
 export const PACK_VALUE_BASIS_LABEL: Record<PackValueBasis, string> = {
   ask: "floor ask",
@@ -593,6 +594,9 @@ export const PACK_VALUE_BASIS_LABEL: Record<PackValueBasis, string> = {
   last_sale: "last sale",
   rip_ev: "rip EV",
   opened_avg: "opened avg",
+  // v34 (2026-11-24): used only when the drop has no last sale, rip EV or opened average of ours
+  atlas_last_sale: "marketplace last sale",
+  opened_few: "opened avg (few opens)",
 }
 
 /** A sealed pack's value with its basis: "$25.00 · floor ask". "—" when unknown. */

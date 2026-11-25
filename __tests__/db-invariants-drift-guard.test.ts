@@ -1037,7 +1037,10 @@ const PINS = [
     // moment (trade_tickets), Top Shot reward packs with no buy row $0 (reward); the moments it yields carry $0.
     // v31 (2026-11-14): a reward-looking title never overrides a drop's known non-zero retail (Fast Break - Rookie Pack $100).
     // v33 (2026-11-21, Trevor "Cap by references"): a held ask counts up to 3x its drop's best reference; no reference = listed, not valued.
-    migration: "supabase/migrations/20261122025253_audit_20261122_pack_ask_capped_by_references.sql",
+    // v34 (2026-11-24, Trevor "no gaps anywhere in this pack information"): Atlas retail / start / REWARD type; All Day,
+    // Golazos and Pinnacle reward packs $0; box packs $0 'box' (P/L on the box); last-resort sealed bases atlas_last_sale / opened_few.
+    // v35 (same night): a box pack's $0 is not a cost basis -- held_unrealized skips it.
+    migration: "supabase/migrations/20261125055459_audit_20261124_pack_history_v35_box_pack_not_a_cost_basis.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

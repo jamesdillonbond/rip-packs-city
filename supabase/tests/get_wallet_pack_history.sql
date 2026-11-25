@@ -199,6 +199,9 @@ RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (
 -- 2026-09-26 (v12): All Day drop windows from Dapper
 CREATE TABLE public.allday_drop_windows (dist_id text PRIMARY KEY, start_time timestamptz, end_time timestamptz,
   price_usd numeric(14,2), title text, fetched_at timestamptz NOT NULL DEFAULT now());
+-- 2026-11-24 (v34): Dapper's drop record (Atlas) -- retail / start / REWARD type / last purchase
+CREATE TABLE public.atlas_pack_market (product text NOT NULL, dist_id text NOT NULL, title text, dist_type text,
+  retail_usd numeric, start_time timestamptz, last_purchase_usd numeric, PRIMARY KEY (product, dist_id));
 CREATE TABLE public.pack_nft_mints (collection_id uuid, pack_nft_id text, dist_id text, minted_at timestamptz,
   block_height bigint, tx_id text, first_seen_at timestamptz DEFAULT now(), PRIMARY KEY (collection_id, pack_nft_id));
 -- 2026-09-28 (v15): All Day mints from Dapper's index + the helper that reads them
@@ -579,13 +582,15 @@ BEGIN
       -- price on chain) is $0 too, never its retail; only a secondary buy keeps the price paid.
       CASE WHEN r.bought_primary AND rt.is_reward THEN 0::numeric
            WHEN r.bought_primary THEN COALESCE(rt.retail_usd, rt.ticket_usd)
+           -- v34: a pack out of a box carries $0 of its own -- its cost is the box's (pulls rule, 2026-11-14)
+           WHEN NOT r.has_buy AND (r.from_box IS NOT NULL OR rt.is_box_extra) THEN 0::numeric
            WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.ticket_usd IS NOT NULL THEN rt.ticket_usd
            WHEN NOT r.has_buy AND r.from_box IS NULL AND rt.is_reward THEN 0::numeric
            WHEN NOT r.has_buy AND inf.inferable THEN rt.retail_usd
            ELSE r.buy_price END AS buy_usd,
       CASE
         -- v21 (#187): out of a box this wallet opened -- no price of its own (the box carries it)
-        WHEN NOT r.has_buy AND r.from_box IS NOT NULL THEN 'box'
+        WHEN NOT r.has_buy AND (r.from_box IS NOT NULL OR rt.is_box_extra) THEN 'box'
         WHEN NOT r.has_buy AND rt.ticket_usd IS NOT NULL THEN 'trade_tickets'
         WHEN NOT r.has_buy AND rt.is_reward THEN 'reward'
         WHEN NOT r.has_buy AND inf.inferable AND rt.retail_usd IS NOT NULL THEN 'retail_inferred'
@@ -607,13 +612,24 @@ BEGIN
     -- allday_pack_supply.pack_price, where 0 is "not known", never "free".
     LEFT JOIN public.allday_pack_supply aps
       ON r.collection_id = v_ad AND aps.dist_id = r.dist_id
+    -- v34 (2026-11-24, Trevor "make sure there are no gaps anywhere in this pack information"):
+    -- Dapper's own drop record (atlas_pack_market: retail, start, REWARD type) for the drops
+    -- pack_distributions / allday_pack_supply carry no price or type for (1,055 Top Shot dists
+    -- had no retail, e.g. every Nov-2026 Rookie Debut / Overtime / Tip-Off drop).
+    LEFT JOIN public.atlas_pack_market apm
+      ON apm.dist_id = r.dist_id
+     AND apm.product = CASE r.collection_id WHEN v_ts THEN 'nba' WHEN v_ad THEN 'nfl'
+                            WHEN v_gz THEN 'laliga' WHEN v_pin THEN 'disney' END
     -- 2026-09-26 (v12): an All Day distribution Dapper types REWARD cost the
     -- wallet nothing -- $0, a known price. A price of 0 on any other type stays
     -- unknown (internal holds like "Jan 29 hold" carry 0 too).
     CROSS JOIN LATERAL (
       SELECT CASE WHEN r.collection_id = v_ad AND pd.metadata->>'type' = 'REWARD' THEN 0::numeric
-                  WHEN r.collection_id = v_ad THEN NULLIF(aps.pack_price, 0)
-                  ELSE public.pack_retail_usd(pd.metadata->>'retail_price_usd', pd.title) END AS retail_usd,
+                  WHEN r.collection_id = v_ad THEN COALESCE(NULLIF(aps.pack_price, 0), NULLIF(apm.retail_usd, 0))
+                  -- v34: Atlas's retail where the distribution record has none (never for a Trade Ticket pack)
+                  ELSE COALESCE(public.pack_retail_usd(pd.metadata->>'retail_price_usd', pd.title),
+                                CASE WHEN coalesce(pd.title, apm.title, '') !~* 'trade ticket'
+                                     THEN NULLIF(apm.retail_usd, 0) END) END AS retail_usd,
              -- v30: a Top Shot Trade Ticket pack's price is its ticket count (retail_price_usd,
              -- UFix64-normalised) x the lowest listed Top Shot moment -- Trevor's ticket value.
              -- The min is uncorrelated (one InitPlan, run only when a ticket pack is reached).
@@ -621,7 +637,7 @@ BEGIN
                   THEN round(public.pack_retail_usd(pd.metadata->>'retail_price_usd')
                              * (SELECT min(l.price_usd) FROM public.ts_listings l WHERE l.price_usd > 0), 2)
              END AS ticket_usd,
-             coalesce(r.collection_id = v_ts
+             coalesce((r.collection_id = v_ts
                       AND pd.title !~* 'trade ticket'
                       -- v32: any title naming a Reward (Crafting / Trade-In / Set / Challenge / My Top Fan /
                       -- Rookie Revelation / Squad Goals ... Reward: 643 dists the v30 list missed), a
@@ -630,8 +646,31 @@ BEGIN
                       -- v32: no retail guard -- a reward pack with a non-zero drop retail is still $0 unless
                       -- bought on the secondary market (Trevor 6:56 PM PT; withdraws 20261115032000's guard).
                       AND pd.title ~* '(fast break|\mreward|chaser|earnable|leaderboard|snapshot|favorite team snap)'
-                      AND pd.title !~* 'booster',
-                      false) AS is_reward
+                      AND pd.title !~* 'booster')
+                      -- v34: Top Shot airdrops / redemptions / giveaways, and any drop Dapper types REWARD
+                      OR (r.collection_id = v_ts
+                          AND coalesce(pd.title, apm.title, '') !~* '(trade ticket|booster)'
+                          AND (coalesce(pd.title, apm.title, '') ~* '(airdrop|redemption|giveaway|weighted draw|player''s choice|quest prize|daily prizing)'
+                               OR apm.dist_type = 'REWARD'))
+                      -- v34: All Day -- a drop with no price that Dapper types REWARD (either record), whose
+                      -- title names a reward / bonus / challenge / airdrop / Playbook / free / makeup / claim /
+                      -- promo / gift pack, or that Atlas lists at $0 retail from 2024 on (Atlas's $0 is wrong
+                      -- for 14 paid 2022 drops, never after). A drop with a known price is never a reward.
+                      OR (r.collection_id = v_ad
+                          AND coalesce(aps.pack_price, 0) = 0
+                          AND coalesce(pd.title, apm.title, '') !~* 'trade-in'
+                          AND (pd.metadata->>'type' = 'REWARD' OR apm.dist_type = 'REWARD'
+                               OR coalesce(pd.title, apm.title, '') ~* '(reward|bonus|challenge|airdrop|playbook|\mfree\M|makeup|giveaway|claim|promo|gift)'
+                               OR (apm.retail_usd = 0 AND apm.start_time >= timestamptz '2024-01-01')))
+                      -- v34: Golazos / Pinnacle -- no price anywhere and a reward / giveaway / fandom title or REWARD type
+                      OR (r.collection_id IN (v_gz, v_pin)
+                          AND coalesce(public.pack_retail_usd(pd.metadata->>'retail_price_usd'), 0) = 0
+                          AND coalesce(apm.retail_usd, 0) = 0
+                          AND (apm.dist_type = 'REWARD'
+                               OR coalesce(pd.title, apm.title, '') ~* '(reward|bonus|challenge|airdrop|\mfree\M|giveaway|fandom|farewell|anniversary|promo|gift)')),
+                      false) AS is_reward,
+             -- v34: a box topper came with a box -- no price of its own, whether or not we hold the box's opening
+             coalesce(pd.title, apm.title, '') ~* 'box topper' AS is_box_extra
     ) rt
     -- A pack with no buy row we hold is priced at its drop's retail ONLY when it
     -- was acquired inside that drop's sale window -- from 1 day before the
@@ -652,7 +691,9 @@ BEGIN
       SELECT COALESCE(
                CASE WHEN pg_input_is_valid(pd.metadata->>'start_time', 'timestamptz')
                     THEN (pd.metadata->>'start_time')::timestamptz END,
-               adw.start_time) AS drop_start
+               adw.start_time,
+               -- v34: Atlas's start (it carries placeholder 2122 dates on some Golazos drops)
+               CASE WHEN apm.start_time < now() + interval '1 year' THEN apm.start_time END) AS drop_start
     ) ds
     -- 2026-09-26 (v11): ... OR Dapper MINTED the pack into this wallet at the
     -- instant its index says the wallet acquired it (pack_nft_mints, read from
@@ -748,7 +789,8 @@ BEGIN
       CASE
         WHEN status = 'ripped' AND by_.n_inner > 0 AND br.n_realized = by_.n_inner AND buy_usd IS NOT NULL
                                                                                  THEN br.realized_usd - buy_usd
-        WHEN status = 'ripped'  AND pull_value_usd IS NOT NULL AND buy_usd IS NOT NULL THEN pull_value_usd - buy_usd
+        WHEN status = 'ripped'  AND pull_value_usd IS NOT NULL AND buy_usd IS NOT NULL
+                                AND buy_price_source IS DISTINCT FROM 'box'        THEN pull_value_usd - buy_usd
         WHEN status = 'flipped' AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL THEN sell_price     - buy_usd
         -- 2026-09-26: a pack sold with no buy row, priced at its drop's retail
         WHEN status = 'sold'    AND sell_price     IS NOT NULL AND buy_usd IS NOT NULL
@@ -845,7 +887,13 @@ BEGIN
            ELSE pas.last_checked_at END AS ask_checked_at,
       ev.gross_ev         AS rip_ev_usd,
       obs.avg_value_usd   AS opened_avg_usd,
-      lsale.sale_price    AS last_sale_usd
+      lsale.sale_price    AS last_sale_usd,
+      -- v34: used ONLY when the drop has no last sale, rip EV or opened average of ours: Dapper's
+      -- own last purchase (Atlas, can be years old), then what 1-4 opened packs yielded
+      CASE WHEN lsale.sale_price IS NULL AND ev.gross_ev IS NULL AND obs.avg_value_usd IS NULL
+           THEN NULLIF(apm2.last_purchase_usd, 0) END AS atlas_last_usd,
+      CASE WHEN lsale.sale_price IS NULL AND ev.gross_ev IS NULL AND obs.avg_value_usd IS NULL
+           THEN obs_few.avg_value_usd END AS opened_few_usd
     FROM held_dists hd
     LEFT JOIN public.pack_ask_state pas
       ON pas.dist_id = hd.dist_id AND pas.collection_slug = replace(hd.collection_slug, '_', '-')
@@ -856,6 +904,13 @@ BEGIN
      AND (ev.fmv_coverage_pct IS NULL OR ev.fmv_coverage_pct >= 25)
     LEFT JOIN public.pack_observed_values obs
       ON obs.dist_id = hd.dist_id AND obs.collection_id = hd.collection_id AND obs.n_valued >= 5
+    LEFT JOIN public.pack_observed_values obs_few
+      ON obs_few.dist_id = hd.dist_id AND obs_few.collection_id = hd.collection_id
+     AND obs_few.n_valued BETWEEN 1 AND 4
+    LEFT JOIN public.atlas_pack_market apm2
+      ON apm2.dist_id = hd.dist_id
+     AND apm2.product = CASE hd.collection_id WHEN v_ts THEN 'nba' WHEN v_ad THEN 'nfl'
+                             WHEN v_gz THEN 'laliga' WHEN v_pin THEN 'disney' END
     LEFT JOIN LATERAL (
       SELECT pp.sale_price FROM public.pack_purchases pp
       WHERE pp.pack_dist_id = hd.dist_id AND pp.collection_id = hd.collection_id
@@ -864,7 +919,10 @@ BEGIN
     ) lsale ON true
   ),
   held_valued AS (
-    SELECT f.collection_id, f.pack_nft_id, f.buy_usd, dm.ask_checked_at,
+    -- v35 (2026-11-24): a pack out of a box carries $0 of its own (v34), but that is not a cost
+    -- basis -- the box's price is -- so it never enters the unrealized gain (packUnrealizedUsd agrees).
+    SELECT f.collection_id, f.pack_nft_id,
+           CASE WHEN f.buy_price_source = 'box' THEN NULL ELSE f.buy_usd END AS buy_usd, dm.ask_checked_at,
            -- v29: each basis on its own, for wallet_held_pack_value's separate sums
            dm.ask_usd, dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd,
       -- v33 (2026-11-21, Trevor "Cap by references"): an ask counts only up to 3x the
@@ -877,17 +935,20 @@ BEGIN
       (dm.ask_usd IS NOT NULL AND ref.ref_usd IS NULL) AS ask_unreferenced,
       CASE WHEN dm.ask_usd IS NOT NULL
            THEN CASE WHEN ref.ref_usd IS NOT NULL THEN LEAST(dm.ask_usd, 3 * ref.ref_usd) END
-           ELSE COALESCE(dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) END AS value_usd,
+           ELSE COALESCE(dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd, dm.atlas_last_usd, dm.opened_few_usd) END AS value_usd,
       CASE WHEN dm.ask_usd IS NOT NULL AND ref.ref_usd IS NOT NULL
              THEN CASE WHEN dm.ask_usd > 3 * ref.ref_usd THEN 'ask_capped' ELSE 'ask' END
            WHEN dm.ask_usd IS NOT NULL        THEN NULL
            WHEN dm.last_sale_usd IS NOT NULL  THEN 'last_sale'
            WHEN dm.rip_ev_usd IS NOT NULL     THEN 'rip_ev'
            WHEN dm.opened_avg_usd IS NOT NULL THEN 'opened_avg'
+           WHEN dm.atlas_last_usd IS NOT NULL THEN 'atlas_last_sale'
+           WHEN dm.opened_few_usd IS NOT NULL THEN 'opened_few'
       END AS value_basis
     FROM filtered f
     LEFT JOIN dist_market dm ON dm.collection_id = f.collection_id AND dm.dist_id = f.dist_id
-    CROSS JOIN LATERAL (SELECT GREATEST(dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd) AS ref_usd) ref
+    CROSS JOIN LATERAL (SELECT COALESCE(GREATEST(dm.last_sale_usd, dm.rip_ev_usd, dm.opened_avg_usd),
+                                 GREATEST(dm.atlas_last_usd, dm.opened_few_usd)) AS ref_usd) ref
     WHERE v_want_held AND f.status = 'held'
   ),
   -- v27: the tab's own metrics over EVERY row of the filter (the page is 25). Every
@@ -1764,7 +1825,9 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P61';
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P61 arrived 9 months after its drop -> NULL');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P62';
-  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'retail_inferred', 'P62 a REWARD drop is $0 (reward), not unknown');
+  -- v34 (2026-11-24): an All Day REWARD drop is now classed a reward outright (any acquisition date), so its
+  -- source reads 'reward' rather than 'retail_inferred' -- the property (a REWARD drop is $0, not unknown) is unchanged.
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward', 'P62 a REWARD drop is $0 (reward), not unknown');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P63';
   PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' IS NULL, 'P63 a price of 0 on a non-REWARD drop stays unknown, never $0');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P64';
@@ -2073,18 +2136,20 @@ DECLARE r jsonb; row_ jsonb;
 BEGIN
   r := public.get_wallet_pack_history('0xibw', NULL, NULL, 50, 0);
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB1';
-  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' = 'box'
+  -- v34 (2026-11-24, Trevor's 11-14 rule that a pack's cost lives on its parent): a pack out of a box now
+  -- carries buy $0 / 'box' rather than NULL; the property this pins -- no P/L of its own -- is unchanged.
+  PERFORM _assert(row_->>'status' = 'sold' AND row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'box'
                   AND row_->>'realized_pl_usd' IS NULL AND row_->>'from_box_pack_nft_id' = 'IBOX',
                   'IB1 a topper out of this wallet''s box, sold: no buy, no P/L -- never "buy $0, P/L = the sale"');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB2';
-  PERFORM _assert(row_->>'buy_usd' IS NULL AND row_->>'buy_price_source' = 'box' AND row_->>'realized_pl_usd' IS NULL,
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'box' AND row_->>'realized_pl_usd' IS NULL,
                   'IB2 a standard pack out of the box is not a $25 purchase');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB3';
   PERFORM _assert(row_->>'buy_usd' = '25.00' AND row_->>'buy_price_source' = 'retail_inferred'
                   AND row_->>'realized_pl_usd' = '15.00' AND row_->>'from_box_pack_nft_id' IS NULL,
                   'IB3 another opener''s box: unchanged, still inferred at retail (control)');
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'IB4';
-  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'pull_value_usd' = '300.00' AND row_->>'buy_usd' IS NULL
+  PERFORM _assert(row_->>'status' = 'ripped' AND row_->>'pull_value_usd' = '300.00' AND row_->>'buy_usd' = '0.00'
                   AND row_->>'realized_pl_usd' IS NULL,
                   'IB4 a topper out of the box, opened: its pull value stands, no P/L against a $0 buy');
 END $$;
@@ -2347,6 +2412,65 @@ BEGIN
   PERFORM _assert(v->>'capped_ask_usd' = '27.00' AND v->>'capped_ask_count' = '2' AND v->>'ask_capped_count' = '1'
                   AND v->>'unreferenced_ask_count' = '1' AND v->>'floor_ask_usd' = '1000062.00' AND v->>'listed_count' = '3',
                   'V33-5 wallet_held_pack_value carries the capped total beside the raw floor. got ' || v::text);
+END $$;
+
+-- V34 (2026-11-24, Trevor "make sure there are no gaps anywhere in this pack information"):
+-- All Day reward packs with no type are $0; a drop with no retail of its own takes Atlas's;
+-- a sold Top Shot Tour pack keeps its price; a pack out of a box is $0 'box'; Atlas's last
+-- purchase values a sealed pack only when the drop has no reference of ours.
+INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'DV34A', 'Rookie Debut Bonus Pack', '{}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV34B', 'V34 Collector Pack', '{}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV34C', 'Top Shot Tour: Souvenir Pack', '{"retail_price_usd": "15"}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV34D', 'V34 Box Pack', '{}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV34E', 'V34 Sold Drop', '{}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DV34G', 'V34 Atlas Only', '{}');
+INSERT INTO public.atlas_pack_market (product, dist_id, title, retail_usd, start_time, last_purchase_usd) VALUES
+  ('nba', 'DV34B', 'V34 Collector Pack', 39, '2026-11-05', NULL),
+  ('nba', 'DV34E', 'V34 Sold Drop', NULL, NULL, 500),
+  ('nba', 'DV34G', 'V34 Atlas Only', NULL, NULL, 7);
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind, pack_dist_id) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P34C', '0xv34w', '0xdist34', NULL, '2022-10-01', true, 'primary_withdraw', 'DV34C'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'XS34E', '0xother34', '0xseller34', 10, '2026-10-07', false, 'secondary_sale', 'DV34E'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'XS34D', '0xother34', '0xseller34', 8, '2026-10-07', false, 'secondary_sale', 'DV34D');
+INSERT INTO public.pack_ask_state VALUES ('nba-top-shot', 'DV34E', 100, true, '2026-11-13');
+INSERT INTO public.pack_box_contents (collection_id, box_pack_nft_id, pack_nft_id, opener_address) VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'BX34', 'P34D', '0xv34w');
+INSERT INTO public.pack_nft_identity (collection_id, pack_nft_id, dist_id, status, owner_address, acquired_at) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P34A', 'DV34A', 'Sealed', '0xv34w', '2024-09-13'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P34B', 'DV34B', 'Sealed', '0xv34w', '2026-11-06'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P34D', 'DV34D', 'Sealed', '0xv34w', '2026-11-06'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P34E', 'DV34E', 'Sealed', '0xv34w', '2026-11-06'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P34G', 'DV34G', 'Sealed', '0xv34w', '2026-11-06');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xv34w', NULL, 'held', 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34A';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'reward',
+                  'V34-1 an All Day Bonus pack with no type and no price is a $0 reward. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34B';
+  PERFORM _assert(row_->>'buy_usd' = '39.00' AND row_->>'buy_price_source' = 'retail_inferred',
+                  'V34-2 a drop with no retail of its own takes Atlas retail + start window. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34C';
+  PERFORM _assert(row_->>'buy_usd' = '15.00' AND row_->>'buy_price_source' = 'retail',
+                  'V34-3 a Top Shot Tour pack is sold, never a reward: keeps its $15 retail. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34D';
+  PERFORM _assert(row_->>'buy_usd' = '0.00' AND row_->>'buy_price_source' = 'box',
+                  'V34-4 a pack out of a box carries $0 of its own, source box. got ' || coalesce(row_::text, 'NULL'));
+  -- V35: ... and its $0 is not a cost basis: the held unrealized total skips it. P34D is valued
+  -- (last sale $8), so the population is not empty.
+  PERFORM _assert(row_->>'value_usd' = '8.00', 'V35-0 the box pack is valued (fixture not vacuous)');
+  PERFORM _assert((r->'tab_totals'->>'held_unrealized_n')::int
+                     = (SELECT count(*) FROM jsonb_array_elements(r->'packs') p
+                        WHERE p->>'value_usd' IS NOT NULL AND p->>'buy_usd' IS NOT NULL AND p->>'buy_price_source' IS DISTINCT FROM 'box'),
+                  'V35-1 a box pack''s $0 never enters held_unrealized. got ' || (r->'tab_totals')::text);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34E';
+  PERFORM _assert(row_->>'value_usd' = '30.00' AND row_->>'value_basis' = 'ask_capped',
+                  'V34-5 Atlas last purchase ($500) never lifts a cap our own last sale ($10) sets. got ' || coalesce(row_::text, 'NULL'));
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P34G';
+  PERFORM _assert(row_->>'value_usd' = '7.00' AND row_->>'value_basis' = 'atlas_last_sale',
+                  'V34-6 a drop with no reference of ours is valued at Atlas last purchase. got ' || coalesce(row_::text, 'NULL'));
 END $$;
 
 ROLLBACK;
