@@ -452,7 +452,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
         // 2026-11-13: the tx id is read from the chain too — final, error-free, authorized by BOTH
         // of this room's wallets — so the flowscan link on the room page is this trade, not any 64-hex id.
-        await assertSealTx(txId, loaded.sides.map((s) => s.signer).filter((x): x is string => !!x))
+        // 2026-11-24: and its script + arguments must be THIS room's trade (txMismatch), not another between the same wallets.
+        await assertSealTx(txId, loaded)
         loaded = await markSealed(supabaseAdmin, loaded, txId, landed)
         notifyLater(loaded, u.id, "sealed")
         return json({ room: await view(loaded, u.id), verified: true })

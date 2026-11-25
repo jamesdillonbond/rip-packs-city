@@ -428,7 +428,8 @@ describe("/api/trade-room — the routes", () => {
     expect(await sealed.json()).toMatchObject({ verified: true })
     expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "sealed", tx_id: txId })
     // …and the id was checked against BOTH of the room's wallets
-    expect(chain.sealTx).toHaveBeenCalledWith(txId, expect.arrayContaining([WA.signer, WB.signer]))
+    // 2026-11-24 re-pin: assertSealTx now takes the ROOM (it checks the tx's script + arguments against it), not just the signers
+    expect(chain.sealTx).toHaveBeenCalledWith(txId, expect.objectContaining({ sides: expect.arrayContaining([expect.objectContaining({ signer: WA.signer }), expect.objectContaining({ signer: WB.signer })]) }))
     // (d) a second claim with another tx id never overwrites the first
     const again = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: "e".repeat(64) }), ctx(code)))
     expect(again.status).toBe(200)
