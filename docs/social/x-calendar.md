@@ -115,6 +115,7 @@ All 38 rookies: $98,114 across 2,971 sales.
 
 - **Since release, every edition** (parallels and Ultimates included): `/api/public/insights/rookie-sales` (`lib/insights/rookie-sales.ts`). Not the rookies board's 30-day views — the first 2026 rookie sale was 10-22, so the two part ways from 11-21.
 - **Hashtags:** `TEAM_HASHTAG` in `x-draft.mjs` holds only hashtags Trevor confirmed live; a team missing from it gets none and a warning.
+- **ESPN live check** (11-25): the draft re-derives every top-10 player's games / PPG / RPG / APG from ESPN's live box scores (`facts.espn_check`) and warns on any line that differs from RPC's stored one — ESPN corrects box scores days after a game (Darryn Peterson 11-25: 15.8 / 4.1 shown, 15.9 / 4.0 true). On a warning, put ESPN's line on the image and tell Trevor. RPC re-reads box scores hourly since 11-25 (`espn_gamelog_restat`), so a warning means the correction is newer than the last re-read.
 - **Image** (`x-image.mjs --slot wed`): ten cards, each with the player's **standard** Rookie Debut moment (never a parallel — Trevor, 11-14), a "No. N pick" tag (2026 NBA Draft, `lib/insights/draft-2026.ts`; none for a player not drafted in 2026), team, the season's points / rebounds / assists per game (ESPN box scores, games played only), sales volume and count.
 
 ### The RPC Weekly Pack Drop Report (Sunday) — Trevor's format, 11-08

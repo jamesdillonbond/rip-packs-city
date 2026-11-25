@@ -347,6 +347,56 @@ const SKIP_DATES = {
   "2026-11-18": { wed: "the rookie top-10 ran early, Sat 11/14 (https://x.com/rippackscity/status/2121696498002084324)" },
 }
 
+// The image's per-game lines come from RPC's stored ESPN box scores. Re-derive each one from ESPN's
+// LIVE box scores before posting (11-25: two of Darryn Peterson's games had been corrected on ESPN after
+// RPC read them — 15.8 / 4.1 shown, 15.9 / 4.0 true). Same method as lib/insights/rookie-sales.ts:
+// regular season, games the player appeared in, mean rounded to one decimal. A line that differs is a
+// warning carrying ESPN's numbers; a failed read is a warning too, never a silent pass.
+async function espnSeasonCheck(rows, warnings) {
+  const API = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+  const j = async (u) => {
+    const r = await fetch(u, { headers: { "user-agent": "RipPacksCity-x-draft" } })
+    if (!r.ok) throw new Error(`${r.status} ${u}`)
+    return r.json()
+  }
+  const out = []
+  try {
+    const teams = (await j(`${API}/teams`)).sports?.[0]?.leagues?.[0]?.teams?.map((x) => x.team) ?? []
+    const abbrOf = (name) => teams.find((t) => t.displayName === name || t.shortDisplayName === name || (name === "Los Angeles Clippers" && t.displayName === "LA Clippers"))?.abbreviation
+    const boxCache = new Map()
+    const box = (id) => {
+      if (!boxCache.has(id)) boxCache.set(id, j(`${API}/summary?event=${id}`))
+      return boxCache.get(id)
+    }
+    for (const r of rows) {
+      if (!r.season) continue
+      const abbr = abbrOf(r.team_name)
+      if (!abbr) { warnings.push(`ESPN check: no ESPN team for ${r.team_name} (${r.player_name}) — stat line unverified`); continue }
+      const sched = await j(`${API}/teams/${abbr.toLowerCase()}/schedule?seasontype=2`)
+      const done = (sched.events ?? []).filter((e) => e.competitions?.[0]?.status?.type?.completed)
+      let g = 0, pts = 0, reb = 0, ast = 0
+      const boxes = await Promise.all(done.map((e) => box(e.id)))
+      for (const b of boxes) {
+        for (const tm of b.boxscore?.players ?? []) for (const st of tm.statistics ?? []) for (const a of st.athletes ?? []) {
+          if (a.athlete?.displayName !== r.player_name || a.didNotPlay || !a.stats?.length) continue
+          const m = Object.fromEntries((st.keys ?? []).map((k, i) => [k, a.stats[i]]))
+          g += 1; pts += Number(m.points) || 0; reb += Number(m.rebounds) || 0; ast += Number(m.assists) || 0
+        }
+      }
+      const r1 = (v) => (g ? Math.round((v / g) * 10) / 10 : null)
+      const f1 = (v) => (v == null ? "–" : Number(v).toFixed(1))
+      const live = { games: g, ppg: r1(pts), rpg: r1(reb), apg: r1(ast) }
+      const s = r.season
+      const same = live.games === s.games && live.ppg === s.ppg && live.rpg === s.rpg && live.apg === s.apg
+      out.push({ player: r.player_name, rpc: { games: s.games, ppg: s.ppg, rpg: s.rpg, apg: s.apg }, espn: live, match: same })
+      if (!same) warnings.push(`ESPN check: ${r.player_name} RPC ${s.games} GP ${f1(s.ppg)}/${f1(s.rpg)}/${f1(s.apg)} vs ESPN live ${live.games} GP ${f1(live.ppg)}/${f1(live.rpg)}/${f1(live.apg)} — use ESPN's line on the image (fix the card text and re-shoot) and tell Trevor`)
+    }
+  } catch (e) {
+    warnings.push(`ESPN check failed (${e.message}) — stat lines unverified against ESPN today`)
+  }
+  return out
+}
+
 async function wed(ctx) {
   const link = `${SITE}/insights/rookies?class=2026`
   const skip = SKIP_DATES[ctx.date]?.wed
@@ -364,6 +414,7 @@ async function wed(ctx) {
     if (!r.season) warnings.push(`no season line for ${r.player_name} (ESPN name not matched once) — the image card shows none`)
     if (!r.image_nft_id) warnings.push(`no standard Rookie Debut moment sold for ${r.player_name} — the image tile is name-only`)
   }
+  const espn_check = await espnSeasonCheck(rows, warnings)
   const t = d.totals ?? {}
   const head = `The 2026 rookie class on @NBATopShot: top ${rows.length} by sales since release 📈`
   const tail = `All ${int(t.players)} rookies: ${usd(t.gmv_usd)} across ${int(t.sales)} sales.`
@@ -371,7 +422,7 @@ async function wed(ctx) {
     title: "Rookie class top 10",
     link,
     long_form: true,
-    facts: { totals: t, top: rows, latest_sale_at: d.meta?.latest_sale_at, stats_through: d.meta?.stats_through },
+    facts: { totals: t, top: rows, latest_sale_at: d.meta?.latest_sale_at, stats_through: d.meta?.stats_through, espn_check },
     draft: [head, "", ...lines, "", tail].join("\n"),
     reply: [{ n: 2, of: 2, text: `See the full 2026 rookie class here 👇\n${link}` }],
     warnings_extra: warnings,
