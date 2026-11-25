@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:12 AM PT · 🔧 SHIPPED (code) — Drops calendar: Walt Disney Mugs Vol.2 shows as a $4.99 mystery capsule closing Mon 11/30 9 AM PT (was an Open Edition with no price, no close, starting at the custody pre-mint); Vol.1's chaser odds carry the official "while they last" (Claude Code cloud; Trevor: "Keep going")
+
+- Read 11-25 from disneypinnacle.com/releases: Vol.2 $4.99, 1 pin, open edition set of six, 11/16 9 AM PT → 11/30 9 AM PT. RPC saw it only as the `OEV2-WDMG` Open Edition minting (first mint = the 11-15 2:24 PM PT custody pre-mint). New `DROP_CORRECTIONS` entry; `DropCorrection` gains `start_time` and `retail_usd` (a correction's price fills only a feed row that has none).
+- Vol.1 (dist 8922): the official text is "about 1 in 18 while they last"; on chain all 98 chasers were opened 11-09 9:00 AM → 2:45 PM PT. The detail line now says so.
+- Tests: two new cases in `lib-insights-manual-drops` (official price/open/close applied and ends on 11/30; a feed price is never overwritten). Preflight green.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-25 ~7:20 AM PT · 🔧 SHIPPED (code) — All Day market + sniper cards show the series name, not a bare "· 7" (Claude Code cloud; Trevor: "Keep going")
 
 - Live read of the feeds: `/api/market?collectionId=nfl-all-day` and `/api/sniper-feed?collection=nfl-all-day` both send All Day's BARE on-chain number (market 153/200 rows "7"; sniper 151/183). `marketSeriesLabel` decoded Top Shot only and the sniper's All Day RPC path passed `series_name` through, so cards read "Base · 7".
