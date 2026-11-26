@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~1:22 PM PT · 🔧 SHIPPED — **Candy Market tab: "League or brand" bar (`?property=`), a brand crumb on Candy set pages, Panini's Baseball joins the MLB tile on `/leagues`** (Cowork cloud; Trevor: "Do it all")
+
+- **Market:** the Candy Market tab gets the same chip bar Panini has (MLB · DC · NASCAR …, only brands with a live ask). The API reads `candy_market_board_for_property(slug)` — the view's own rows for that brand (891 DC, 1,559 MLB of 2,462 at ship) — so every filter and sort applies unchanged. Unknown slug → 400, failed lookup → 503, never the whole board under a brand's name. New public GET `/api/candy-properties` (the chip index). Candy and Panini each remember their own pick.
+- **Set pages:** a Candy collection's breadcrumb now carries its brand (Candy › DC › Batman (1940-2011) #1). A name two brands share ("2023 Tickets", "2022 ICON Chasers") or a failed read leaves the crumb out.
+- **/leagues:** Panini's "Baseball" products sit on the MLB tile beside Candy, instead of a second baseball tile.
+- **Migration:** `20261126211340_audit_20261126_candy_market_board_for_property` (applied via MCP, file committed; anon EXECUTE verified false).
+- **Revert:** `git revert` the code commit (find by message "candy: league / brand scope on the Market tab"). The function is unread after that.
+
 ### 2026-11-26 ~1:12 PM PT · 🔧 SHIPPED — **The Candy section is labelled "Candy", not "Candy MLB" (URL unchanged)** (Cowork cloud; Trevor: "Do it all" — default taken, his to overrule)
 
 - **Why:** the section holds 401 collections across MLB, DC, NASCAR, WWE, Netflix and more, and DC outsold MLB over 90 days on record; a DC comic's breadcrumb read "Candy MLB › DC" and its page title "| Candy MLB |".
