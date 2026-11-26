@@ -100,7 +100,7 @@ async function pageAll(page) {
 const readCollections = () => pageAll((a, b) =>
   db.from("ufc_aptos_collections").select("aptos_collection_id, edition_id").order("aptos_collection_id", { ascending: true }).range(a, b))
 const readListings = () => pageAll((a, b) =>
-  db.from("ufc_aptos_listings").select("listing_address, token_data_id, last_checked_at").order("listing_address", { ascending: true }).range(a, b))
+  db.from("ufc_aptos_listings").select("listing_address, token_data_id, last_checked_at").order("listing_address", { ascending: true }).order("token_data_id", { ascending: true }).range(a, b))
 
 const cols = await readCollections()
 const editionOf = new Map(cols.map((c) => [c.aptos_collection_id, c.edition_id]))
@@ -163,11 +163,15 @@ while (cursor < head && Date.now() - t0 < BUDGET_MS * 0.6) {
     })
   }
   // Write the window's rows BEFORE advancing the cursor past them.
-  if (APPLY && out.length) {
-    const { error } = await db.from("ufc_aptos_listings").upsert(out, { onConflict: "listing_address" })
+  // One row per Moment per listing (PK listing_address + token_data_id since 20261126044653): a bundle is ONE
+  // listing object holding several Moments, so listing_address alone collided (21000) on the 11-25 run. The
+  // same pair can also appear twice in a window (a token hopping through the listing object in one tx) — keep one.
+  const rows = [...new Map(out.map((o) => [`${o.listing_address}:${o.token_data_id}`, o])).values()]
+  if (APPLY && rows.length) {
+    const { error } = await db.from("ufc_aptos_listings").upsert(rows, { onConflict: "listing_address,token_data_id" })
     if (error) throw error
   }
-  stats.new_listings += out.length
+  stats.new_listings += rows.length
   cursor = hi
   stats.windows++
   win = Math.min(WINDOW, win * 2) // grow back after a successful window
@@ -190,12 +194,16 @@ for (let i = 0; i < stored.length && Date.now() - t0 < BUDGET_MS; i += 50) {
   stats.still_live += live.length
   stats.closed += gone.length
   if (APPLY) {
-    if (gone.length) {
-      const { error } = await db.from("ufc_aptos_listings").delete().in("listing_address", gone.map((g) => g.listing_address))
+    // Exact (listing, token) pairs only: a bundle listing shares one address across its Moments, so keying a
+    // delete or a "checked" stamp on listing_address alone would retire or vouch for siblings never re-read.
+    for (const g of gone) {
+      const { error } = await db.from("ufc_aptos_listings").delete().eq("listing_address", g.listing_address).eq("token_data_id", g.token_data_id)
       if (error) throw error
     }
-    if (live.length) {
-      const { error } = await db.from("ufc_aptos_listings").update({ last_checked_at: new Date().toISOString() }).in("listing_address", live.map((l) => l.listing_address))
+    const liveByListing = new Map()
+    for (const l of live) liveByListing.set(l.listing_address, [...(liveByListing.get(l.listing_address) ?? []), l.token_data_id])
+    for (const [listing, tokens] of liveByListing) {
+      const { error } = await db.from("ufc_aptos_listings").update({ last_checked_at: new Date().toISOString() }).eq("listing_address", listing).in("token_data_id", tokens)
       if (error) throw error
     }
   }
