@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:13 PM PT · 🔧 SHIPPED — **Panini league pages: Teams / Nations / Clans section and a Prizm / Select brand-line filter; dashboard Panini and Candy tiles show the cards by league** (Cowork cloud; Trevor: "Keep going and do it all")
+
+- **Correction to the 1:45 PM note:** "card rows carry no reliable group field" was wrong — `panini_editions.nation` holds the group Panini prints on the card (a TEAM on NBA / NFL / WNBA / NWSL / baseball cards, 94–100 % filled; a NATION on World Cup cards, 20 % filled; a clan on Bad Eggs). And the per-user holdings are NOT capped: `panini_user_holdings` is the full walk (46,786 rows, 22 usernames); only the Binder's page read is 500 rows.
+- **League pages:** `get_panini_property_groups(slug)` → a "Teams" / "Nations" / "Clubs" / "Clans" section by FMV total, which states its denominator ("2,332 of 11,546 FIFA World Cup cards name a nation; the rest are not counted here"). Products table gets a Line column and chips (Prizm · Select · Donruss Optic …) read from the product's own name; a product with no line shows a dash.
+- **Dashboard:** `panini_owner_property_split(username)` and `candy_wallet_property_split(wallet)` behind public GET `/api/league-split`; each Panini / Candy tile gets one line ("NFL 3,647 · NBA 1,556 · +11 more"). Nothing renders on a failed read or a one-league holding. A Solana key is passed through untouched.
+- **Migration:** `20261126214413_audit_20261126_property_groups_and_owner_splits` (three read-only functions; applied via MCP, file committed).
+- **Revert:** `git revert` the code commit (find by message "panini: teams / nations and a brand-line filter"). The functions are unread after that.
+
 ### 2026-11-26 ~2:15 PM PT · 🗄 APPLIED (`20261126220235`) + 🔧 SHIPPED — **binder / pack history Winners & Losers count only packs paid for** (Claude Code cloud; Trevor: "Yes do that")
 
 - `get_wallet_pack_history` v39: `p_outcome` requires a cost above $0, so free reward packs and box packs (a known $0, not a purchase) are in neither bucket; they still list, sort and total. Applied ~2:02 PM PT as a one-edit DO block asserting the v38 md5 before and `0e369855…` after; ACL unchanged (anon / authenticated false). Live on Trevor's Top Shot Sealed tab: winners 331 → 194, losers 94, of 430. Pin V39-1..2 (red on the v38 body). The Winners / Losers hover text says only packs you paid for count.
