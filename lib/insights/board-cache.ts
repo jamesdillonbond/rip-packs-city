@@ -82,6 +82,7 @@ export type BoardCacheKey =
   | "panini-squeeze"
   | "panini-boards"
   | "pack-drops"
+  | "squeeze"
 
 /** The hot boards the cron proactively warms. `label` feeds the cron's per-board
  *  telemetry; `key` is the snapshot row + the value each page passes to the cache. */
@@ -99,6 +100,9 @@ export const WARM_BOARDS: { key: BoardCacheKey; label: string; warmEveryMs?: num
   // 2026-10-10 (#33): every tick (15 min), not hourly. Drop sale-state moves during a
   // live drop, and one warm is ~6 drops × 3 Vaultopolis GETs plus one pricing RPC each.
   { key: "pack-drops", label: "Pack drops" },
+  // 2026-11-26: the Top Shot lock-rate squeeze board's default view (~72k buffers per read). Every tick:
+  // lock counts move hourly (badge_editions) and asks continuously, so 15 min is the right staleness bound.
+  { key: "squeeze", label: "Squeeze board" },
 ]
 
 /**

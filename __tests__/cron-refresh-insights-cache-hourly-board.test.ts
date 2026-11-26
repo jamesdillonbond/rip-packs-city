@@ -42,6 +42,7 @@ vi.mock("@/lib/insights/candy-board", () => ({ fetchCandyMlbDefault: ok }))
 vi.mock("@/lib/insights/panini-board", () => ({ fetchPaniniSqueezeDefault: ok }))
 vi.mock("@/lib/insights/panini-more-boards", () => ({ fetchPaniniMoreBoards: () => paniniBoards() }))
 vi.mock("@/lib/insights/pack-drops-default", () => ({ fetchPackDropsDefault: ok }))
+vi.mock("@/lib/insights/squeeze-board", () => ({ fetchSqueezeDefault: ok }))
 
 import { POST } from "@/app/api/cron/refresh-insights-cache/route"
 import { freshMsFor, BOARD_CACHE_FRESH_MS, WARM_BOARDS } from "@/lib/insights/board-cache"

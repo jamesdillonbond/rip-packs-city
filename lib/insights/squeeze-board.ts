@@ -32,6 +32,7 @@ import { retryEmptyPlayerSearch, type PlayerResolved } from "@/lib/search/player
 import { getCollectionUuid } from "@/lib/collections"
 import { supabaseAdmin } from "@/lib/supabase"
 import type { SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { describeBoardFailures, type BoardLiveResult } from "@/lib/insights/board-cache"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -205,4 +206,35 @@ async function runFetchSqueezeBoard(
   }
 
   return q.limit(limit)
+}
+
+/** The /insights/squeeze page's default view (Top Shot, 50%+ squeezed, top 200). */
+export const SQUEEZE_PAGE_DEFAULT = { limit: 200, minSqueeze: 50 } as const
+
+/**
+ * The page's default view as a cached board payload (board-cache key `squeeze`,
+ * 2026-11-26). Shared by the page (readBoardOrLive) and the warm cron (warmBoard).
+ *
+ * WHY: the page re-ran the full view (~72k buffers, 0.2 s warm) on every 5-minute
+ * ISR regeneration, and under IO pressure that read crossed the 8 s board budget
+ * 7 times in the week to 11-26 — each one an honest "couldn't load" page served for
+ * the whole revalidate window. Through the ladder the page serves the warmed
+ * snapshot, falls back to the live read, and on a failed live read serves the last
+ * COMPLETE board with its own `fetched_at` instead of an empty one.
+ *
+ * `fetched_at` is when the rows were read, and NULL when the read failed — never
+ * the render clock (R95). `ok` is false on any error, so a failed read is never cached.
+ */
+export async function fetchSqueezeDefault(
+  db: Db = supabaseAdmin,
+): Promise<BoardLiveResult<{ rows: unknown[]; fetched_at: string | null }>> {
+  const { data, error } = await fetchSqueezeBoard({ ...SQUEEZE_PAGE_DEFAULT }, db)
+  const ok = !error
+  const rows = ok ? (data ?? []) : []
+  return {
+    payload: { rows, fetched_at: ok ? new Date().toISOString() : null },
+    ok,
+    rowCount: ok ? rows.length : null,
+    error: describeBoardFailures([{ label: "topshot_squeeze_board", ok, error: error?.message }]),
+  }
 }

@@ -20,13 +20,13 @@ import { join } from "node:path"
 // board-liveness probe (which times `SELECT count(*)`, a query the planner prunes),
 // so a compile-time or monitoring signal will not catch it — only this will.
 //
-// SCOPE: the six single-view boards that fetch their default rows inline. The
-// cached boards (candy-mlb, panini-squeeze, deals, first-mint, rookies) route
+// SCOPE: the five single-view boards that fetch their default rows inline. The
+// cached boards (candy-mlb, panini-squeeze, deals, first-mint, rookies, and squeeze
+// since 2026-11-26) route
 // through readBoardOrLive/lib/insights/boards.ts and carry their `ok` flag in the
 // cached payload instead, so they are deliberately NOT matched here — asserting
 // this shape on them would be a false positive.
 const INLINE_FETCH_BOARDS = [
-  "squeeze",
   "trophies",
   "offer-spread",
   "pinnacle-scarcity",
@@ -71,7 +71,8 @@ describe("public /insights boards keep their honest-degradation wiring", () => {
   // failed AND no snapshot existed to fall back on, so `payload.degraded` is undefined
   // and the board renders empty at HTTP 200. All five discarded `source` until
   // 2026-08-12. Pin that they read it and forward it.
-  const CACHED_BOARDS = ["deals", "first-mint", "rookies", "candy-mlb", "panini-squeeze"] as const
+  // squeeze moved here from INLINE_FETCH_BOARDS on 2026-11-26 (board-cache key `squeeze`).
+  const CACHED_BOARDS = ["deals", "first-mint", "rookies", "candy-mlb", "panini-squeeze", "squeeze"] as const
 
   for (const board of CACHED_BOARDS) {
     it(`${board} surfaces a live-degraded cache read`, () => {
@@ -131,7 +132,7 @@ describe("public /insights boards keep their honest-degradation wiring", () => {
     // Cheap rot-guard: if a board page still fetches inline via supabaseAdmin and
     // is not in the list above, it is unprotected. Enumerating known-cached boards
     // explicitly (rather than globbing) keeps the failure message actionable.
-    const CACHED = ["candy-mlb", "panini-squeeze", "deals", "first-mint", "rookies"]
+    const CACHED = ["candy-mlb", "panini-squeeze", "deals", "first-mint", "rookies", "squeeze"]
     for (const board of INLINE_FETCH_BOARDS) {
       expect(CACHED).not.toContain(board)
     }

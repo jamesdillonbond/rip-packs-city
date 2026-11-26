@@ -33,6 +33,7 @@ import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"
 import { fetchPaniniSqueezeDefault } from "@/lib/insights/panini-board"
 import { fetchPaniniMoreBoards } from "@/lib/insights/panini-more-boards"
 import { fetchPackDropsDefault } from "@/lib/insights/pack-drops-default"
+import { fetchSqueezeDefault } from "@/lib/insights/squeeze-board"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
@@ -49,6 +50,7 @@ const BUILDERS: Record<BoardCacheKey, () => Promise<any>> = {
   "panini-squeeze": () => fetchPaniniSqueezeDefault(),
   "panini-boards": () => fetchPaniniMoreBoards(),
   "pack-drops": () => fetchPackDropsDefault(),
+  squeeze: () => fetchSqueezeDefault(),
 }
 
 async function run(request: NextRequest) {
