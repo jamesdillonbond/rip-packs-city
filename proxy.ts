@@ -213,6 +213,7 @@ const RATE_LIMITED_COLLECTION_PAGES = new Set([
   "pack",
   "moment",
   "product",
+  "property",
 ])
 
 export function isRateLimitedPageRoute(pathname: string): boolean {
@@ -418,7 +419,7 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // segments, so a case-sensitive Solana address is never touched.
 // Loop-safe: the target has no uppercase letter, so it cannot match again.
 const CASE_FOLD_ROOTS = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos", "disney-pinnacle", "ufc", "candy-mlb", "panini-blockchain", "players", "teams"])
-const CASE_FOLD_ENTITY_TABS = new Set(["player", "team", "set", "character", "series", "product", "pack"])
+const CASE_FOLD_ENTITY_TABS = new Set(["player", "team", "set", "character", "series", "product", "property", "pack"])
 export function caseFoldedPath(pathname: string): string | null {
   if (!/[A-Z]/.test(pathname)) return null
   const seg = pathname.split("/")
@@ -939,10 +940,14 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // data it wasn't already serving; it just stops the bounce.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/[^/]+\/(?:edition|set|player|character|team|series|pack|moment|product)\//.test(pathname)
+    /^\/[^/]+\/(?:edition|set|player|character|team|series|pack|moment|product|property)\//.test(pathname)
   ) {
     return true
   }
+  // `property` added 2026-11-26: a page per league / brand a Panini product is made under
+  // (/panini-blockchain/property/<slug>) — read-only, sitemap-advertised, linked from the anon-public overview
+  // and products index. The first deploy shipped it behind the sign-in wall (307 → /login, read live ~11:50 AM
+  // PT), the same miss as the product pages on 10-25. Any collection without `productPages` 404s there.
   // `product` added 2026-10-25: Panini PRODUCT pages (/panini-blockchain/product/<slug>, the series-page
   // counterpart) and their index (/panini-blockchain/product, exact). Same read-only, sitemap-advertised
   // shape as the entity pages above; any collection without the registry's `productPages` switch 404s there.

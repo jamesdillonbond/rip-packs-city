@@ -22,4 +22,15 @@ describe("Panini product pages are anon-public", () => {
   it("the product page is rate-limited like the other entity pages", () => {
     expect(isRateLimitedPageRoute("/panini-blockchain/product/x")).toBe(true)
   })
+  it("a league / brand page is public for GET/HEAD, rate-limited, and not opened for writes (2026-11-26)", () => {
+    for (const p of ["/panini-blockchain/property/wnba", "/panini-blockchain/property/fifa-world-cup"]) {
+      expect(isPublicPath(p, "GET"), p).toBe(true)
+      expect(isPublicPath(p, "HEAD"), p).toBe(true)
+      expect(isRateLimitedPageRoute(p), p).toBe(true)
+    }
+    expect(isPublicPath("/panini-blockchain/property/wnba", "POST")).toBe(false)
+    expect(isPublicPath("/panini-blockchain/propertyx/wnba", "GET")).toBe(false)
+    // There is no index at the bare segment (the products index is the list), so it stays closed.
+    expect(isPublicPath("/panini-blockchain/property", "GET")).toBe(false)
+  })
 })
