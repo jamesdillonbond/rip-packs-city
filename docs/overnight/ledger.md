@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~1:55 PM PT · 🗄 APPLIED (`20261126215321`) — `fmv_offer_pull_log` is kept to 180 days by a daily prune job (chat session; Trevor: "Yes do it all")
+
+- pg_cron job 941 `rpc-fmv-offer-pull-log-prune`, daily 3:07 AM PT, one `DELETE … WHERE logged_at < now() - interval '180 days'` over `fmv_offer_pull_log_logged_idx`. The log held 95 rows / 96 kB when it was scheduled; nothing is old enough to delete until late May 2027. Pricing unchanged. Also (no repo change): the Mon 11-30 FMV read now splits the week at the 11-26 noon rule change and reads the log instead of inverting, and a Mon 12-07 10:17 AM PT read scores the first full week and the Legendary check (74.8, two consecutive reads). **Revert:** `SELECT cron.unschedule('rpc-fmv-offer-pull-log-prune');`
+
 ### 2026-11-26 ~2:05 PM PT · 🔧 SHIPPED (copy) — pack tier chips read "In season premium", not "In_season_premium" (Claude Code cloud; found on the live check of the ~1:40 PM ship)
 
 - All Day's Dapper tiers arrive snake_cased; `packTierLabel` now turns `_` / `-` into spaces. Test in `packs-wallet-view-format.test.ts`. **Revert:** `git revert` the commit "pack tier chips: snake_case tiers read as words".
