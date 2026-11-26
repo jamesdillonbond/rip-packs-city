@@ -57,9 +57,12 @@ describe("POST /api/cron/resolve-topshot-stubs — success path", () => {
     expect((await res.json()).ok).toBe(true)
   })
 
-  it("200-triggers via the ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await mod.POST(makeReq({ method: "POST", token: "test-ingest-token" }))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.triggered_at).toBeUndefined()
   })
 })
 

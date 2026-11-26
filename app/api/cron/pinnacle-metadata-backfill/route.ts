@@ -395,8 +395,7 @@ interface WorkItem {
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  const tokenQuery = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(tokenQuery, "INGEST_SECRET_TOKEN"))) {
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

@@ -42,12 +42,19 @@ const { GET } = await import("@/app/api/bulk-classify/route")
 const WALLET_HEX = "bd94cade097e50ac"
 const WALLET = "0x" + WALLET_HEX
 
-function req(opts: { token?: string; wallet?: string; offset?: number } = {}): NextRequest {
+// `token` rides the Authorization header (the only form the route accepts since
+// the ?token= query form was retired 2026-11-26); `queryToken` puts a secret in
+// the query string, to prove that retired form is refused.
+function req(
+  opts: { token?: string; queryToken?: string; wallet?: string; offset?: number } = {},
+): NextRequest {
   const p = new URLSearchParams()
-  if (opts.token !== undefined) p.set("token", opts.token)
+  if (opts.queryToken !== undefined) p.set("token", opts.queryToken)
   if (opts.wallet !== undefined) p.set("wallet", opts.wallet)
   if (opts.offset !== undefined) p.set("offset", String(opts.offset))
-  return new NextRequest("https://t/api/bulk-classify?" + p.toString())
+  const headers = new Headers()
+  if (opts.token !== undefined) headers.set("authorization", `Bearer ${opts.token}`)
+  return new NextRequest("https://t/api/bulk-classify?" + p.toString(), { headers })
 }
 
 type MomentEntry = { status?: number; data?: Record<string, unknown> }
@@ -255,12 +262,13 @@ describe("bulk-classify accepts the token in the Authorization header", () => {
     expect((await GET(hreq({ authorization: "Bearer wrong" }, { token: "ingest-secret" }))).status).toBe(401)
   })
 
-  it("NO-CHANGE CONTROL: the query-string form still works, and is labelled as the deprecated form", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     installSb({ moment_acquisitions: { data: [], error: null } })
     fetchMock = installFetchMock([momentStub({})])
-    const res = await GET(req({ token: "ingest-secret", wallet: WALLET }))
-    expect(res.status).toBe(200)
-    const lines = await collect(res)
-    expect(lines.find((l) => l.status === "started")).toMatchObject({ auth: "query" })
+    const res = await GET(req({ queryToken: "ingest-secret", wallet: WALLET }))
+    expect(res.status).toBe(401)
+    // Refused at the gate: no stream opened, so no `started` line exists.
+    const text = await res.text()
+    expect(text).not.toContain("started")
   })
 })

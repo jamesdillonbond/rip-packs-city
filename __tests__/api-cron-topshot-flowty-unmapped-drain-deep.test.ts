@@ -445,12 +445,22 @@ describe("topshot-flowty-unmapped-drain — dedup, throttles, and failure paths"
     expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: false })
   })
 
-  it("401s without a token; accepts CRON_SECRET via ?token=", async () => {
+  it("401s without a token; accepts CRON_SECRET via Authorization: Bearer", async () => {
     process.env.CRON_SECRET = "cron-s"
     install({})
     expect((await POST(req("", { auth: null }))).status).toBe(401)
     expect((await POST(req("", { auth: "Bearer wrong" }))).status).toBe(401)
-    const res = await POST(req("?token=cron-s", { auth: null }))
+    const res = await POST(req("", { auth: "Bearer cron-s" }))
     expect(res.status).toBe(200)
+  })
+
+  it("401s with the correct CRON_SECRET in ?token= — the query form is retired (2026-11-26)", async () => {
+    process.env.CRON_SECRET = "cron-s"
+    const spy = install({})
+    const res = await POST(req("?token=cron-s", { auth: null }))
+    expect(res.status).toBe(401)
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    expect(spy.writes.unmapped_sales ?? []).toHaveLength(0)
+    expect(spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")).toHaveLength(0)
   })
 })

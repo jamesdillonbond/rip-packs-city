@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
   const expected = process.env.INGEST_SECRET_TOKEN;
   const token =
     (bearer.startsWith("Bearer ") ? bearer.slice(7) : null) ||
-    req.nextUrl.searchParams.get("token") ||
     req.headers.get("x-ingest-token");
 
   if (!expected || !tokenMatches(token, "INGEST_SECRET_TOKEN")) {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest"
 
 // Route-integration test for /api/cron/trigger-backfill.
-// Auth: ?token= / x-ingest-token / Bearer INGEST_SECRET_TOKEN (fail-closed)
+// Auth: x-ingest-token / Bearer INGEST_SECRET_TOKEN (fail-closed; ?token= retired 2026-11-26)
 // Highest-value assertion: fail-closed auth — no auth and a wrong bearer both 401
 // before any DB/upstream work. Tokens are set below so the handler exercises its
 // real comparison branch (the route module is imported dynamically afterwards).
@@ -53,8 +53,18 @@ describe("POST /api/cron/trigger-backfill — success path (fmv-recalc triggered
     expect(typeof body.triggeredAt).toBe("string")
   })
 
-  it("200s via the ?token= query param too", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    const before = fetchMock.mock.calls.length
     const res = await mod.GET(makeReq({ method: "GET", token: "test-ingest-token" }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).success).not.toBe(true)
+    // no downstream fmv-recalc trigger was fired
+    expect(fetchMock.mock.calls.length).toBe(before)
+  })
+
+  it("GET aliases POST: 200s via the Authorization: Bearer header", async () => {
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
     expect(res.status).toBe(200)
     expect((await res.json()).success).toBe(true)
   })

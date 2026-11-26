@@ -91,10 +91,12 @@ describe("GET /api/cron/pinnacle-metadata-backfill — success path (empty queue
     expect(typeof body.duration_ms).toBe("number")
   })
 
-  it("200s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await GET2(makeReq({ url, method: "GET", token: TOKEN }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).ok).toBe(true)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.duration_ms).toBeUndefined()
   })
 
   it("still 401s with a wrong bearer token under the configured secret", async () => {

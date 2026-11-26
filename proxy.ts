@@ -1684,7 +1684,7 @@ export async function proxy(request: NextRequest) {
     })
   }
 
-  // ── Bypass-token short-circuit (header OR query param) ──────────────────
+  // ── Bypass-token short-circuit (Authorization header only; ?token= retired) ──
   // Cron-job.org and internal pipeline jobs hit /api/seed-wallet-refresh,
   // /api/ingest, /api/listing-cache*, /api/sales-indexer*, /api/fmv-recalc,
   // /api/flowty-tx-scanner, etc. with INGEST_SECRET_TOKEN (or CRON_SECRET for

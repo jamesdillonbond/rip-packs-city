@@ -1,16 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for POST /api/pinnacle/resolve-buyers.
-// Auth (call-time, fail-closed): Bearer OR ?token= must match INGEST_SECRET_TOKEN
+// Auth (call-time, fail-closed): Bearer (?token= retired 2026-11-26) must match INGEST_SECRET_TOKEN
 // OR CRON_SECRET, else 401 before any DB work. Happy path pinned at the
 // no-work branch (claim RPC returns []) — no Flow REST fetch is exercised.
 // claim RPC error -> 500.
 
-const rpcState: { claim: any } = { claim: { data: [], error: null } }
+const rpcState: { claim: any; calls: number } = { claim: { data: [], error: null }, calls: 0 }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (name: string) => {
+      rpcState.calls++
       if (name === "claim_pinnacle_resolver_batch") return rpcState.claim
       return { data: null, error: null }
     },
@@ -31,6 +32,7 @@ beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "test-ingest-secret"
   process.env.CRON_SECRET = "test-cron-secret"
   rpcState.claim = { data: [], error: null }
+  rpcState.calls = 0
 })
 
 describe("POST /api/pinnacle/resolve-buyers", () => {
@@ -50,8 +52,15 @@ describe("POST /api/pinnacle/resolve-buyers", () => {
     expect((await res.json()).status).toBe("no_work")
   })
 
-  it("authorizes via ?token= against CRON_SECRET", async () => {
+  it("401s with the correct CRON_SECRET in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(req(undefined, "test-cron-secret"))
+    expect(res.status).toBe(401)
+    expect((await res.json()).status).not.toBe("no_work")
+    expect(rpcState.calls).toBe(0)
+  })
+
+  it("authorizes via Authorization: Bearer against CRON_SECRET", async () => {
+    const res = await POST(req("Bearer test-cron-secret"))
     expect(res.status).toBe(200)
     expect((await res.json()).status).toBe("no_work")
   })

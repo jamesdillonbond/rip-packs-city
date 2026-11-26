@@ -71,8 +71,9 @@ describe("GET /api/cron/snapshot-institutional-wallets — auth", () => {
   it("accepts the CRON_SECRET bearer", async () => {
     expect((await mod.GET(makeReq({ method: "GET", auth: "Bearer test-cron-secret" }))).status).toBe(202)
   })
-  it("accepts the ?token= query param", async () => {
-    expect((await mod.GET(makeReq({ method: "GET", token: "test-ingest-token" }))).status).toBe(202)
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    expect((await mod.GET(makeReq({ method: "GET", token: "test-ingest-token" }))).status).toBe(401)
+    expect(st.fetchCalls).toBe(0)
   })
 })
 

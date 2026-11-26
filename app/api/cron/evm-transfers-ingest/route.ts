@@ -9,7 +9,7 @@
 // require only an INSERT into evm_nft_contracts.
 //
 // Auth: Bearer CRON_SECRET (Vercel cron) or Bearer INGEST_SECRET_TOKEN
-// (also accepts ?token=). GET/POST.
+// (?token= retired). GET/POST.
 // Fire-and-forget via after() so cron-job.org's 30s HTTP cap can't kill the
 // ingest mid-write; internal work is still bounded to BUDGET_MS so a slow
 // contract can't starve later contracts in the same tick.
@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 import {
   getLogs,
   getBlockByNumber,
@@ -533,8 +533,7 @@ function authorized(req: NextRequest): boolean {
 
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secret as before
   if (!process.env.INGEST_SECRET_TOKEN) return false;
-  if (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) return true;
-  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN");
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN");
 }
 
 export async function POST(req: NextRequest) {

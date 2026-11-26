@@ -154,9 +154,11 @@ describe("prune-pipeline-runs — the deferred prune", () => {
 describe("drain-fmv-cold-tail — collection gating + the deferred drain", () => {
   const P = "/api/admin/drain-fmv-cold-tail"
 
-  it("accepts either auth lane and rejects a wrong token", async () => {
+  it("accepts the Bearer lane, 401s with the correct secret in ?token= (the query form is retired 2026-11-26), and rejects a wrong token", async () => {
     expect((await drain.POST(authed(P))).status).toBe(202)
-    expect((await drain.POST(req(P, { qs: "?token=ingest-tok" }))).status).toBe(202)
+    state.after.length = 0
+    expect((await drain.POST(req(P, { qs: "?token=ingest-tok" }))).status).toBe(401)
+    expect(state.after).toHaveLength(0)
     expect((await drain.POST(req(P, { qs: "?token=nope" }))).status).toBe(401)
   })
 

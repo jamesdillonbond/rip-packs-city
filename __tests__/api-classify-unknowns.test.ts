@@ -89,9 +89,10 @@ describe("GET /api/classify-unknowns — guards", () => {
   it("401s with a wrong bearer token", async () => {
     expect((await GET(makeReq({ url: URL, method: "GET", auth: "Bearer wrong" }))).status).toBe(401)
   })
-  it("accepts the token via the ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await GET(makeReq({ url: URL, method: "GET", token: SECRET }))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(401)
+    expect((await res.json()).processed).toBeUndefined()
   })
   it("returns an empty-backlog summary when nothing is queued", async () => {
     const body = await (await GET(authed())).json()

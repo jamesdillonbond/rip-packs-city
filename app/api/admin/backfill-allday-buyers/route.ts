@@ -6,7 +6,7 @@ import { normalizeFlowEventAddress } from "@/lib/address"
 import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict, cursorOrFilter, cursorRowBelow } from "@/lib/pipeline/buyer-backfill-window"
 
 // POST /api/admin/backfill-allday-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
-//   (or Bearer $CRON_SECRET for the Vercel cron, or ?token=$INGEST_SECRET_TOKEN)
+//   (or Bearer $CRON_SECRET for the Vercel cron; ?token= retired 2026-11-26)
 //
 // BUILD 1 (greenlit 2026-07-02, docs/handoff-2026-07-02-BUILD-greenlit.md).
 // AllDay historical sales were indexed with an unresolved buyer for a large slice
@@ -187,10 +187,9 @@ interface UnresolvedRow {
 async function handle(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
   const okAuth =
-    (TOKEN && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
+    (TOKEN && (tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) ||
     (CRON && tokenMatches(bearer, "CRON_SECRET"))
   if (!okAuth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 

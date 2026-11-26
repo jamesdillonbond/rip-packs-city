@@ -33,7 +33,7 @@
 //   play_id_onchain comes straight from play.flowID. The RPC then joins
 //   editions on (set_id_onchain, play_id_onchain).
 //
-// Auth:   Bearer INGEST_SECRET_TOKEN, or ?token=.
+// Auth:   Bearer INGEST_SECRET_TOKEN (?token= retired).
 // Cursor: backfill_state row `topshot-fmv-sweep` holds the GQL rightCursor; an
 //         empty cursor starts the sweep from the beginning, and the cursor
 //         resets to empty when the feed is exhausted (continuous refresh).
@@ -211,8 +211,7 @@ function unauthorized() {
 async function handle(req: NextRequest): Promise<NextResponse> {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   // CRON-30S: this cursor-paginated sweep runs up to ~255s — far past
   // cron-job.org's 30s client cap, so every tick was marked "Failed (timeout)"

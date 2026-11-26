@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
 // Route integration test for GET /api/tier-backfill. A wallet_moments_cache tier
-// backfill sweep gated by ?token= against INGEST_SECRET_TOKEN → fail-closed 401
+// backfill sweep gated by Authorization: Bearer INGEST_SECRET_TOKEN (?token=
+// retired 2026-11-26) → fail-closed 401
 // when the token is missing/mismatched. Success path: a matching token with an
 // empty candidate set (no null-tier rows) short-circuits to the "backfill
 // complete" 200 before any GQL work. createClient is a self-referential
@@ -20,7 +21,8 @@ vi.mock("@supabase/supabase-js", () => {
 
 import { GET } from "@/app/api/tier-backfill/route"
 
-const req = (u: string) => ({ nextUrl: new URL(u) }) as any
+const req = (u: string, auth?: string) =>
+  ({ nextUrl: new URL(u), headers: new Headers(auth ? { authorization: auth } : {}) }) as any
 const saved = process.env.INGEST_SECRET_TOKEN
 const TOKEN = "tier-backfill-token"
 
@@ -37,12 +39,20 @@ afterEach(() => {
 describe("GET /api/tier-backfill", () => {
   it("401s without a matching token (fail-closed)", async () => {
     expect((await GET(req("https://t/api/tier-backfill"))).status).toBe(401)
-    expect((await GET(req("https://t/api/tier-backfill?token=wrong"))).status).toBe(401)
+    expect((await GET(req("https://t/api/tier-backfill", "Bearer wrong"))).status).toBe(401)
+  })
+
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await GET(req(`https://t/api/tier-backfill?token=${TOKEN}`))
+    expect(res.status).toBe(401)
+    expect((await res.json()).message).toBeUndefined()
+    // no candidate read was issued
+    expect(state.rangeArgs).toHaveLength(0)
   })
 
   it("200s and reports backfill-complete when no null-tier rows remain", async () => {
     state.rows = { data: [], error: null }
-    const res = await GET(req(`https://t/api/tier-backfill?token=${TOKEN}`))
+    const res = await GET(req("https://t/api/tier-backfill", `Bearer ${TOKEN}`))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.message).toContain("backfill complete")
@@ -50,7 +60,7 @@ describe("GET /api/tier-backfill", () => {
   })
 
   it("defaults a NaN limit/offset to finite .range() bounds (never .range(0, NaN))", async () => {
-    const res = await GET(req(`https://t/api/tier-backfill?token=${TOKEN}&limit=abc&offset=xyz`))
+    const res = await GET(req("https://t/api/tier-backfill?limit=abc&offset=xyz", `Bearer ${TOKEN}`))
     expect(res.status).toBe(200)
     expect(state.rangeArgs).toHaveLength(2)
     expect(Number.isFinite(state.rangeArgs[0])).toBe(true)

@@ -43,7 +43,7 @@
 // at 13.9% of all instance disk reads. 96 no-op walks a day is a real cost for a
 // lane that runs once. A daily lane needs a daily backstop with a ran-today gate.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) via verifyAdminRequest.
+// Auth: Bearer RPC_ADMIN_TOKEN (?token= retired) via verifyAdminRequest.
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";

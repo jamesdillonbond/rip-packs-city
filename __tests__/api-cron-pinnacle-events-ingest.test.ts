@@ -172,10 +172,12 @@ describe("POST /api/cron/pinnacle-events-ingest — success path (ingest queued,
     expect(typeof body.started_at).toBe("string")
   })
 
-  it("200s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(makeReq({ url, token: "test-ingest-secret" }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).ok).toBe(true)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.message).not.toBe("ingest queued")
   })
 
   it("GET alias reaches the same 200 accept when authed", async () => {

@@ -35,7 +35,7 @@
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (admin UI / cron-job.org) OR Bearer
 // INGEST_SECRET_TOKEN (GitHub Actions) OR Bearer CRON_SECRET (Vercel cron — see
-// the vercel.json entry that drives this daily). Or ?token=<RPC_ADMIN_TOKEN>.
+// the vercel.json entry that drives this daily). (?token= retired.)
 // GET or POST.
 // ?probe=1   — sweep WITHOUT writing and return the raw (parallelID,
 //              circulationCount) distribution so the GQL shape can be confirmed.

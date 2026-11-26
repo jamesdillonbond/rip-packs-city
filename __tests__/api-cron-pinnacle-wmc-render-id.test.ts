@@ -55,9 +55,9 @@ describe("GET /api/cron/pinnacle-wmc-render-id — success path (immediate 202 a
     expect(typeof body.started_at).toBe("string")
   })
 
-  it("202s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await mod.GET(makeReq({ method: "GET", token: "test-ingest-token" }))
-    expect(res.status).toBe(202)
-    expect((await res.json()).accepted).toBe(true)
+    expect(res.status).toBe(401)
+    expect((await res.json()).accepted).toBeUndefined()
   })
 })

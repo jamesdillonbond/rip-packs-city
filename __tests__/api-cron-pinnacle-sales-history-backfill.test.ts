@@ -86,12 +86,14 @@ describe("POST /api/cron/pinnacle-sales-history-backfill — success path (synch
     expect(body.recent_fails).toBe(20)
   })
 
-  it("kill-switch accept also honors the correct ?token= query param", async () => {
+  it("kill-switch accept does NOT honor the correct secret in ?token= — 401, the query form is retired (2026-11-26)", async () => {
     process.env.PINNACLE_SALES_HISTORY_BACKFILL_DISABLED = "1"
     try {
       const res = await POST2(makeReq({ url, token: TOKEN }))
-      expect(res.status).toBe(200)
-      expect((await res.json()).skipped).toBe("disabled")
+      expect(res.status).toBe(401)
+      const body = await res.json()
+      expect(body.ok).not.toBe(true)
+      expect(body.skipped).toBeUndefined()
     } finally {
       delete process.env.PINNACLE_SALES_HISTORY_BACKFILL_DISABLED
     }

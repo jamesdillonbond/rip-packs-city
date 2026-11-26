@@ -112,7 +112,7 @@ afterEach(() => {
 })
 
 describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
-  it("401s without / with a wrong bearer, and accepts ?token=", async () => {
+  it("401s without / with a wrong bearer, and with the correct secret in ?token= — the query form is retired (2026-11-26); accepts the Bearer header", async () => {
     expect((await tsRoute.POST(adminReq("https://t/api/admin/backfill-topshot-buyers"))).status).toBe(401)
     expect(
       (
@@ -129,8 +129,15 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
         )
       ).status,
     ).toBe(401)
-    const ok = await tsRoute.POST(
+    // The CORRECT secret in the query string is refused, and nothing is queued.
+    const viaQuery = await tsRoute.POST(
       adminReq("https://t/api/admin/backfill-topshot-buyers?token=ingest-secret"),
+    )
+    expect(viaQuery.status).toBe(401)
+    expect(await viaQuery.json()).not.toMatchObject({ ok: true })
+    expect(state.afterCbs).toHaveLength(0)
+    const ok = await tsRoute.POST(
+      adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
     )
     expect(ok.status).toBe(200)
     expect(await ok.json()).toMatchObject({ ok: true, queued: true })

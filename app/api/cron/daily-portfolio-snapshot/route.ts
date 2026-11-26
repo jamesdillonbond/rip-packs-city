@@ -2,29 +2,26 @@
 //
 // Cron entrypoint for the daily per-user portfolio snapshot. Schedule on
 // cron-job.org once per day at 06:00 UTC (`0 6 * * *`). Bearer
-// INGEST_SECRET_TOKEN / CRON_SECRET, or `?token=` query for browser
-// triggers.
+// INGEST_SECRET_TOKEN / CRON_SECRET (header only; `?token=` retired 2026-11-26).
 //
 // Calls snapshot_all_user_portfolios() which walks saved_wallets and
 // writes one portfolio_snapshots row per (user, day).
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
-  const queryToken = req.nextUrl.searchParams.get("token");
   const ingestSecret = process.env.INGEST_SECRET_TOKEN;
   const cronSecret = process.env.CRON_SECRET;
 
   const isValid =
     (ingestSecret && bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) ||
-    (cronSecret && bearerMatches(authHeader, "CRON_SECRET")) ||
-    tokenMatches(queryToken, "INGEST_SECRET_TOKEN"); // constant-time (2026-11-07)
+    (cronSecret && bearerMatches(authHeader, "CRON_SECRET"));
 
   if (!isValid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

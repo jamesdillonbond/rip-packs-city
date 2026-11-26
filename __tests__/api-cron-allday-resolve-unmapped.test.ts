@@ -99,9 +99,9 @@ describe("POST /api/cron/allday-resolve-unmapped — secret configured (success 
     expect(body.note).toContain("pipeline_runs")
   })
 
-  it("202s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST2(makeReq({ url, token: TOKEN }))
-    expect(res.status).toBe(202)
-    expect((await res.json()).status).toBe("accepted")
+    expect(res.status).toBe(401)
+    expect((await res.json()).status).not.toBe("accepted")
   })
 })

@@ -20,7 +20,7 @@
 // durability, not a live outage. Writes
 // only when the resolver returns a CID, so it never clobbers a working URL.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=), INGEST_SECRET_TOKEN, or CRON_SECRET
+// Auth: Bearer RPC_ADMIN_TOKEN (?token= retired), INGEST_SECRET_TOKEN, or CRON_SECRET
 // — the last so a Vercel cron can drive it (Vercel injects Bearer $CRON_SECRET).
 // Mirrors backfill-pinnacle-catalog / backfill-topshot-subedition-circulation.
 // GET or POST.
@@ -137,7 +137,7 @@ function isDeadMedia(url: string | null): boolean {
   return url == null || url.includes("assets.nbatopshot.com/editions/");
 }
 
-// Accept the admin token (Bearer or ?token=), the GitHub-Actions ingest token,
+// Accept the admin token (Bearer; ?token= retired), the GitHub-Actions ingest token,
 // or the Vercel-cron secret — mirrors backfill-pinnacle-catalog so the mop-up
 // can be driven by a Vercel cron (which sends only Bearer CRON_SECRET). All
 // three are equivalent-trust server secrets.

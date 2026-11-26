@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// Route integration test for GET /api/seed-wallet-refresh. Auth accepts either
-// ?token= or Authorization: Bearer, compared to process.env.INGEST_SECRET_TOKEN
+// Route integration test for GET /api/seed-wallet-refresh. Auth accepts only
+// Authorization: Bearer (?token= retired 2026-11-26), compared to process.env.INGEST_SECRET_TOKEN
 // at CALL time (string compare, not 500-when-unset): no/wrong token → 401. Then
 // a cohort-param guard (1<=of<=8, 0<=cohort<of) → 400. The wallet-fanout work
 // runs inside after() — stubbed to a no-op so the immediate 202 is observable
@@ -42,28 +42,29 @@ describe("GET /api/seed-wallet-refresh", () => {
   })
 
   it("401s with a wrong token", async () => {
-    expect((await GET(req({ token: "wrong" }))).status).toBe(401)
+    expect((await GET(req({ auth: "Bearer wrong" }))).status).toBe(401)
   })
 
   it("400s on invalid cohort params (of=0)", async () => {
-    const res = await GET(req({ qs: `token=${TOKEN}&of=0` }))
+    const res = await GET(req({ qs: "of=0", auth: `Bearer ${TOKEN}` }))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain("invalid cohort params")
   })
 
   it("400s when cohort >= of", async () => {
-    const res = await GET(req({ qs: `token=${TOKEN}&of=2&cohort=2` }))
+    const res = await GET(req({ qs: "of=2&cohort=2", auth: `Bearer ${TOKEN}` }))
     expect(res.status).toBe(400)
   })
 
-  it("202s with a valid token via ?token=", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await GET(req({ token: TOKEN }))
-    expect(res.status).toBe(202)
-    expect((await res.json()).accepted).toBe(true)
+    expect(res.status).toBe(401)
+    expect((await res.json()).accepted).not.toBe(true)
   })
 
   it("202s with a valid Bearer header", async () => {
     const res = await GET(req({ auth: `Bearer ${TOKEN}` }))
     expect(res.status).toBe(202)
+    expect((await res.json()).accepted).toBe(true)
   })
 })

@@ -31,7 +31,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import crypto from "crypto"
 
 const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
@@ -320,11 +320,10 @@ async function logRun(
 
 export async function runStudioHistoryDrain(req: NextRequest, cfg: StudioHistoryConfig): Promise<NextResponse> {
   // Auth: Bearer INGEST_SECRET_TOKEN (cron-job.org/GHA) OR Bearer CRON_SECRET
-  // (Vercel cron — injected automatically). Both also accepted as ?token=.
+  // (Vercel cron — injected automatically). Header only: ?token= retired 2026-11-26.
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secrets as before
   const authedOk =
-    bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET") ||
-    tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
+    bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
   if (!authedOk) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const startedAt = new Date().toISOString()

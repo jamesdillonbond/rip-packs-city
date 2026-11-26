@@ -47,8 +47,10 @@ describe("/api/allday-ingest", () => {
     expect(body.skipped).toBe("flowty_api_empty")
   })
 
-  it("accepts the token via ?token= query param", async () => {
-    expect((await POST(req({ token: TOKEN }))).status).toBe(200)
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await POST(req({ token: TOKEN }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).ok).not.toBe(true)
   })
 
   it("GET delegates to POST (401 without a token)", async () => {

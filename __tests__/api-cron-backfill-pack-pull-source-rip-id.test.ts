@@ -69,8 +69,16 @@ describe("POST /api/cron/backfill-pack-pull-source-rip-id — success path (acce
     expect((await res.json()).accepted).toBe(true)
   })
 
-  it("202s with a ?token= query param and honors a custom limit", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(makeReq({ url: url + "?limit=250", token: "test-ingest-secret" }))
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.accepted).toBeUndefined()
+    expect(body.limit).toBeUndefined()
+  })
+
+  it("202s with the Bearer header and honors a custom limit", async () => {
+    const res = await POST(makeReq({ url: url + "?limit=250", auth: "Bearer test-ingest-secret" }))
     expect(res.status).toBe(202)
     expect((await res.json()).limit).toBe(250)
   })

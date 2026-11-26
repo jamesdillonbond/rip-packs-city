@@ -189,17 +189,22 @@ beforeEach(() => {
 })
 
 describe("allday-sales-history-backfill — control paths", () => {
-  it("401s without any token; accepts CRON_SECRET via ?token= (the Vercel-cron dual-auth lane)", async () => {
+  it("401s without any token and with CRON_SECRET in ?token= (query form retired 2026-11-26); accepts CRON_SECRET as a Bearer (the Vercel-cron dual-auth lane)", async () => {
     const spy = install({})
     const res = await POST(req("?range=250", {}))
     expect(res.status).toBe(401)
     expect(spy.rpcCalls).toHaveLength(0)
 
-    // ?token=CRON_SECRET must authenticate; kill-switch short-circuits the body
-    // so this stays a pure auth probe.
+    // kill-switch short-circuits the body so this stays a pure auth probe.
     process.env.CRON_SECRET = "vercel-cron-secret"
     process.env.ALLDAY_SALES_HISTORY_BACKFILL_DISABLED = "1"
-    const res2 = await POST(req("?range=250&token=vercel-cron-secret", {}))
+    // The CORRECT CRON_SECRET in the query string is refused, and nothing is logged.
+    const viaQuery = await POST(req("?range=250&token=vercel-cron-secret", {}))
+    expect(viaQuery.status).toBe(401)
+    expect(spy.rpcCalls).toHaveLength(0)
+
+    // Bearer CRON_SECRET must authenticate.
+    const res2 = await POST(req("?range=250", { authorization: "Bearer vercel-cron-secret" }))
     expect(res2.status).toBe(200)
     expect(await res2.json()).toMatchObject({ ok: true, skipped: "disabled" })
     const log = terminalLog(spy.rpcCalls)

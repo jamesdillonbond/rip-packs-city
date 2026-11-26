@@ -79,10 +79,12 @@ describe("POST /api/cron/golazos-studio-sales-history-backfill — success path"
     expect((await res.json()).ok).toBe(true)
   })
 
-  it("200s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(makeReq({ url, token: "test-ingest-secret" }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).note).toBe("queue_empty")
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.note).toBeUndefined()
   })
 
   it("short-circuits to skipped:'disabled' when the kill-switch env is set", async () => {

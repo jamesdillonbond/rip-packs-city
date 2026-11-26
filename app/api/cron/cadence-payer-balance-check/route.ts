@@ -7,7 +7,7 @@
 // at the source rather than downstream where every script signing
 // attempt produces an INSUFFICIENT_GAS_FUNDS error.
 //
-// Schedule cron-job.org every 30min. Bearer INGEST_SECRET_TOKEN or ?token=.
+// Schedule cron-job.org every 30min. Bearer INGEST_SECRET_TOKEN (?token= retired).
 //
 // Note: the Flow public REST endpoint accepts public reads without auth,
 // but Cloudflare blocks Vercel egress for some endpoints — accounts is
@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -26,8 +26,7 @@ const ALERT_THRESHOLD_FLOW = 0.05
 function authorized(req: NextRequest): boolean {
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secrets as before
   if (!process.env.INGEST_SECRET_TOKEN) return false
-  if (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")) return true
-  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN")
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 export async function POST(req: NextRequest) {

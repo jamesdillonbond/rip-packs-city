@@ -69,10 +69,12 @@ describe("GET /api/cron/ingest-external-announcements — retirement 410 (authed
     expect(body.retired_at).toBe("2026-05-07")
   })
 
-  it("410s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await SGET(makeReq({ url, method: "GET", token: TOKEN }))
-    expect(res.status).toBe(410)
-    expect((await res.json()).error).toBe("gone")
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.error).not.toBe("gone")
+    expect(body.replacement).toBeUndefined()
   })
 
   it("POST delegates to GET and reaches the same 410 accept when authed", async () => {

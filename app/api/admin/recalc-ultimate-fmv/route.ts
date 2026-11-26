@@ -12,7 +12,7 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ error: 'admin_token_not_configured' }, { status: 500 })
   }
 
-  // Constant-time (security audit 2026-10-25, R134 step 1). Bearer or ?token=, as before.
+  // Constant-time (security audit 2026-10-25, R134 step 1). Bearer only (?token= retired).
   if (!verifyAdminRequest(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }

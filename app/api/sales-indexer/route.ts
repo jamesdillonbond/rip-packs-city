@@ -142,11 +142,10 @@ export async function POST(req: NextRequest) {
 
   console.log(`[sales-indexer] proxy config: url=${process.env.TS_PROXY_URL ? 'SET' : 'UNSET'} secret=${process.env.TS_PROXY_SECRET ? 'SET' : 'UNSET'}`)
 
-  // Auth check (Bearer header OR ?token= query param for cron-job.org)
+  // Auth check (Bearer header only; ?token= retired 2026-11-26)
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   // Fire-and-forget: schedule the scan + ingest, return 202 immediately so
   // cron-job.org reports Success instead of a cosmetic timeout. The route is

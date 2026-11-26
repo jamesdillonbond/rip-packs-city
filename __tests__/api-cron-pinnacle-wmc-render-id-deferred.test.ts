@@ -148,11 +148,17 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
-  it("401 without a token; accepts bearer OR ?token= query", async () => {
+  it("401 with a wrong bearer and with the correct secret in ?token= (the query form is retired (2026-11-26)); accepts the bearer", async () => {
     expect((await GET(req({ auth: "Bearer nope" }))).status).toBe(401)
-    // ?token= form is accepted
+    // ?token= form is refused even with the correct secret, and queues no deferred work
     st.selectResult = { data: [], error: null }
-    const res = await GET(req({ token: "tok" }))
+    capturedAfter = null
+    const refused = await GET(req({ token: "tok" }))
+    expect(refused.status).toBe(401)
+    expect((await refused.json()).accepted).toBeUndefined()
+    expect(capturedAfter).toBeNull()
+    // the header form is the accepted lane
+    const res = await GET(req({ auth: "Bearer tok" }))
     expect(res.status).toBe(202)
   })
 

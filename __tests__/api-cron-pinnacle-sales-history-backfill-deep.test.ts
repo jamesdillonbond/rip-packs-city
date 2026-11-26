@@ -132,14 +132,20 @@ beforeEach(() => {
 })
 
 describe("pinnacle-sales-history-backfill — control paths", () => {
-  it("401s without any token; the kill-switch (via the CRON ?token= lane) logs an honest ok run and chains nothing", async () => {
+  it("401s without any token and with the correct CRON secret in ?token= (the query form is retired (2026-11-26)); the kill-switch (via the CRON Bearer lane) logs an honest ok run and chains nothing", async () => {
     const spy = install({})
     expect((await POST(req("?range=250", {}))).status).toBe(401)
     expect(spy.rpcCalls).toHaveLength(0)
 
     process.env.CRON_SECRET = "vercel-cron-secret"
     process.env.PINNACLE_SALES_HISTORY_BACKFILL_DISABLED = "1"
-    const res = await POST(req("?range=250&token=vercel-cron-secret", {}))
+    const refused = await POST(req("?range=250&token=vercel-cron-secret", {}))
+    expect(refused.status).toBe(401)
+    expect((await refused.json()).skipped).toBeUndefined()
+    expect(spy.rpcCalls).toHaveLength(0)
+    expect(state.chained).toHaveLength(0)
+
+    const res = await POST(req("?range=250", { authorization: "Bearer vercel-cron-secret" }))
     expect(await res.json()).toMatchObject({ ok: true, skipped: "disabled" })
     const log = terminalLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_collection_slug: "disney_pinnacle" })

@@ -8,7 +8,7 @@
 // so it's monitored like the other ~23 pipelines.
 //
 // Mirrors the admin-auth pattern of refresh-pack-grail-metrics-mv: Bearer
-// INGEST_SECRET_TOKEN, and also accepts ?token= for browser-fired cron triggers
+// INGEST_SECRET_TOKEN (the ?token= form for browser-fired triggers was retired 2026-11-26)
 // (cron-job.org). The apex domain 308s -> www, so the cron-job.org URL must use
 // www.rippackscity.com.
 //
@@ -18,7 +18,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,10 +34,7 @@ function authorized(request: NextRequest): boolean {
   const token = process.env.INGEST_SECRET_TOKEN;
   if (!token) return false;
   const auth = request.headers.get("authorization");
-  if (bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true;
-  // Browser-fired cron fallback: ?token= query param.
-  const qp = new URL(request.url).searchParams.get("token");
-  return tokenMatches(qp, "INGEST_SECRET_TOKEN");
+  return bearerMatches(auth, "INGEST_SECRET_TOKEN");
 }
 
 async function run(request: NextRequest) {

@@ -7,7 +7,7 @@
 // the edge function's EdgeRuntime.waitUntil owns the actual work.
 
 import { NextRequest, NextResponse } from "next/server"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 25
@@ -17,12 +17,10 @@ const INGEST_SECRET_TOKEN = process.env.INGEST_SECRET_TOKEN!
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? ""
-  const queryToken = req.nextUrl.searchParams.get("token")
   const cronSecret = process.env.CRON_SECRET
   const isValid =
     bearerMatches(authHeader, "INGEST_SECRET_TOKEN") ||
-    (cronSecret && bearerMatches(authHeader, "CRON_SECRET")) ||
-    tokenMatches(queryToken, "INGEST_SECRET_TOKEN")
+    (cronSecret && bearerMatches(authHeader, "CRON_SECRET"))
   if (!isValid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }

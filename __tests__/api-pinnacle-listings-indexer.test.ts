@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 
 // Route integration test for /api/pinnacle-listings-indexer (POST + GET alias).
-// Bearer/?token auth against a MODULE-LEVEL TOKEN const (INGEST_SECRET_TOKEN)
+// Bearer-only auth (?token= retired 2026-11-26) against a MODULE-LEVEL TOKEN const (INGEST_SECRET_TOKEN)
 // read at import time — env set BEFORE import; fail-closed 401 when unset. The
 // whole scan runs inside after(), which we stub to a no-op so the immediate
 // 200 ("indexing started") is observable without a request scope. We pin the
@@ -49,9 +49,12 @@ describe("POST /api/pinnacle-listings-indexer", () => {
     expect(body.message).toBe("indexing started")
   })
 
-  it("200s with a matching ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(req({ token: TOKEN }))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.message).not.toBe("indexing started")
   })
 })
 

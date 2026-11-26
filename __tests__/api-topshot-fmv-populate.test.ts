@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
 // Route integration test for /api/topshot-fmv-populate (GET + POST, same
-// `handle`). Auth: Bearer INGEST_SECRET_TOKEN OR ?token=, captured into a
+// `handle`). Auth: Bearer INGEST_SECRET_TOKEN only (?token= retired 2026-11-26), captured into a
 // module-level `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""` at import — so
 // we exercise BOTH regimes by resetting modules between them:
 //   A. secret DELETED → TOKEN === "" → every request 401s (fail-closed).
-//   B. secret SET      → wrong/no token 401s, correct bearer/?token reaches the
+//   B. secret SET      → wrong/no token 401s, correct bearer reaches the
 //      202 { accepted:true, pipeline } accept. The cursor-paginated GQL sweep
 //      runs inside after() (stubbed no-op) so the ack is observable without any
 //      proxy/DB I/O.
@@ -72,8 +72,10 @@ describe("/api/topshot-fmv-populate — secret configured (success path)", () =>
     expect(body.pipeline).toBe("topshot-fmv-populate")
   })
 
-  it("202-accepts with the correct ?token= query param", async () => {
-    expect((await POST(makeReq({ url, token: TOKEN }))).status).toBe(202)
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await POST(makeReq({ url, token: TOKEN }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).accepted).not.toBe(true)
   })
 
   it("GET reaches the same 202 accept when authed", async () => {

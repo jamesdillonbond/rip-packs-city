@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
 // Route integration test for /api/sales-indexer (POST + GET-delegates-to-POST).
-// Auth is Bearer INGEST_SECRET_TOKEN OR ?token=, read into a module-level TOKEN
+// Auth is Bearer INGEST_SECRET_TOKEN only (?token= retired 2026-11-26), read into a module-level TOKEN
 // at IMPORT time, so the env must be set BEFORE importing the route. The heavy
 // chain scan + ingest runs inside after() — stubbed to a no-op so the immediate
 // 202 is observable without a request scope and without touching FCL/Supabase.
@@ -54,9 +54,10 @@ describe("POST /api/sales-indexer", () => {
     expect((await res.json()).status).toBe("accepted")
   })
 
-  it("202s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(req(undefined, TOKEN))
-    expect(res.status).toBe(202)
+    expect(res.status).toBe(401)
+    expect((await res.json()).status).not.toBe("accepted")
   })
 
   it("GET delegates to POST (same auth guard)", async () => {

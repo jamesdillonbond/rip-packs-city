@@ -6,9 +6,7 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 function authorized(req: NextRequest): boolean {
   if (!TOKEN) return false
   const auth = req.headers.get("authorization") ?? ""
-  if (auth.startsWith("Bearer ") && tokenMatches(auth.slice(7), "INGEST_SECRET_TOKEN")) return true
-  const qp = req.nextUrl.searchParams.get("token") ?? ""
-  return tokenMatches(qp, "INGEST_SECRET_TOKEN")
+  return auth.startsWith("Bearer ") && tokenMatches(auth.slice(7), "INGEST_SECRET_TOKEN")
 }
 
 export async function GET(req: NextRequest) {

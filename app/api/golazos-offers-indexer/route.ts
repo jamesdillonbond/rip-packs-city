@@ -186,8 +186,7 @@ function parseOffer(payload: Record<string, any>): { offerId: string; editionId:
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const startTime = Date.now()
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? PER_TICK_RANGE)

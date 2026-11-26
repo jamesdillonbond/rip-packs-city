@@ -18,7 +18,7 @@ import { scriptResult } from "./helpers/flow-cdc-fixture"
 //     borrow returning the composite editionKey;
 //   - a failed v2 backfill UPDATE re-queues the row (bump) instead of falsely
 //     marking it resolved; unknown keys bump; a bump reaching 10 retires;
-//   - dual auth (Bearer OR ?token=), empty-queue exit, fatal honesty — every
+//   - Bearer-only auth (?token= retired 2026-11-26), empty-queue exit, fatal honesty — every
 //     path still writes log_pipeline_run.
 
 const state = vi.hoisted(() => ({
@@ -343,16 +343,22 @@ describe("pinnacle-listings-retry — control flow + auth", () => {
     expect(String(log?.p_error)).toContain("queue fetch: timeout")
   })
 
-  it("accepts the ?token= query form, 401s with neither, GET aliases POST", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26); 401s with neither, GET aliases POST", async () => {
     install({ listing_resolution_failures: { data: [], error: null } })
 
     expect((await POST(req(null))).status).toBe(401)
     expect((await GET(req(null))).status).toBe(401)
     expect(state.afterCbs).toHaveLength(0)
 
-    const res = await POST(
+    const refused = await POST(
       req(null, "https://t/api/pinnacle-listings-retry?token=pin-retry-token"),
     )
+    expect(refused.status).toBe(401)
+    expect((await refused.json()).message).not.toBe("retry queued")
+    expect(state.afterCbs).toHaveLength(0)
+
+    // GET aliases POST — the header form is accepted on the GET lane
+    const res = await GET(req("pin-retry-token"))
     expect(res.status).toBe(200)
     expect((await res.json()).message).toBe("retry queued")
     expect(state.afterCbs).toHaveLength(1)

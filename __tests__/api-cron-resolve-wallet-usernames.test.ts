@@ -52,10 +52,12 @@ describe("POST /api/cron/resolve-wallet-usernames — success path", () => {
     expect(body.note).toContain("wallet-username-resolver")
   })
 
-  it("200-queues via the ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await mod.POST(makeReq({ method: "POST", token: "test-ingest-token" }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).queued).toBe(true)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.queued).toBeUndefined()
   })
 
   it("GET alias reaches the same 200 queued ack when authed", async () => {

@@ -13,13 +13,12 @@ function siteUrl() {
 }
 
 async function handleTrigger(req: NextRequest) {
-  // Check auth token from query param or header
+  // Header-only auth (x-ingest-token or Bearer); ?token= retired 2026-11-26.
   // constant-time compares via the shared helpers (CISO 2026-11-04); same three carriers as before
   const ingestToken = process.env.INGEST_SECRET_TOKEN
   const authorized =
     !!ingestToken &&
-    (tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN") ||
-      tokenMatches(req.headers.get("x-ingest-token"), "INGEST_SECRET_TOKEN") ||
+    (tokenMatches(req.headers.get("x-ingest-token"), "INGEST_SECRET_TOKEN") ||
       bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN"))
 
   if (!authorized) {

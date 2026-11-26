@@ -113,7 +113,7 @@ function req(): NextRequest {
   })
 }
 
-// Request variant used to exercise the ?token= auth lane and the ?range= param.
+// Request variant used to exercise the ?range= param and the retired ?token= lane.
 function reqUrl(query: string, opts: { auth?: string } = {}): NextRequest {
   const headers = new Headers()
   if (opts.auth) headers.set("authorization", opts.auth)
@@ -468,11 +468,22 @@ describe("allday-offers-indexer — cursor + control flow", () => {
     expect(String(log?.p_error)).toContain("blocks sealed HTTP 500")
   })
 
-  it("authenticates via ?token= and honors an explicit ?range=", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     fetchMock = installFetchMock(flowRestStubs({}))
     const spy = install({ event_cursor: { data: { last_processed_block: 1250 }, error: null } })
-    // No bearer header — only the query token. Up-to-date so it short-circuits.
+    // No bearer header — only the (correct) query token. Must stop at the gate.
     const res = await POST(reqUrl("?token=ad-offers-token&range=500"))
+    expect(res.status).toBe(401)
+    expect((await res.json()).message).not.toBe("already up to date")
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    expect(terminalLog(spy.rpcCalls)).toBeUndefined()
+  })
+
+  it("authenticates via the Bearer header and honors an explicit ?range=", async () => {
+    fetchMock = installFetchMock(flowRestStubs({}))
+    const spy = install({ event_cursor: { data: { last_processed_block: 1250 }, error: null } })
+    // Up-to-date so it short-circuits.
+    const res = await POST(reqUrl("?range=500", { auth: "Bearer ad-offers-token" }))
     expect((await res.json()).message).toBe("already up to date")
     expect(spy.writes.event_cursor ?? []).toHaveLength(0)
   })

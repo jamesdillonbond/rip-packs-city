@@ -5,7 +5,7 @@
 // last advance time. Lets us verify cursor advancement is healthy after a
 // cron tick.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (also accepts ?token=).
+// Auth: Bearer RPC_ADMIN_TOKEN (header only; ?token= retired).
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminRequest } from "@/lib/admin-auth";
@@ -24,7 +24,7 @@ const CHAIN_SLUG_BY_ID: Record<number, ChainSlug> = {
 };
 
 function authorized(req: NextRequest): boolean {
-  // Same contract as before (Bearer or ?token=, RPC_ADMIN_TOKEN only, fail-closed)
+  // Same contract as before (Bearer, RPC_ADMIN_TOKEN only, fail-closed; ?token= retired)
   // through the shared constant-time check (security audit 2026-10-25, R134 step 1).
   return verifyAdminRequest(req);
 }

@@ -191,8 +191,6 @@ async function runOne(
 
 function authorize(req: NextRequest): boolean {
   if (!TOKEN) return false
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (tokenMatches(urlToken, "INGEST_SECRET_TOKEN")) return true
   const auth = req.headers.get("authorization") ?? ""
   if (auth.startsWith("Bearer ") && tokenMatches(auth.slice(7), "INGEST_SECRET_TOKEN")) return true
   return false

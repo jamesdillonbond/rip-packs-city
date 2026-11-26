@@ -24,7 +24,7 @@
 // re-pages every ALERT_COOLDOWN_MINUTES. pipeline_runs still records every tick.
 //
 // Bearer auth via RPC_ADMIN_TOKEN, accepted as either an `Authorization:
-// Bearer …` header or a `?token=…` query param (lib/admin-auth.ts handles both).
+// Bearer …` header (lib/admin-auth.ts; the `?token=` form is retired).
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { fitTelegramText } from "@/lib/telegram-message";

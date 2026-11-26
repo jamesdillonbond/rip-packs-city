@@ -86,10 +86,12 @@ describe("GET /api/cron/daily-portfolio-snapshot — success path (202 accept, w
     expect((await res.json()).accepted).toBe(true)
   })
 
-  it("202s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await GET(makeReq({ url, method: "GET", token: "test-ingest-secret" }))
-    expect(res.status).toBe(202)
-    expect((await res.json()).pipeline).toBe("daily-portfolio-snapshot")
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.accepted).toBeUndefined()
+    expect(body.pipeline).toBeUndefined()
   })
 
   it("POST alias reaches the same 202 accept when authed", async () => {

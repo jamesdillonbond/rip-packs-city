@@ -67,8 +67,16 @@ describe("POST /api/cron/drain-base-parallel-probe — success path (edge-fn fir
     expect(body.trigger).toBe("202")
   })
 
-  it("also accepts the RPC_ADMIN_TOKEN via ?token=", async () => {
+  it("401s with the correct RPC_ADMIN_TOKEN in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(makeReq({ url, token: "test-admin-secret" }))
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.trigger).toBeUndefined()
+  })
+
+  it("also accepts the RPC_ADMIN_TOKEN as a Bearer header", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer test-admin-secret" }))
     expect(res.status).toBe(200)
     expect((await res.json()).ok).toBe(true)
   })

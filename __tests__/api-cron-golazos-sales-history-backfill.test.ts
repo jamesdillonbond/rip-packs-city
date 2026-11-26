@@ -92,10 +92,12 @@ describe("POST /api/cron/golazos-sales-history-backfill — secret configured (s
     expect(body.floor).toBe(SPORK_FLOOR_HINT)
   })
 
-  it("200s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(makeReq({ url, token: TOKEN }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).note).toBe("reached_spork_floor")
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.note).toBeUndefined()
   })
 
   it("GET alias reaches the same accept when authed", async () => {

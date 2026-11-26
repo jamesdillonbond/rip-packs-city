@@ -1,5 +1,5 @@
 // app/api/pinnacle-ingest/route.ts
-// POST /api/pinnacle-ingest?token=<INGEST_SECRET_TOKEN>&limit=100&offset=0[&recalc=true]
+// POST /api/pinnacle-ingest?limit=100&offset=0[&recalc=true]  (header x-ingest-token: <INGEST_SECRET_TOKEN>; ?token= retired 2026-11-26)
 //   Fetches one batch of Pinnacle NFTs from Flowty, upserts editions + sales,
 //   and returns the next offset so the caller can chain requests.
 // GET  /api/pinnacle-ingest  → pinnacle_health_check (monitor progress, no auth)
@@ -28,7 +28,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const url = new URL(req.url)
-  const token = url.searchParams.get("token") ?? req.headers.get("x-ingest-token") ?? ""
+  const token = req.headers.get("x-ingest-token") ?? ""
   // constant-time via the shared helper (2026-11-07: a local compare the R150 ratchet could not see)
   if (!tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

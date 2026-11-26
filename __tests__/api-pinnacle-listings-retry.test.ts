@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 
 // Route integration test for /api/pinnacle-listings-retry (POST + GET alias).
-// Bearer/?token auth against a MODULE-LEVEL TOKEN const (INGEST_SECRET_TOKEN)
+// Bearer-only auth (?token= retired 2026-11-26) against a MODULE-LEVEL TOKEN const (INGEST_SECRET_TOKEN)
 // read at import time — env set BEFORE import; fail-closed 401 when unset. The
 // queue drain runs inside after(), stubbed to a no-op so the immediate 200
 // ("retry queued") is observable. We pin the 401s and the authed 200; the
@@ -49,8 +49,12 @@ describe("POST /api/pinnacle-listings-retry", () => {
     expect(body.message).toBe("retry queued")
   })
 
-  it("200s with a matching ?token= query param", async () => {
-    expect((await POST(req({ token: TOKEN }))).status).toBe(200)
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await POST(req({ token: TOKEN }))
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.message).not.toBe("retry queued")
   })
 })
 

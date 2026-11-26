@@ -30,11 +30,15 @@ vi.mock("@/lib/pinnacle/pinnacleTypes", () => ({
 
 import { GET, POST } from "@/app/api/pinnacle-ingest/route"
 
-const post = (qs = "?token=tok") => new NextReqLike(`https://t/api/pinnacle-ingest${qs}`)
+// Auth is the x-ingest-token header ONLY (?token= retired 2026-11-26).
+const post = (qs = "", token: string | null = "tok") => new NextReqLike(`https://t/api/pinnacle-ingest${qs}`, token)
 class NextReqLike {
   url: string
   headers = new Headers()
-  constructor(u: string) { this.url = u }
+  constructor(u: string, token: string | null) {
+    this.url = u
+    if (token !== null) this.headers.set("x-ingest-token", token)
+  }
 }
 
 // An NFT fixture: editionData goes in nftView.traits.traits[0]; orders drive sales.
@@ -73,7 +77,15 @@ describe("GET /api/pinnacle-ingest — health", () => {
 
 describe("POST /api/pinnacle-ingest — ingest", () => {
   it("401 with a wrong token", async () => {
-    expect((await POST(post("?token=nope") as any)).status).toBe(401)
+    expect((await POST(post("", "nope") as any)).status).toBe(401)
+  })
+
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    st.batch = [nft()]
+    const res = await POST(post("?token=tok", null) as unknown as Parameters<typeof POST>[0])
+    expect(res.status).toBe(401)
+    expect((await res.json()).ok).not.toBe(true)
+    expect(rpc).not.toHaveBeenCalled()
   })
 
   // 2026-11-03: a pin with no character name was upserted as character "Unknown" (and studio "Unknown").
@@ -167,7 +179,7 @@ describe("POST /api/pinnacle-ingest — ingest", () => {
 
   it("done/nextOffset: a short batch marks done and nextOffset null; recalc flag is a no-op", async () => {
     st.batch = [nft()] // 1 < limit(100) → done
-    const body = await (await POST(post("?token=tok&recalc=true") as any)).json()
+    const body = await (await POST(post("?recalc=true") as any)).json()
     expect(body.done).toBe(true)
     expect(body.nextOffset).toBeNull()
     expect(body.recalcRan).toBe(true)
@@ -176,7 +188,7 @@ describe("POST /api/pinnacle-ingest — ingest", () => {
 
   it("a full batch (== limit) yields a numeric nextOffset (not done)", async () => {
     st.batch = Array.from({ length: 2 }, (_, i) => nft({ id: `n${i}`, nftView: { traits: { traits: [{ editionKey: `k${i}`, royaltyCode: "r" }] } } }))
-    const body = await (await POST(post("?token=tok&limit=2&offset=10") as any)).json()
+    const body = await (await POST(post("?limit=2&offset=10") as any)).json()
     expect(body.done).toBe(false)
     expect(body.nextOffset).toBe(12) // offset 10 + batch 2
   })

@@ -99,8 +99,10 @@ describe("GET /api/allday-fmv-populate — secret configured (success path)", ()
     expect(body.sweep_complete).toBe(true)
   })
 
-  it("200s with the correct ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     stateRow.current = { cursor: null, total_ingested: 0, status: "complete", last_run_at: null }
-    expect((await GET(req(undefined, TOKEN))).status).toBe(200)
+    const res = await GET(req(undefined, TOKEN))
+    expect(res.status).toBe(401)
+    expect((await res.json()).ok).not.toBe(true)
   })
 })

@@ -204,8 +204,7 @@ async function runIndexer(req: NextRequest) {
 
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  const presented = bearer || urlToken
+  const presented = bearer
   // constant-time via the shared helper (2026-11-07: a local compare the R150 ratchet could not see)
   const accepted = tokenMatches(presented, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   // Fails CLOSED when both secrets are unset: `presented` can be "" but neither

@@ -37,9 +37,10 @@ vi.mock("@supabase/supabase-js", () => ({
 import { GET } from "@/app/api/tier-backfill/route"
 
 const url = "https://t/api/tier-backfill"
-const req = (qs = "") => {
+const AUTH = "Bearer tok"
+const req = (qs = "", auth?: string) => {
   const u = new URL(url + qs)
-  return { nextUrl: u, url: u.toString(), headers: new Headers() } as any
+  return { nextUrl: u, url: u.toString(), headers: new Headers(auth ? { authorization: auth } : {}) } as any
 }
 
 // GQL fixture: momentId -> tier string (or null); an id absent from the map or
@@ -74,19 +75,27 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe("GET /api/tier-backfill", () => {
   it("401 without the right token", async () => {
-    expect((await GET(req("?token=nope"))).status).toBe(401)
+    expect((await GET(req("", "Bearer nope"))).status).toBe(401)
+  })
+
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    supaState.candidate = { data: [{ moment_id: "m1", edition_key: "e1" }], error: null }
+    const res = await GET(req("?token=tok"))
+    expect(res.status).toBe(401)
+    expect((await res.json()).message).toBeUndefined()
+    expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 
   it("candidate-select error → 500 with the message", async () => {
     supaState.candidate = { data: null, error: { message: "pool timeout" } }
-    const res = await GET(req("?token=tok"))
+    const res = await GET(req("", AUTH))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("pool timeout")
   })
 
   it("no unresolved rows → 'backfill complete', total 0", async () => {
     supaState.candidate = { data: [], error: null }
-    const body = await (await GET(req("?token=tok"))).json()
+    const body = await (await GET(req("", AUTH))).json()
     expect(body.total).toBe(0)
     expect(body.message).toContain("backfill complete")
   })
@@ -112,7 +121,7 @@ describe("GET /api/tier-backfill", () => {
     fetchFail.add("m8")
     supaState.remaining = { count: 0 }
 
-    const body = await (await GET(req("?token=tok&offset=0&limit=50"))).json()
+    const body = await (await GET(req("?offset=0&limit=50", AUTH))).json()
 
     expect(body.processed).toBe(8)
     expect(body.successful).toBe(7) // m1..m7 (m7's null tier still resolves ok)
@@ -132,7 +141,7 @@ describe("GET /api/tier-backfill", () => {
     supaState.editionUpdate = { error: { message: "conflict" } }
     supaState.remaining = { count: 4 }
 
-    const body = await (await GET(req("?token=tok"))).json()
+    const body = await (await GET(req("", AUTH))).json()
     expect(body.editionErrors).toBe(1)
     expect(body.editionUpdated).toBe(0)
     // remaining>0 → the hint tells the operator to run again
@@ -144,7 +153,7 @@ describe("GET /api/tier-backfill", () => {
     supaState.candidate = { data: [{ moment_id: "m1", edition_key: "e1" }, { moment_id: "m2", edition_key: "e2" }], error: null }
     fetchFail.add("m1"); fetchFail.add("m2")
 
-    const body = await (await GET(req("?token=tok"))).json()
+    const body = await (await GET(req("", AUTH))).json()
     expect(body.successful).toBe(0)
     expect(body.failed).toBe(2)
     expect(body.editionKeysProcessed).toBe(0)

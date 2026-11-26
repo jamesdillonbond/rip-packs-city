@@ -77,10 +77,10 @@ describe("POST /api/cron/cadence-payer-balance-check — success path", () => {
     expect((await res.json()).payer_address).toBe("0x73f55c4450b8d466")
   })
 
-  it("200s with a ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await POST(makeReq({ url, token: "test-ingest-secret" }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).balance_flow).toBe(50)
+    expect(res.status).toBe(401)
+    expect((await res.json()).balance_flow).toBeUndefined()
   })
 
   it("GET alias reaches the same 200 accept when authed", async () => {

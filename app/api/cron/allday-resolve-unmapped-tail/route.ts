@@ -468,10 +468,9 @@ async function run(startedAt: string, startedMs: number) {
 async function handle(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   const authedOk =
-    (TOKEN.length > 0 && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
-    (CRON.length > 0 && (tokenMatches(bearer, "CRON_SECRET") || tokenMatches(urlToken, "CRON_SECRET")))
+    (TOKEN.length > 0 && (tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) ||
+    (CRON.length > 0 && (tokenMatches(bearer, "CRON_SECRET")))
   if (!authedOk) return unauthorized()
 
   const startedAt = new Date().toISOString()

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { NextRequest } from "next/server"
 
 // Route integration test for GET /api/pipeline-trigger.
-// Auth is Bearer OR ?token= against a module-level TOKEN read from
+// Auth is Bearer only (?token= retired 2026-11-26) against a module-level TOKEN read from
 // INGEST_SECRET_TOKEN at IMPORT time, so the env must be set before the dynamic
 // import. Fail-closed: 401 on wrong/missing credential. The real work is fired
 // via after() (stubbed no-op) so the immediate 200 is observable.
@@ -43,9 +43,11 @@ describe("GET /api/pipeline-trigger", () => {
     expect(body.message).toBe("Pipeline triggered")
   })
 
-  it("authorizes via ?token=", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await GET(get(undefined, TOKEN))
-    expect(res.status).toBe(200)
-    expect((await res.json()).ok).toBe(true)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.message).not.toBe("Pipeline triggered")
   })
 })

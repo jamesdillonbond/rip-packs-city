@@ -13,10 +13,10 @@
 // secret server-side here instead. Runs every 15 min (staggered) until the queue
 // drains (~7 ticks at batch_size 20000), then each tick is a fast done=true no-op.
 //
-// Auth: Bearer CRON_SECRET (Vercel cron) | INGEST_SECRET_TOKEN | RPC_ADMIN_TOKEN, or ?token=.
+// Auth: Bearer CRON_SECRET (Vercel cron) | INGEST_SECRET_TOKEN | RPC_ADMIN_TOKEN (?token= retired).
 
 import { NextRequest, NextResponse } from "next/server";
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
 export const maxDuration = 60;
@@ -29,8 +29,7 @@ function authed(req: NextRequest): boolean {
   if (verifyAdminRequest(req)) return true;
   // Constant-time, fail-closed (security audit 2026-10-25, R134 step 1).
   const names = ["CRON_SECRET", "INGEST_SECRET_TOKEN", "RPC_ADMIN_TOKEN"];
-  if (bearerMatches(req.headers.get("authorization"), ...names)) return true;
-  return tokenMatches(req.nextUrl.searchParams.get("token"), ...names);
+  return bearerMatches(req.headers.get("authorization"), ...names);
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {

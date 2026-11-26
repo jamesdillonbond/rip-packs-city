@@ -30,7 +30,7 @@ import { tokenMatches } from "@/lib/auth/bearer-secret"
 // backfill; open offers are a live snapshot so no deep backfill.
 //
 // Live cron (cron-job.org): POST /api/topshot-offers-indexer with
-// Authorization: Bearer $INGEST_SECRET_TOKEN (or ?token=) every ~20 min on
+// Authorization: Bearer $INGEST_SECRET_TOKEN every ~20 min on
 // www.rippackscity.com.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -116,8 +116,7 @@ async function getLatestSealedHeight(): Promise<number> {
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const startTime = Date.now()
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? PER_TICK_RANGE)

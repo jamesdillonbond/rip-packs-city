@@ -67,7 +67,7 @@ describe("POST /api/cron/pinnacle-studio-sales-history-backfill — success path
   it("200s with skipped:'disabled' when the kill switch is set", async () => {
     process.env.PINNACLE_STUDIO_SALES_HISTORY_BACKFILL_DISABLED = "1"
     try {
-      const res = await POST(makeReq({ url, token: "test-ingest-secret" }))
+      const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret" }))
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body.ok).toBe(true)
@@ -76,5 +76,13 @@ describe("POST /api/cron/pinnacle-studio-sales-history-backfill — success path
     } finally {
       delete process.env.PINNACLE_STUDIO_SALES_HISTORY_BACKFILL_DISABLED
     }
+  })
+
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await POST(makeReq({ url, token: "test-ingest-secret" }))
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.note).toBeUndefined()
   })
 })

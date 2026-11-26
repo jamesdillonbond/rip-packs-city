@@ -412,15 +412,19 @@ describe("evm-transfers-ingest — registry, budget, auth", () => {
     expect(ingestLogs(spy.rpcCalls)[0]).toMatchObject({ p_ok: false, p_error: "unsupported_chain_id_999" })
   })
 
-  it("500s when the secret is unset, 401s on a wrong token, accepts ?token=, and GET delegates", async () => {
+  it("500s when the secret is unset, 401s on a wrong token and on the correct secret in ?token= (the query form is retired (2026-11-26)), and GET delegates", async () => {
     install({ evm_nft_contracts: { data: [], error: null } })
     delete process.env.INGEST_SECRET_TOKEN
     expect((await POST(req())).status).toBe(500)
 
     process.env.INGEST_SECRET_TOKEN = "evm-token"
     expect((await POST(req("", { auth: "Bearer wrong" }))).status).toBe(401)
-    expect((await POST(req("?token=evm-token", { auth: null }))).status).toBe(200)
-    expect((await GET(req("?token=evm-token", { auth: null }))).status).toBe(200)
+    state.afterCbs.length = 0
+    expect((await POST(req("?token=evm-token", { auth: null }))).status).toBe(401)
+    expect((await GET(req("?token=evm-token", { auth: null }))).status).toBe(401)
+    expect(state.afterCbs).toHaveLength(0)
+    expect((await POST(req())).status).toBe(200)
+    expect((await GET(req())).status).toBe(200)
     await runDeferred()
   })
 })

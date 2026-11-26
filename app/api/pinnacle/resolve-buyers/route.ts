@@ -5,7 +5,7 @@
 // pinnacle_resolver_status view) are end-to-end tested; this route is the
 // missing executor. Cron-job.org hits it every 5 minutes; with batch=50 the
 // ~5,080-row backlog clears in ~9h and stays ahead of the ~17/hour growth
-// rate. Auth: Bearer OR ?token= against INGEST_SECRET_TOKEN OR CRON_SECRET
+// rate. Auth: Bearer (?token= retired) against INGEST_SECRET_TOKEN OR CRON_SECRET
 // — same surface as the rest of the pipeline routes.
 
 import { NextRequest, NextResponse } from "next/server"
@@ -41,11 +41,9 @@ type Outcome =
 function isAuthorized(req: NextRequest): boolean {
   const authHeader = req.headers.get("authorization") ?? ""
   const bearer = authHeader.replace(/^Bearer\s+/i, "")
-  const queryToken = req.nextUrl.searchParams.get("token") ?? ""
   // INGEST_SECRET_TOKEN / CRON_SECRET are read by name inside tokenMatches (constant-time, fail-closed).
-  const candidates = [bearer, queryToken].filter(Boolean)
-  if (!candidates.length) return false
-  return candidates.some((tok) => tokenMatches(tok, "INGEST_SECRET_TOKEN", "CRON_SECRET"))
+  if (!bearer) return false
+  return tokenMatches(bearer, "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 async function processOne(row: ClaimedRow): Promise<Outcome> {

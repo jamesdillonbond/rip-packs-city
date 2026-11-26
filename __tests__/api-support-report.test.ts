@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 
 // Route integration test for GET /api/support-report. Bearer INGEST_SECRET_TOKEN
-// gated (also accepts ?token= / x-ingest-token) → fail-closed 401. With the
+// gated (also accepts x-ingest-token; ?token= retired 2026-11-26) → fail-closed 401. With the
 // token present it aggregates support_conversations into a JSON report. Mocks
 // @supabase/supabase-js.
 
@@ -12,7 +12,9 @@ const state: {
   pages: Array<{ data: any; error: any }> | null
   /** Every cursor passed to .gt("id", …), in order. */
   cursors: string[]
-} = { data: [], error: null, pages: null, cursors: [] }
+  /** Count of awaited reads — 0 proves no DB work happened. */
+  reads: number
+} = { data: [], error: null, pages: null, cursors: [], reads: 0 }
 
 vi.mock("@supabase/supabase-js", () => {
   const b: any = {
@@ -20,6 +22,7 @@ vi.mock("@supabase/supabase-js", () => {
     gt: (_col: string, v: string) => { state.cursors.push(v); return b },
     // Proper thenable so `await q` resolves whether or not .gt() was chained.
     then: (onF: any, onR: any) => {
+      state.reads++
       const payload = state.pages
         ? state.pages[Math.min(state.cursors.length, state.pages.length - 1)]
         : { data: state.data, error: state.error }
@@ -33,15 +36,27 @@ import { GET } from "@/app/api/support-report/route"
 
 const req = (u: string, headers: Record<string, string> = {}) =>
   ({ nextUrl: new URL(u), headers: new Headers(headers) }) as any
+const AUTH = { authorization: "Bearer secret" }
 
 const prev = process.env.INGEST_SECRET_TOKEN
-beforeEach(() => { state.data = []; state.error = null; state.pages = null; state.cursors = []; process.env.INGEST_SECRET_TOKEN = "secret" })
+beforeEach(() => { state.data = []; state.error = null; state.pages = null; state.cursors = []; state.reads = 0; process.env.INGEST_SECRET_TOKEN = "secret" })
 afterAll(() => { if (prev === undefined) delete process.env.INGEST_SECRET_TOKEN; else process.env.INGEST_SECRET_TOKEN = prev })
 
 describe("GET /api/support-report", () => {
   it("401s without the bearer token", async () => {
     const res = await GET(req("https://t/api/support-report"))
     expect(res.status).toBe(401)
+  })
+
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    state.data = [
+      { session_id: "s1", escalated: false, category: "general", created_at: "2026-07-10T00:00:00Z" },
+    ]
+    const res = await GET(req("https://t/api/support-report?token=secret"))
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.period).toBeUndefined()
+    expect(state.reads).toBe(0)
   })
 
   it("401s when the expected token is unset (fail-closed)", async () => {
@@ -54,7 +69,7 @@ describe("GET /api/support-report", () => {
     state.data = [
       { session_id: "s1", escalated: false, category: "general", created_at: "2026-07-10T00:00:00Z" },
     ]
-    const res = await GET(req("https://t/api/support-report?token=secret"))
+    const res = await GET(req("https://t/api/support-report", AUTH))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.summary.totalMessages).toBe(1)
@@ -88,7 +103,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
       { data: fullPage(), error: null },
       { data: [row(9999, { escalated: true })], error: null },
     ]
-    const body = await (await GET(req("https://t/api/support-report?token=secret"))).json()
+    const body = await (await GET(req("https://t/api/support-report", AUTH))).json()
     expect(body.summary.totalMessages).toBe(PAGE + 1)
     expect(body.summary.escalatedCount).toBe(1)
   })
@@ -101,7 +116,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
       { data: Array.from({ length: PAGE }, (_, i) => row(PAGE + i, { escalated: true })), error: null },
       { data: [], error: null },
     ]
-    const body = await (await GET(req("https://t/api/support-report?token=secret"))).json()
+    const body = await (await GET(req("https://t/api/support-report", AUTH))).json()
     expect(body.summary.totalMessages).toBe(2 * PAGE)
     expect(body.summary.deflectionRate).toBe("50%")
   })
@@ -111,7 +126,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
       { data: fullPage(), error: null },
       { data: [row(9999)], error: null },
     ]
-    await GET(req("https://t/api/support-report?token=secret"))
+    await GET(req("https://t/api/support-report", AUTH))
     expect(state.cursors).toEqual([`id-${String(PAGE - 1).padStart(6, "0")}`])
   })
 
@@ -121,7 +136,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
       // Consumed only if the loop wrongly asks for a second page.
       { data: [row(2)], error: null },
     ]
-    const body = await (await GET(req("https://t/api/support-report?token=secret"))).json()
+    const body = await (await GET(req("https://t/api/support-report", AUTH))).json()
     expect(state.cursors).toEqual([])
     expect(body.summary.totalMessages).toBe(1)
   })
@@ -132,7 +147,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
       { data: fullPage(), error: null },
       { data: null, error: { message: "canceling statement due to statement timeout" } },
     ]
-    const res = await GET(req("https://t/api/support-report?token=secret"))
+    const res = await GET(req("https://t/api/support-report", AUTH))
     expect(res.status).toBe(500)
   })
 
@@ -150,7 +165,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
         error: null,
       },
     ]
-    const body = await (await GET(req("https://t/api/support-report?token=secret"))).json()
+    const body = await (await GET(req("https://t/api/support-report", AUTH))).json()
     expect(body.escalatedDetails.map((e: { sessionId: string }) => e.sessionId)).toEqual(["newer", "older"])
   })
 
@@ -159,7 +174,7 @@ describe("GET /api/support-report — every number is computed over the WHOLE wi
     // keeps returning the same full page. Without the guard the loop runs to its
     // page ceiling and totalMessages becomes nonsense rather than merely capped.
     state.pages = [{ data: fullPage(), error: null }]
-    const body = await (await GET(req("https://t/api/support-report?token=secret"))).json()
+    const body = await (await GET(req("https://t/api/support-report", AUTH))).json()
     // Two reads at most: the first page, then the repeat that proves no progress.
     expect(body.summary.totalMessages).toBeLessThanOrEqual(2 * PAGE)
   })
@@ -171,14 +186,14 @@ describe("GET /api/support-report — the days param", () => {
     // (/api/edition-history, /api/profile/portfolio-history) guard this; this one
     // never got the fix.
     state.data = []
-    const res = await GET(req("https://t/api/support-report?token=secret&days=abc"))
+    const res = await GET(req("https://t/api/support-report?days=abc", AUTH))
     expect(res.status).toBe(200)
     expect((await res.json()).period.days).toBe(7)
   })
 
   it("clamps ?days to [1, 90]", async () => {
     state.data = []
-    expect((await (await GET(req("https://t/api/support-report?token=secret&days=0"))).json()).period.days).toBe(1)
-    expect((await (await GET(req("https://t/api/support-report?token=secret&days=9999"))).json()).period.days).toBe(90)
+    expect((await (await GET(req("https://t/api/support-report?days=0", AUTH))).json()).period.days).toBe(1)
+    expect((await (await GET(req("https://t/api/support-report?days=9999", AUTH))).json()).period.days).toBe(90)
   })
 })

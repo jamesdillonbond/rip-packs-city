@@ -57,10 +57,13 @@ describe("POST /api/cron/refresh-cross-collection — success path", () => {
     expect(body.step2.set_overlap_rows).toBe(7)
   })
 
-  it("200s via the ?token= query param too", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await mod.POST(makeReq({ method: "POST", token: "test-ingest-token" }))
-    expect(res.status).toBe(200)
-    expect((await res.json()).ok).toBe(true)
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.step1).toBeUndefined()
+    expect(body.step2).toBeUndefined()
   })
 
   it("GET alias reaches the same 200 accept when authed", async () => {

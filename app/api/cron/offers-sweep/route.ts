@@ -6,7 +6,7 @@ import { fetchTopShotEditionAliases, canonicalTopShotExternalId, type TopShotEdi
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
 import { checkUpstreamBreaker, UPSTREAM_OUTAGE_SKIP } from "@/lib/pipeline/upstream-breaker"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // Untagged Top Shot marketplace-edition sweep that caches each edition's top
 // standing offer + lowest ask into edition_offers, keyed on the canonical
@@ -24,7 +24,7 @@ import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 // newest first.
 //
 // Live cron (cron-job.org): POST /api/cron/offers-sweep with
-// Authorization: Bearer $INGEST_SECRET_TOKEN (or ?token=) every ~20 min —
+// Authorization: Bearer $INGEST_SECRET_TOKEN every ~20 min —
 // verified firing ~43x/24h, all ok. A full refresh cycle is ~4 ticks. Readers
 // still fall back to badge_editions for any edition the sweep hasn't reached.
 
@@ -216,8 +216,7 @@ export async function POST(req: NextRequest) {
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secret as before
   const ok =
     !!process.env.INGEST_SECRET_TOKEN &&
-    (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN") ||
-      tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN"))
+    bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")
   if (!ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

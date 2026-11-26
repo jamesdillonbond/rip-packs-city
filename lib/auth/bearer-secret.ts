@@ -34,12 +34,15 @@ export function constantTimeEqual(a: string, b: string): boolean {
 
 /**
  * Constant-time check of a BARE token (no "Bearer " prefix) against one or more
- * secrets named by env var — the `?token=` query-string form some cron-job.org
- * entries and admin probes use. Same fail-closed and compare-every-secret
- * rules as bearerMatches. ⚠ Accepting a token from the query string at all is
- * a known weakness (it lands in logs and referrers); this helper exists so the
- * routes that must keep it for their configured callers at least compare it
- * in constant time.
+ * secrets named by env var — for a credential VALUE carried somewhere other than
+ * an Authorization header (a cookie, a form field, an `x-ingest-token` header,
+ * a header value with "Bearer " already stripped). Same fail-closed and
+ * compare-every-secret rules as bearerMatches.
+ * ⛔ Never feed it `searchParams.get("token")`: the `?token=` query-string form of
+ * a server secret was RETIRED on every route 2026-11-26 (a secret in a URL lands
+ * in access logs, browser history and Referer headers) after a week of zero real
+ * sightings from proxy.ts queryTokenSighting. Guard:
+ * __tests__/query-token-secret-retired-ratchet.test.ts.
  */
 export function tokenMatches(presented: string | null | undefined, ...envNames: string[]): boolean {
   if (typeof presented !== "string" || presented.length === 0) return false

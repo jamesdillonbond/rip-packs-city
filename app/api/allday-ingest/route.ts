@@ -21,8 +21,7 @@ function checkAuth(req: NextRequest): boolean {
   const token = process.env.INGEST_SECRET_TOKEN ?? ""
   if (!token) return false
   const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  return tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN")
+  return tokenMatches(bearer, "INGEST_SECRET_TOKEN")
 }
 
 export async function POST(req: NextRequest) {

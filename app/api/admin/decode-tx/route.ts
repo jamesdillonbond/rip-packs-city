@@ -10,7 +10,7 @@
 // path lib/chains/flow/dapper-v1-tx-decode.ts already uses); it is NOT reachable
 // from the dev sandbox, which is why this lives as a route rather than a script.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN | INGEST_SECRET_TOKEN | CRON_SECRET (or ?token=).
+// Auth: Bearer RPC_ADMIN_TOKEN | INGEST_SECRET_TOKEN | CRON_SECRET (header only; ?token= retired).
 // GET /api/admin/decode-tx?tx=<hash>[&script=1]
 //   script=1 includes the full decoded Cadence source (can be large).
 

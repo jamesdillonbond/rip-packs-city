@@ -28,7 +28,7 @@
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (admin/cron-job.org) OR Bearer INGEST_SECRET_TOKEN
 // (GitHub Actions) OR Bearer CRON_SECRET (Vercel cron — which WAITS for the full
-// maxDuration, unlike cron-job.org's 30s cap). Or ?token=<RPC_ADMIN_TOKEN>.
+// maxDuration, unlike cron-job.org's 30s cap). (?token= retired.)
 // Query params:
 //   ?limit=N    cap targets resolved this tick (default CANDIDATES_PER_RUN)
 //   ?rekey=1    after resolution, run remap_topshot_from_onchain_map()

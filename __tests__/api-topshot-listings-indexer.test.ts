@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
 // Route integration test for /api/topshot-listings-indexer (POST run + GET alias).
-// Auth: Bearer INGEST_SECRET_TOKEN OR ?token=, captured at import into a
+// Auth: Bearer INGEST_SECRET_TOKEN only (?token= retired 2026-11-26), captured at import into a
 // module-level `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""`. Two regimes via
 // resetModules:
 //   A. no secret → TOKEN "" → every request 401s (fail-closed).
@@ -69,8 +69,12 @@ describe("POST /api/topshot-listings-indexer — secret configured (success path
     expect(body.message).toBe("indexing started")
   })
 
-  it("200s with the correct ?token= query param", async () => {
-    expect((await POST(makeReq({ url, token: TOKEN }))).status).toBe(200)
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await POST(makeReq({ url, token: TOKEN }))
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.message).not.toBe("indexing started")
   })
 
   it("GET delegates to POST (same auth + accept)", async () => {

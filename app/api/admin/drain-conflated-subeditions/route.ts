@@ -35,10 +35,10 @@
 // Steps 3–4 process what step 2 resolved on PRIOR ticks; the guard converges to 0
 // over successive runs. All work is bounded/chunked so a tick fits maxDuration.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN | INGEST_SECRET_TOKEN | CRON_SECRET, or ?token=.
+// Auth: Bearer RPC_ADMIN_TOKEN | INGEST_SECRET_TOKEN | CRON_SECRET (header only; ?token= retired 2026-11-26).
 
 import { NextRequest, NextResponse } from "next/server";
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
@@ -61,8 +61,7 @@ function authed(req: NextRequest): boolean {
   if (verifyAdminRequest(req)) return true;
   // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
   const names = ["INGEST_SECRET_TOKEN", "CRON_SECRET", "RPC_ADMIN_TOKEN"];
-  if (bearerMatches(req.headers.get("authorization"), ...names)) return true;
-  return tokenMatches(req.nextUrl.searchParams.get("token"), ...names);
+  return bearerMatches(req.headers.get("authorization"), ...names);
 }
 
 // Fire the on-chain subedition resolver (Supabase edge fn). Fire-and-forget: it

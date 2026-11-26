@@ -2,7 +2,7 @@
 //
 // Cron entrypoint for the daily institutional-wallet snapshot. Schedule
 // on cron-job.org once per day at 06:00 UTC. Bearer
-// INGEST_SECRET_TOKEN / CRON_SECRET (also accepts `?token=` query).
+// INGEST_SECRET_TOKEN / CRON_SECRET (`?token=` retired 2026-11-26).
 //
 // Heartbeat-first contract (added 2026-05-17): before doing anything
 // else, write to public.cron_heartbeats so the pipeline watchlist can
@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -75,12 +75,10 @@ async function invokeEdgeWithRetry(): Promise<{ status: number; body: unknown; a
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? ""
-  const queryToken = req.nextUrl.searchParams.get("token")
   const cronSecret = process.env.CRON_SECRET
   const isValid =
     bearerMatches(authHeader, "INGEST_SECRET_TOKEN") ||
-    (cronSecret && bearerMatches(authHeader, "CRON_SECRET")) ||
-    tokenMatches(queryToken, "INGEST_SECRET_TOKEN")
+    (cronSecret && bearerMatches(authHeader, "CRON_SECRET"))
   if (!isValid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { decodeV1SaleTx, decodeV1MultiSaleTx, isCustodialDepositTarget } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 // ── AllDay V1-Dapper price recovery (Phase 2 of the unmapped-residue drain) ────
@@ -371,8 +371,7 @@ async function run(startedAt: string, startedMs: number) {
 async function handle(req: NextRequest) {
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secrets as before
   const authedOk =
-    bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET") ||
-    tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
+    bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
   if (!authedOk) return unauthorized()
 
   const startedAt = new Date().toISOString()

@@ -21,7 +21,7 @@
 //   3.  Live listings = every OPEN listing (SearchMarketplaceTransactions
 //       completed:false), REPLACED only from a complete sweep (R123).
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (admin/cron-job.org, or ?token=) OR Bearer
+// Auth: Bearer RPC_ADMIN_TOKEN (admin/cron-job.org; ?token= retired) OR Bearer
 // INGEST_SECRET_TOKEN (GitHub Actions) OR Bearer CRON_SECRET (Vercel cron).
 // Methods: GET or POST.
 // Crons: daily full backfill (cron-job.org + Vercel 37 21 * * *) + intraday
@@ -57,7 +57,7 @@ const MINTED_RAISE_MAX = 500;
 // Renders read from the chain per run when the search lacks them (newest first).
 const CHAIN_FILL_MAX = 60;
 
-// Accept the admin token (Bearer or ?token=), the GitHub-Actions ingest token,
+// Accept the admin token (Bearer; ?token= retired), the GitHub-Actions ingest token,
 // or the Vercel-cron secret — mirrors the drain-topshot-misattribution route so
 // the intraday floor refresh can be driven by a Vercel cron (which sends only
 // Bearer CRON_SECRET). All three are equivalent-trust server secrets.

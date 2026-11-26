@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { tokenMatches } from "@/lib/auth/bearer-secret"
 
-// POST /api/cron/resolve-wallet-usernames — Bearer $INGEST_SECRET_TOKEN (or ?token=)
+// POST /api/cron/resolve-wallet-usernames — Bearer $INGEST_SECRET_TOKEN
 //
 // Item 3 (2026-06-09): populate the wallet_usernames cache so the platform can
 // show @handles instead of raw 0x addresses. Pulls a batch of recent TS sale
@@ -97,8 +97,7 @@ async function lookupUsername(addr: string): Promise<LookupResult> {
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) {
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

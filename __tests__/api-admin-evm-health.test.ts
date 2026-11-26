@@ -58,12 +58,13 @@ describe("GET /api/admin/evm-health", () => {
     expect((await GET(req({ auth: "Bearer nope" }))).status).toBe(401)
   })
 
-  it("accepts the ?token= query param as well as the Bearer header", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     process.env.RPC_ADMIN_TOKEN = ADMIN
-    // authed via query token but unsupported chain → 400 (proves auth passed).
+    // Correct secret in the query + an unsupported chain: a 400 would prove auth
+    // PASSED; the retired query lane must stop at the gate with a 401 instead.
     const url = new URL("https://t/api/admin/evm-health?token=" + ADMIN + "&chain=not-a-chain")
     const res = await GET(new NextRequest(url))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(401)
   })
 
   it("400s on an unsupported chain slug (authed, pre-network)", async () => {

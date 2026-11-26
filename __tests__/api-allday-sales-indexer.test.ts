@@ -74,8 +74,10 @@ describe("POST /api/allday-sales-indexer — secret configured (success path)", 
     expect(body.message).toBe("indexing started")
   })
 
-  it("200s with the correct ?token= query param", async () => {
-    expect((await POST(makeReq({ url, token: TOKEN }))).status).toBe(200)
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
+    const res = await POST(makeReq({ url, token: TOKEN }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).ok).not.toBe(true)
   })
 
   it("GET delegates to POST", async () => {

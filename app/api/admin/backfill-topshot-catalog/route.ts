@@ -5,7 +5,7 @@
 // tracker mismatch (49 complete vs Top Shot's reported 87) and fills the
 // 23% thumbnail / 100% video gap on existing TopShot rows.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) — this route accepts NOTHING else,
+// Auth: Bearer RPC_ADMIN_TOKEN (?token= retired) — this route accepts NOTHING else,
 // which is why it cannot be scheduled directly.
 // Methods: GET or POST — both run the same loop.
 //

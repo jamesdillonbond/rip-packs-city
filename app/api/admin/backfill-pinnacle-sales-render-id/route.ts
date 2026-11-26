@@ -13,7 +13,7 @@
 // One-time bulk drain AND a cron-able ongoing drain. The hourly pinnacle-wmc-render-id
 // cron also folds in a small sales drain so new sales never sit unresolved for long.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=). Methods: GET or POST.
+// Auth: Bearer RPC_ADMIN_TOKEN (?token= retired). Methods: GET or POST.
 // Query: ?limit=N caps distinct nft_ids resolved this run (default 6000).
 
 import { NextRequest, NextResponse } from "next/server";

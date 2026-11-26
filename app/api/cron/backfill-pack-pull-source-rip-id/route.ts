@@ -7,11 +7,11 @@
 // (every 30min). Cap=1000/run via backfill_pack_pull_source_rip_id
 // (server-side RPC). Drains ~3.5h at 1000/run.
 //
-// Auth: Bearer INGEST_SECRET_TOKEN (also accepts ?token=). GET/POST.
+// Auth: Bearer INGEST_SECRET_TOKEN (?token= retired). GET/POST.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -21,8 +21,7 @@ const PIPELINE_NAME = "pack-pull-source-rip-id-backfill"
 function authorized(req: NextRequest): boolean {
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secrets as before
   if (!process.env.INGEST_SECRET_TOKEN) return false
-  if (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")) return true
-  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN")
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 export async function POST(req: NextRequest) {

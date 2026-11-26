@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,7 +82,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function GET(req: NextRequest) {
-  if (!tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN")) {
+  if (!bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

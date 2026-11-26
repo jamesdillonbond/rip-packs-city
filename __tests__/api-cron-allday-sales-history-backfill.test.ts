@@ -114,8 +114,14 @@ describe("POST /api/cron/allday-sales-history-backfill — secret configured (su
     expect(body.below_floor).toBe(false)
   })
 
-  it("200s via the correct ?token= query param (GET alias, empty tick)", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await GET2(makeReq({ url: `${url}?range=250`, method: "GET", token: TOKEN }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).pipeline).toBeUndefined()
+  })
+
+  it("200s via the correct Bearer header on the GET alias (empty tick)", async () => {
+    const res = await GET2(makeReq({ url: `${url}?range=250`, method: "GET", auth: `Bearer ${TOKEN}` }))
     expect(res.status).toBe(200)
     expect((await res.json()).pipeline).toBe(PIPELINE)
   })

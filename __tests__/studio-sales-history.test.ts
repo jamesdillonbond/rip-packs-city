@@ -172,10 +172,11 @@ describe("runStudioHistoryDrain — auth gate", () => {
     expect((await res.json()).note).toBe("queue_empty")
   })
 
-  it("accepts the token via ?token= query param", async () => {
+  it("401s with the correct secret in ?token= — the query form is retired (2026-11-26)", async () => {
     const res = await runStudioHistoryDrain(req(`${BASE}?token=test-ingest-token`), CFG as any)
-    expect(res.status).toBe(200)
-    expect((await res.json()).note).toBe("queue_empty")
+    expect(res.status).toBe(401)
+    expect((await res.json()).note).not.toBe("queue_empty")
+    expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 })
 

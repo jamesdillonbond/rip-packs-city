@@ -504,15 +504,14 @@ async function scanRange(
 async function run(req: NextRequest): Promise<NextResponse> {
   // Auth: Bearer INGEST_SECRET_TOKEN (cron-job.org / GHA) OR Bearer CRON_SECRET
   // (Vercel cron — injected automatically, no secret typed by an operator). Both
-  // also accepted as ?token= for browser-fired probes. Mirrors the dual-auth
+  // header only (?token= retired 2026-11-26). Mirrors the dual-auth
   // precedent in app/api/admin/drain-topshot-misattribution (the Vercel-cron drain).
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   const CRON = process.env.CRON_SECRET ?? ""
   const authedOk =
-    (TOKEN.length > 0 && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
-    (CRON.length > 0 && (tokenMatches(bearer, "CRON_SECRET") || tokenMatches(urlToken, "CRON_SECRET")))
+    (TOKEN.length > 0 && (tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) ||
+    (CRON.length > 0 && (tokenMatches(bearer, "CRON_SECRET")))
   if (!authedOk) return unauthorized()
 
   const startedAt = new Date().toISOString()

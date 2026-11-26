@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { isCadenceAddress } from "@/lib/address"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // 800s ceiling (Vercel Pro Lambda hard cap — see the maxDuration note in
 // wallet-backfill-multicollection). The orchestrator returns 202 in <5s per
@@ -650,9 +650,8 @@ export async function loadSavedOnlyCandidates(
 }
 
 export async function GET(req: NextRequest) {
-  // Support both ?token= query param and Authorization: Bearer header
+  // Authorization: Bearer header only (?token= retired 2026-11-26)
   const authorized =
-    tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN") ||
     bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")
 
   if (!authorized) {

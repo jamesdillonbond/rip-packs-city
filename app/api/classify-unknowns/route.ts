@@ -74,9 +74,8 @@ async function fetchMoment(momentId: string, debug = false): Promise<FetchResult
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   // constant-time via the shared helper (2026-11-07: a local compare the R150 ratchet could not see)
-  if (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN")) {
+  if (!tokenMatches(bearer, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

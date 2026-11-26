@@ -175,7 +175,7 @@ beforeEach(() => {
 })
 
 describe("golazos-sales-history-backfill — control paths", () => {
-  it("401s without any token; accepts CRON_SECRET via ?token= and the kill-switch logs an honest ok run", async () => {
+  it("401s without any token and with CRON_SECRET in ?token= (the query form is retired (2026-11-26)); accepts CRON_SECRET as a Bearer and the kill-switch logs an honest ok run", async () => {
     const spy = install({})
     const res = await POST(req("?range=250", {}))
     expect(res.status).toBe(401)
@@ -183,7 +183,12 @@ describe("golazos-sales-history-backfill — control paths", () => {
 
     process.env.CRON_SECRET = "vercel-cron-secret"
     process.env.GOLAZOS_SALES_HISTORY_BACKFILL_DISABLED = "1"
-    const res2 = await POST(req("?range=250&token=vercel-cron-secret", {}))
+    const viaQuery = await POST(req("?range=250&token=vercel-cron-secret", {}))
+    expect(viaQuery.status).toBe(401)
+    expect((await viaQuery.json()).skipped).toBeUndefined()
+    expect(spy.rpcCalls).toHaveLength(0)
+
+    const res2 = await POST(req("?range=250", { authorization: "Bearer vercel-cron-secret" }))
     expect(res2.status).toBe(200)
     expect(await res2.json()).toMatchObject({ ok: true, skipped: "disabled" })
     const log = terminalLog(spy.rpcCalls)

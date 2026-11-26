@@ -47,7 +47,7 @@ import { tokenMatches } from "@/lib/auth/bearer-secret"
 //
 // Chained from allday-sales-indexer (replacing the blocked edge-fn call). Can
 // also run standalone via cron-job.org. Auth: Bearer INGEST_SECRET_TOKEN or
-// ?token=. Result lands in pipeline_runs as pipeline=allday-unmapped-resolver.
+// (?token= retired). Result lands in pipeline_runs as pipeline=allday-unmapped-resolver.
 
 export const maxDuration = 300
 
@@ -586,8 +586,7 @@ async function run(startedAt: string) {
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const startedAt = new Date().toISOString()
 

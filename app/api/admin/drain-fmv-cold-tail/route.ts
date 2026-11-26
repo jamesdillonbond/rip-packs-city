@@ -2,10 +2,10 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // POST /api/admin/drain-fmv-cold-tail?collection=all&limit=200
-// Authorization: Bearer $INGEST_SECRET_TOKEN  OR  ?token=$INGEST_SECRET_TOKEN
+// Authorization: Bearer $INGEST_SECRET_TOKEN  (?token= retired 2026-11-26)
 //
 // Drains the FMV cold tail for the 4 stale collections by calling the SECDEF
 // RPC drain_fmv_cold_tail(p_collection_slug, p_limit). Closes audit §1.1
@@ -104,8 +104,7 @@ function isAuthorized(req: NextRequest): boolean {
   const token = process.env.INGEST_SECRET_TOKEN
   if (!token) return false
   const auth = req.headers.get("authorization") ?? ""
-  if (bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true
-  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN")
+  return bearerMatches(auth, "INGEST_SECRET_TOKEN")
 }
 
 function isStaleCollection(s: string): s is StaleSlug {
