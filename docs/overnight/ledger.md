@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:05 PM PT · 🔧 SHIPPED (copy) — pack tier chips read "In season premium", not "In_season_premium" (Claude Code cloud; found on the live check of the ~1:40 PM ship)
+
+- All Day's Dapper tiers arrive snake_cased; `packTierLabel` now turns `_` / `-` into spaces. Test in `packs-wallet-view-format.test.ts`. **Revert:** `git revert` the commit "pack tier chips: snake_case tiers read as words".
+
 ### 2026-11-26 ~1:40 PM PT · 🔧 SHIPPED — **the full pack history (`/dashboard/packs`) gets the same search / sort / winners-losers / tier filters; its "Held" status reads "Sealed"** (Claude Code cloud; Trevor: "Keep going")
 
 - Follow-up to the ~12:45 PM binder filters (v38, no DB change): the filter bar moved to `components/packs/PackFilterBar.tsx`, shared by the binder's Packs tabs and `/dashboard/packs`; on the dashboard's mixed "All" list "Value" / "P&L" mean each row's own (sealed value, pull value, sale price). The status button and each row's chip say "Sealed" for a pack still in the wallet. Tests in `component-PackHistoryAndOverviewClients.test.tsx` and `packs-wallet-view-format.test.ts`.
