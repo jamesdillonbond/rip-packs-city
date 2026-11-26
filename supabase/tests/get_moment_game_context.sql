@@ -6,7 +6,7 @@
 --       the tip-off (Brunson 2025-12-19, recorded Pacers vs Knicks: the IND game the night before, ET).
 --       One game on the date, read either way, is that game;
 --   (b) on a back-to-back (one game on each reading) the game whose opponent the edition's own teams
---       name wins (2 points), else the one its description names (1 point); a tie, or no evidence,
+--       name wins (2 points), else the one its description names by nickname or city (1 point); a tie, or no evidence,
 --       is NO game line — the season still shows (20261126031512);
 --   (c) an edition that records its teams never gets a game against someone else;
 --   (d) an All Day play without both teams (a Player/Team Melt, a Draft Pick) has no game and no
@@ -17,7 +17,7 @@
 --
 -- The function DDL below is VERBATIM from
 -- supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql (moment_gamelog_season)
--- and supabase/migrations/20261126031648_audit_20261125_moment_game_context_team_placeholders.sql (get_moment_game_context);
+-- and supabase/migrations/20261126032613_audit_20261125_moment_game_context_description_city.sql (get_moment_game_context);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -87,7 +87,9 @@ INSERT INTO public.editions VALUES
   ('20000000-0000-0000-0000-000000000014', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-12', 'Los Angeles Clippers', 'New York Knicks', NULL),
   -- (c) "N/A" is not a team: it must not veto the one game on the date; a trailing space is not a name
   ('20000000-0000-0000-0000-000000000015', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'New York Knicks', 'N/A', NULL),
-  ('20000000-0000-0000-0000-000000000016', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'Miami Heat ', 'New York Knicks', NULL);
+  ('20000000-0000-0000-0000-000000000016', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'Miami Heat ', 'New York Knicks', NULL),
+  -- (b) Brunson 2026-02-22 again, the description naming the opponent's CITY ("against Houston")
+  ('20000000-0000-0000-0000-000000000017', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-02-22', NULL, NULL, 'Jalen Brunson pulls up against Houston for the go-ahead three.');
 
 INSERT INTO public.player_season_stats VALUES
   ('nba', '3032977', 2027, 2, 'averages', 'Averages', 'miami-heat', false, '{PTS}', '{avgPoints}', '{28.2}'),
@@ -203,7 +205,8 @@ begin
   -- 2025-12-19, recorded Pacers vs Knicks, is the UTC date of the IND game the night before).
   --   · one game          → it, unless the edition records its teams and this opponent is not one;
   --   · two (back-to-back) → the one whose opponent the edition's teams name (2 points) or its
-  --                          description names (1 point), if exactly one scores highest; else none.
+  --                          description names, by nickname or city (1 point), if exactly one scores
+  --                          highest; else none.
   -- No line beats a wrong one: the season line still shows.
   with cand as (
     select l.*,
@@ -215,7 +218,8 @@ begin
     select c.*,
            (case when v_home is not null and c.opp_nick in (v_home, v_away) then 2 else 0 end)
          + (case when v_e.description is not null and c.opp_nick <> ''
-                  and v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '^.*\s', '') || '\M')
+                  and (v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '^.*\s', '') || '\M')
+                       or v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '\s+\S+$', '') || '\M'))
                  then 1 else 0 end) as evidence
       from cand c
   )
@@ -242,7 +246,8 @@ begin
         select c.*,
                (case when v_home is not null and c.opp_nick in (v_home, v_away) then 2 else 0 end)
              + (case when v_e.description is not null and c.opp_nick <> ''
-                      and v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '^.*\s', '') || '\M')
+                      and (v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '^.*\s', '') || '\M')
+                           or v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '\s+\S+$', '') || '\M'))
                      then 1 else 0 end) as evidence,
                (v_home is not null and c.opp_nick not in (v_home, v_away)) as teams_disagree
           from (
@@ -307,6 +312,8 @@ SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000
   '(b) a back-to-back with no evidence either way gets no game line');
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000012')->>'season', '2026',
   '(b) ... and still its season');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000017')->'game'->>'opponent_abbr', 'HOU',
+  '(b) a description naming the opponent''s city settles a back-to-back');
 -- (c) recorded teams veto a single candidate; nicknames match across spellings
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000013')->'game' = 'null'::jsonb,
   '(c) an edition recorded vs Boston never gets the Miami game on its date');

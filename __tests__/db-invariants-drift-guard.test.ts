@@ -20,7 +20,7 @@ const PINS = [
     // blank; recorded teams veto; no nearest-day fallback; no stats for an All Day play without both teams.
     fn: "get_moment_game_context",
     test: "supabase/tests/get_moment_game_context.sql",
-    migration: "supabase/migrations/20261126031648_audit_20261125_moment_game_context_team_placeholders.sql",
+    migration: "supabase/migrations/20261126032613_audit_20261125_moment_game_context_description_city.sql",
   },
   {
     // Added 2026-11-25. ESPN's season number for a game date (NBA by the year it ends, NFL by the year it starts).
