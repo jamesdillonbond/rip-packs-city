@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~10:55 AM PT · 🗄 APPLIED (`20261126185403`) — Top Shot Atlas sale twins up to 2 h apart retired: 231 duplicate sales removed, all archived (Cowork; Trevor: "push and take care of any work that needs cowork")
+
+- **Why:** 231 Top Shot sales were stored twice, an `atlas` row (no tx hash) plus the on-chain row for the same sale, 10–93 min apart. The ±10-min rule in `retire_topshot_atlas_sale_twins` (pg_cron 716) caught none. One inflated the 2026 rookie-class total by a $19 sale.
+- **Change:** the twin match also accepts a row up to ±2 h away when seller AND buyer match and no other sale of the moment sits between the two. One all-time sweep (`p_days` 3000) ran in the migration.
+- **Verified:** base `prosrc` md5 `3c9eaf9b…` matched before apply; dry count 231 → sweep returned twins_found 231, retired 231, error null, 74 s; 231 rows in `flowty_archive.audit_topshot_atlas_sale_twins` this hour; anon EXECUTE false.
+- **Revert:** re-apply the body from `20261010053000_audit_20261009_atlas_sale_twins_retired_when_the_onchain_row_lands_late.sql`; restore rows with `INSERT INTO public.sales SELECT (jsonb_populate_record(NULL::public.sales, a.row)).* FROM flowty_archive.audit_topshot_atlas_sale_twins a WHERE a.retired_at >= '2026-11-25';`
+
 ### 2026-11-26 ~10:55 AM PT · 🗄 APPLIED (`20261126184303`) + pg_cron 936/937 + 🔧 code — Panini SOCCER cards get their competition-season line on the slab back; a set name naming two seasons gives none (Claude Code cloud; Trevor: "Yes do it all")
 
 - **What it shows:** a soccer card's back has the player's line in the competition and season its PRODUCT is from. A "2022 … FIFA World Cup" card shows his 2022 World Cup (Messi: G 7 · A 3 · GS 7). A "2022-23 … LaLiga" card shows his 2022-23 LALIGA season. Keepers show CS · SV · GA · GS. Mapped products: LaLiga, Serie A, Ligue 1 (incl. Foot FR stickers), the men's World Cup. Not mapped: qualifiers ("Road to"), "Saga", women's, and competition-less products.
