@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~8:15 AM PT · 🗄 APPLIED (`20261126161804`) — two stale zero-yield suppressions retired (Claude Code cloud; Trevor: "Apply it")
+- **What:** `DELETE FROM pipeline_zero_yield_suppressions WHERE pipeline IN ('ufc-enrichment-drain', 'pack-pull-source-rip-id-backfill')` — the DELETE held since 11-25 ~8:30 PM PT (inbox `2026-11-26T0432Z`).
+- **Each row's own re-check condition, re-measured at apply:** `ufc-enrichment-drain` ("remove the day it writes any new run") 4 runs / 114 written in 72 h, last 3:48 AM PT; `pack-pull-source-rip-id-backfill` ("remove if examined > 0") 144 runs, examined 12,976, written 12,976, last 8:11 AM PT.
+- **Verified:** 0 rows remain; `check_zero_yield_lanes()->'offenders'` = `[]` (neither lane flags today; the rows only hid a future stall).
+- **Revert:** the exact `INSERT` of both rows is in the migration file header.
+
 ### 2026-11-26 ~8:25 AM PT · ✅ VERIFIED — Saved Wallets + Panini-in-FMV thread closed; weekly-email Panini check scheduled for 11-30 (Cowork cloud; docs only)
 
 - Live checks green (smoke suites on every main commit, zero client errors after the deploys, profile = dashboard). One-shot scheduled task "RPC: verify weekly email carries Panini cards (11-30)" at Mon 11-30 9:47 AM PT verifies the first real weekly send with the Panini block. Docs: wallet-and-portfolio.md verified/pending line, sessions entry.
