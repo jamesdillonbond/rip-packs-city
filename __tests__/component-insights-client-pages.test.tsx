@@ -16,7 +16,8 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 // mount-fetch board.
 
 import SqueezeCheckPage from "@/app/insights/squeeze-check/page"
-import TcReportPage from "@/app/insights/tc-report/page"
+import TcReportPage, { ccFmvAsOf } from "@/app/insights/tc-report/page"
+import { installClosedMarketFixture, removeClosedMarketFixture } from "./helpers/closed-market-fixture"
 import PackRealityPage from "@/app/insights/pack-reality/PackRealityClient"
 
 const VALID_WALLET = "0xbd94cade097e50ac"
@@ -233,8 +234,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
       cross_collection: [
         { slug: "nba_top_shot", moments: 200, editions: 120, approx_fmv_usd: 5400 },
         { slug: "nfl_all_day", moments: 30, editions: 25, approx_fmv_usd: null },
-        // A CLOSED market (UFC Strike's Flow marketplace, last sale 13 May 2026)
-        // still carries the last FMV the pipeline observed.
+        // UFC Strike: closed on Flow 13 May 2026, REOPENED on Aptos 2026-11-26 —
+        // its FMV is current again and carries no closed-market marker.
         { slug: "ufc_strike", moments: 4, editions: 4, approx_fmv_usd: 12.5 },
         // A registry collection the old hardcoded label map did not know.
         { slug: "candy_mlb", moments: 338, editions: 300, approx_fmv_usd: 900 },
@@ -276,13 +277,26 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
     expect(screen.getAllByText(/NFL All Day/i).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Candy MLB/i).length).toBeGreaterThan(0)
     expect(screen.queryByText("candy_mlb")).toBeNull()
-    // 2026-09-24: an FMV on a CLOSED market is historical and says so; a live
-    // market's FMV carries no such marker.
+    // 2026-09-24: an FMV on a CLOSED market is historical and says so (pinned on
+    // the fixture market in the case below). Inverted 2026-11-26: UFC is open again.
     const ufcCard = screen.getByText("UFC Strike").closest(".rpc-tc-cc-card")!
-    expect(ufcCard.textContent).toMatch(/as of 13 May 2026 · Flow market closed/)
+    expect(ufcCard.textContent).not.toMatch(/market closed/)
     const tsCard = screen.getByText("NBA Top Shot").closest(".rpc-tc-cc-card")!
     expect(tsCard.textContent).toContain("FMV")
     expect(tsCard.textContent).not.toMatch(/market closed/)
+  })
+})
+
+describe("TcReportPage — ccFmvAsOf on a closed market", () => {
+  it("marks a closed market's FMV as historical, and an open one not at all", () => {
+    installClosedMarketFixture("laliga-golazos")
+    try {
+      expect(ccFmvAsOf("laliga_golazos")).toBe("as of 13 May 2026 · Flow market closed")
+      expect(ccFmvAsOf("ufc_strike")).toBeNull()
+      expect(ccFmvAsOf("nba_top_shot")).toBeNull()
+    } finally {
+      removeClosedMarketFixture("laliga-golazos")
+    }
   })
 })
 

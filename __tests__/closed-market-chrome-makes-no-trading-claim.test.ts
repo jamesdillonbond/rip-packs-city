@@ -43,6 +43,11 @@ import {
   TICKER_STATUS_CLOSED,
 } from "@/lib/collection/closed-market-chrome"
 import { MARKET_LIVENESS_CLAIM } from "./helpers/market-liveness"
+import { installClosedMarketFixture, FIXTURE_CLOSED_SLUG } from "./helpers/closed-market-fixture"
+
+// 2026-11-26: production CLOSED_MARKETS is empty (UFC reopened on Aptos). The
+// population below is the fixture record, so the machinery stays exercised.
+installClosedMarketFixture()
 
 // ⚠ ONE shared pattern (helpers/market-liveness.ts), not a local copy. Three
 // guards each declared their own on 2026-09-06 and they had already drifted;
@@ -184,22 +189,38 @@ describe("the overview About cards make no trading claim on a closed market", ()
     return end < 0 ? null : src.slice(start, end)
   }
 
+  /** Every trading/liveness claim in a closed slug's About block; null when the slug has no block. */
+  function aboutViolations(src: string, slug: string): string[] | null {
+    const block = aboutBlock(src, slug)
+    if (!block) return null
+    const bodies = [...block.matchAll(/(?:title|body): "([^"]*)"/g)].map((m) => m[1])
+    if (bodies.length === 0) return ["<no About copy found>"]
+    return bodies.filter((t) => TRADING_CLAIM.test(t) || LIVENESS.test(t))
+  }
+
   it("every closed market that has an About block carries no trading or liveness claim", async () => {
+    // 2026-11-26: UFC reopened on Aptos, so no REAL closed market has an About
+    // block today and this walks zero blocks — satisfiable at zero by design.
+    // The planted case below is what proves the checker can fail.
     const src = (await import("node:fs")).readFileSync(SRC, "utf8")
-    let checked = 0
+    expect(src.length).toBeGreaterThan(1000)
     for (const slug of Object.keys(CLOSED_MARKETS)) {
-      const block = aboutBlock(src, slug)
-      if (!block) continue // aliases resolve to the canonical slug's block
-      const bodies = [...block.matchAll(/(?:title|body): "([^"]*)"/g)].map((m) => m[1])
-      expect(bodies.length, `${slug}: no About copy found`).toBeGreaterThan(0)
-      for (const text of bodies) {
-        expect(text, `${slug}: "${text}"`).not.toMatch(TRADING_CLAIM)
-        expect(text, `${slug}: "${text}"`).not.toMatch(LIVENESS)
-      }
-      checked += 1
+      const v = aboutViolations(src, slug)
+      if (v === null) continue // aliases / fixtures resolve to no block
+      expect(v, slug).toEqual([])
     }
-    // population control: the guard must actually inspect UFC's block
-    expect(checked).toBeGreaterThanOrEqual(1)
+  })
+
+  it("PLANTED DEFECT — a closed slug whose About block promises deals is caught", () => {
+    const planted = [
+      "const ABOUT = {",
+      `  "${FIXTURE_CLOSED_SLUG}": [`,
+      `    { title: "Snipe deals", body: "The sniper catches fight moments priced below market." },`,
+      "  ],",
+      "}",
+    ].join("\n")
+    expect(aboutViolations(planted, FIXTURE_CLOSED_SLUG)).toHaveLength(2)
+    expect(aboutViolations(planted, "nba-top-shot")).toBeNull()
   })
 
   it("CONTROL — the pattern does see the copy it exists to stop", () => {

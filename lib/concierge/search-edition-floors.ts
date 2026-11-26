@@ -21,6 +21,7 @@ import type { Collection } from "@/lib/collections"
 import { marketplaceMomentUrl } from "@/lib/collections"
 import { absoluteEditionPageUrl, discountPct } from "@/lib/concierge/edition-listings"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
+import { raribleAptosCollectionUrl } from "@/lib/ufc-aptos"
 
 type Supabase = any
 
@@ -203,6 +204,35 @@ export const paniniFloorReader: FloorReader = async (supabase, ids) => {
   }
   return { ok: true, floors }
 }
+
+/** UFC Strike (2026-11-26): its live asks are on APTOS — RPC's index of Rarible listings
+ *  (v_ufc_aptos_edition_floor, fed by scripts/ufc-aptos-listings.mjs, which re-checks every
+ *  listing's owner each run). The buy link is the Rarible collection page; per-token Rarible
+ *  links 404 for some real tokens. ok:false only on a failed floor read — a failed collection
+ *  read drops the link, never the ask. */
+export const ufcAptosFloorReader: FloorReader = async (supabase, ids) => {
+  const floors = new Map<string, EditionFloor>()
+  const [fr, cr] = await Promise.all([
+    supabase.from("v_ufc_aptos_edition_floor").select("edition_id, floor_usd, checked_at").in("edition_id", ids),
+    supabase.from("ufc_aptos_collections").select("edition_id, aptos_collection_id").in("edition_id", ids).order("aptos_collection_id", { ascending: true }),
+  ])
+  if (fr.error) return { ok: false, floors }
+  const collBy = new Map<string, string>()
+  if (!cr.error) {
+    for (const c of (cr.data ?? []) as Array<Record<string, unknown>>) {
+      const k = String(c.edition_id)
+      if (!collBy.has(k) && typeof c.aptos_collection_id === "string") collBy.set(k, c.aptos_collection_id)
+    }
+  }
+  for (const r of (fr.data ?? []) as Array<Record<string, unknown>>) {
+    const ask = num(r.floor_usd)
+    if (ask == null || !(ask > 0)) continue
+    const id = String(r.edition_id)
+    floors.set(id, { ask, listedAt: typeof r.checked_at === "string" ? r.checked_at : null, buyUrl: raribleAptosCollectionUrl(collBy.get(id) ?? null) })
+  }
+  return { ok: true, floors }
+}
+
 
 export async function searchEditionFloorsByName(
   supabase: Supabase,

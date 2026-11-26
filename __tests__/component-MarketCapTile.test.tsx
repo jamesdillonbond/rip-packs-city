@@ -31,6 +31,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import MarketCapTile, { CollectionMarketCapTile, MarketCapTileBody } from "@/components/entity/MarketCapTile"
+import { installClosedMarketFixture, removeClosedMarketFixture } from "./helpers/closed-market-fixture"
 import { sevenDayChange, staleSince, type MarketCapEntityRow } from "@/lib/insights/market-cap-board"
 
 afterEach(cleanup)
@@ -132,14 +133,30 @@ describe("MarketCapTileBody", () => {
     )
     const t = container.textContent ?? ""
     expect(t).toContain("Unknown")
-    // UFC's market closed 13 May 2026: the bound is built from closing prices and says so.
-    expect(t).toContain("≤ $12.5K on minted supply, at closing prices")
+    // Inverted 2026-11-26: UFC reopened on Aptos, so its bound is NOT a closing-price bound.
+    expect(t).toContain("≤ $12.5K on minted supply")
+    expect(t).not.toContain("closing prices")
     expect(t).not.toMatch(/\$0\b/)
     expect(t).not.toContain("#")
     // groups_ranked counts known caps only: with none known, the rank line must not
     // claim the collection has zero players (it read "of 0 players in UFC Strike").
     expect(t).not.toMatch(/of 0 players/)
     expect(t).toContain("none in UFC Strike has a known cap")
+  })
+
+  it("a CLOSED market's bound is built from closing prices and says so (fixture market)", () => {
+    installClosedMarketFixture("laliga-golazos")
+    try {
+      const { container } = render(
+        <MarketCapTileBody
+          group="player"
+          row={{ ...ROW, collection_slug: "laliga_golazos", mcap_usd: null, mcap_high_conf_usd: null, collector_held: null, burned: null, issuer_held: null, mcap_rank: null, groups_ranked: 0, mcap_minted_usd: 12_500, editions_supply_known: 0 }}
+        />,
+      )
+      expect(container.textContent ?? "").toContain("≤ $12.5K on minted supply, at closing prices")
+    } finally {
+      removeClosedMarketFixture("laliga-golazos")
+    }
   })
 
   it("with NO edition's split known, says so — never 'on the 0 of N editions' and never a 0 held", () => {

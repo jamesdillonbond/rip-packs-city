@@ -95,6 +95,8 @@ import { askAgeStamp, askVerifiedAt } from "@/lib/market/ask-freshness"
 import { fetchPrintingAskChangedAt, isParallelExternalId, PRINTING_ASK_STAMP_KIND, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
+import { aptosVenueName, aptosWalletDisplay, ufcSaleChain } from "@/lib/ufc-aptos"
+import ChainTag from "@/components/collection/ChainTag"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -1322,10 +1324,9 @@ export default async function MomentPage(
                 maxWidth: 520,
               }}
             >
-              UFC Strike moved to the Aptos blockchain; Flow trading closed in
-              May 2026. This Flow moment is no longer tradeable
-              on UFC Strike or Dapper, so external marketplace links are
-              unavailable.
+              <ChainTag chain="flow" />{" "}
+              This Moment lives on Flow, where UFC Strike trading closed in May 2026, so it has no
+              marketplace link here. UFC Strike Moments trade on Aptos.
             </div>
           ) : null}
 
@@ -1603,6 +1604,11 @@ export default async function MomentPage(
                     </Td>
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
+                      {/* 2026-11-26: every UFC sale says which chain it happened on. */}
+                      {e.collection_slug === "ufc_strike" ? (() => {
+                        const chain = ufcSaleChain(s)
+                        return <span style={{ display: "inline-block", marginLeft: 6, verticalAlign: "middle" }}><ChainTag chain={chain} kind="sale" detail={chain === "aptos" ? aptosVenueName(s.marketplace) : null} /></span>
+                      })() : null}
                     </Td>
                     <Td><OwnerLink address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={walletSlug} /></Td>
                     <Td><OwnerLink address={s.seller_address} name={nameFor(s.seller_address)} collectionUrlSlug={walletSlug} /></Td>
@@ -1987,6 +1993,12 @@ function StatCell({ label, value, sub }: { label: string; value: React.ReactNode
 
 function OwnerLink({ address, name, collectionUrlSlug }: { address: string | null | undefined; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
+  // UFC Strike on Aptos (2026-11-26): a 64-hex Aptos account goes to the Aptos explorer, never the
+  // Flow wallet analyzer (same rule as the edition page's sales table).
+  const aptos = aptosWalletDisplay(address, name)
+  if (aptos) {
+    return <a href={aptos.href} target="_blank" rel="nofollow noopener noreferrer" title={aptos.title} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{aptos.label}</a>
+  }
   // ⛔ 2026-09-19 — fold-and-prefix again, and it feeds the HREF. /moment/<mint>
   // resolves for Candy MLB since the base58 branch landed in resolve_moment_id
   // this morning, so this renders for a real reader today: the owner link went to

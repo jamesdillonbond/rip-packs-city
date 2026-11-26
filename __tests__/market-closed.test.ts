@@ -6,6 +6,12 @@ import {
   formatClosedOn,
   closedPriceAsOf,
 } from "@/lib/market-closed"
+import { installClosedMarketFixture, FIXTURE_CLOSED_SLUG as FX, FIXTURE_CLOSED_MARKET } from "./helpers/closed-market-fixture"
+
+// 2026-11-26: UFC Strike REOPENED on Aptos and left CLOSED_MARKETS. The positive
+// cases now run on the fixture record; the UFC cases are INVERTED (not deleted):
+// they pin that UFC is open under BOTH slugs, so no dead-market copy returns.
+installClosedMarketFixture()
 
 // lib/market-closed.ts is the honesty gate that keeps a dead market's last
 // observed price from being published as a CURRENT one (the UFC-Strike case:
@@ -15,29 +21,33 @@ import {
 // price as live on every SEO title / JSON-LD Offer. These pin the contract.
 
 describe("market-closed — CLOSED_MARKETS registry", () => {
-  it("registers UFC under BOTH the canonical slug and its alias (same record)", () => {
-    // getCollectionByUrlSlug resolves 'ufc' and 'ufc-strike'; if only one slug
-    // were keyed, alias URLs would render a real page and skip the disclosure.
-    expect(CLOSED_MARKETS.ufc).toBeDefined()
-    expect(CLOSED_MARKETS["ufc-strike"]).toBeDefined()
-    expect(CLOSED_MARKETS["ufc-strike"]).toBe(CLOSED_MARKETS.ufc)
+  it("UFC is NOT closed under either slug — it trades on Aptos since 2026-11-26 (inverted pin)", () => {
+    // Was: "registers UFC under BOTH the canonical slug and its alias". The alias
+    // half still matters: a stale alias key alone would disclose a closure on
+    // /ufc-strike/* only.
+    expect(Object.prototype.hasOwnProperty.call(CLOSED_MARKETS, "ufc")).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(CLOSED_MARKETS, "ufc-strike")).toBe(false)
   })
 
-  it("the UFC record carries an ISO closure date, a venue, and a plain-words note", () => {
-    const ufc = CLOSED_MARKETS.ufc
-    expect(ufc.closedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(ufc.closedOn).toBe("2026-05-13")
-    expect(ufc.venue).toBe("Flow")
-    expect(ufc.note.length).toBeGreaterThan(0)
+  it("no real collection is closed today — the only key is the test fixture", () => {
+    expect(Object.keys(CLOSED_MARKETS)).toEqual([FX])
+  })
+
+  it("a closed record carries an ISO closure date, a venue, and a plain-words note", () => {
+    const rec = CLOSED_MARKETS[FX]
+    expect(rec.closedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(rec.venue.length).toBeGreaterThan(0)
+    expect(rec.note.length).toBeGreaterThan(0)
     // The note must not leak a confidence/tier enum onto a public surface.
-    expect(ufc.note).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY|SALES_ONLY|STALE|NO_DATA)\b/)
+    expect(rec.note).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY|SALES_ONLY|STALE|NO_DATA)\b/)
   })
 })
 
 describe("market-closed — isMarketClosed", () => {
   it("is true for a closed slug and its alias, false for live collections", () => {
-    expect(isMarketClosed("ufc")).toBe(true)
-    expect(isMarketClosed("ufc-strike")).toBe(true)
+    expect(isMarketClosed(FX)).toBe(true)
+    expect(isMarketClosed("ufc")).toBe(false)
+    expect(isMarketClosed("ufc-strike")).toBe(false)
     expect(isMarketClosed("nba-top-shot")).toBe(false)
     expect(isMarketClosed("nfl-all-day")).toBe(false)
     expect(isMarketClosed("disney-pinnacle")).toBe(false)
@@ -60,8 +70,9 @@ describe("market-closed — isMarketClosed", () => {
 
 describe("market-closed — closedMarket", () => {
   it("returns the record for a closed slug and null for a live one", () => {
-    expect(closedMarket("ufc")).toEqual(CLOSED_MARKETS.ufc)
-    expect(closedMarket("ufc-strike")).toBe(CLOSED_MARKETS.ufc)
+    expect(closedMarket(FX)).toBe(FIXTURE_CLOSED_MARKET)
+    expect(closedMarket("ufc")).toBeNull()
+    expect(closedMarket("ufc-strike")).toBeNull()
     expect(closedMarket("nba-top-shot")).toBeNull()
   })
 
@@ -96,8 +107,8 @@ describe("market-closed — formatClosedOn", () => {
 
 describe("market-closed — closedPriceAsOf", () => {
   it("returns an 'as of <date>' marker for a closed market", () => {
-    expect(closedPriceAsOf("ufc")).toBe("as of 13 May 2026")
-    expect(closedPriceAsOf("ufc-strike")).toBe("as of 13 May 2026")
+    expect(closedPriceAsOf(FX)).toBe("as of 13 May 2026")
+    expect(closedPriceAsOf("ufc")).toBeNull()
   })
 
   it("returns null for a live market or empty input so callers can skip the marker", () => {

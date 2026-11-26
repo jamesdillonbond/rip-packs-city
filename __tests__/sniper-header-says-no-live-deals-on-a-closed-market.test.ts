@@ -26,6 +26,11 @@ import {
   SNIPER_SUBTITLE_PINNACLE,
 } from "@/lib/sniper/header-copy"
 import { MARKET_LIVENESS_CLAIM } from "./helpers/market-liveness"
+import { installClosedMarketFixture } from "./helpers/closed-market-fixture"
+
+// 2026-11-26: production CLOSED_MARKETS is empty (UFC reopened on Aptos). The
+// population below is the fixture record, so the machinery stays exercised.
+installClosedMarketFixture()
 
 // ⚠ ONE shared pattern (helpers/market-liveness.ts), not a local copy. Three
 // guards each declared their own on 2026-09-06 and they had already drifted;

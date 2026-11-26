@@ -117,27 +117,64 @@ describe("WalletStatRow", () => {
     expect(txt).not.toContain("$800")
   })
 
-  it("UFC: Flow holdings at current FMV (headline + stale) with the migrate note, not a closure tile", () => {
-    // Trevor's gate C (2026-11-16): moments still on Flow are valued at current FMV and told to
-    // migrate. Every UFC snapshot is STALE while the Flow market is marked closed, so the value
-    // sits in the stale share — the tile must not show the netted near-$0 headline.
+  // RE-PINNED 2026-11-26 (Trevor: "view this from a chain-agnostic view and … aggregate across the multiple
+  // chains/wallets"): ONE UFC value over Flow + Aptos, the split named in the caption, and no migration
+  // messaging. The 11-16 property that survives: the Flow half is headline + stale (capped snapshots sit in
+  // the stale share), never the netted near-$0 headline.
+  it("UFC: one value across Flow (headline + stale) and Aptos, with the split in the caption", () => {
     const { container } = render(
-      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 1234.5, staleCount: 12 })} />,
+      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 1234.5, staleCount: 12, ufcAptos: { status: "ok", count: 3, totalFmv: 100, unpriced: 0, capped: false } })} />,
     )
     const txt = container.textContent!
-    expect(txt).toContain("On Flow · current FMV")
-    expect(txt).toContain("$1,234")
-    expect(txt).toContain("Still on Flow — migrate to Aptos to trade")
+    expect(txt).toContain("Your Holdings · current FMV")
+    expect(txt).toContain("$1,334")
+    expect(txt).toContain("12 on Flow")
+    expect(txt).toContain("3 on Aptos")
+    expect(txt).not.toMatch(/migrate/i)
     expect(txt).not.toContain("Market closed")
+  })
+
+  it("UFC: everything on Aptos values the Aptos half alone — no Flow zero, no em dash", () => {
+    const { container } = render(
+      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 0, momentCount: 0, ufcAptos: { status: "ok", count: 1855, totalFmv: 6936.71, unpriced: 0, capped: false } })} />,
+    )
+    const txt = container.textContent!
+    expect(txt).toContain("$6,936.71")
+    expect(txt).toContain("1,855 on Aptos")
+    expect(txt).not.toContain("on Flow")
+  })
+
+  it("UFC: a failed Aptos read is disclosed as not included, never a silent Flow-only total", () => {
+    const { container } = render(
+      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 50, momentCount: 2, ufcAptos: { status: "failed" } })} />,
+    )
+    const txt = container.textContent!
+    expect(txt).toContain("$50")
+    expect(txt).toContain("Aptos holdings couldn't load — not included")
+  })
+
+  it("UFC: while Aptos loads the caption says so", () => {
+    const { container } = render(
+      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 50, momentCount: 2, ufcAptos: { status: "loading" } })} />,
+    )
+    expect(container.textContent).toContain("Adding Aptos holdings…")
+  })
+
+  it("UFC: nothing on either chain is a found-nothing line, not $0", () => {
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 0, momentCount: 0, ufcAptos: { status: "none" } })} />)
+    const txt = container.textContent!
+    expect(txt).toContain("No UFC Strike moments found on Flow or on an Aptos account linked to this wallet")
     expect(txt).not.toMatch(/\$0(?![.,\d])/)
   })
 
-  it("UFC: nothing on Flow is a found-nothing line, not $0 and not a migrate instruction", () => {
-    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 0, momentCount: 0 })} />)
+  it("UFC: Aptos Moments with no current FMV and nothing on Flow is an em dash, never $0", () => {
+    const { container } = render(
+      <WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 0, momentCount: 0, ufcAptos: { status: "ok", count: 4, totalFmv: null, unpriced: 4, capped: false } })} />,
+    )
     const txt = container.textContent!
-    expect(txt).toContain("No UFC Strike moments found on Flow for this wallet")
-    expect(txt).not.toContain("migrate to Aptos")
+    expect(txt).toContain("—")
     expect(txt).not.toMatch(/\$0(?![.,\d])/)
+    expect(txt).toContain("4 on Aptos without a current FMV")
   })
 
   it("UFC: an unloaded summary is an em dash, never $0", () => {

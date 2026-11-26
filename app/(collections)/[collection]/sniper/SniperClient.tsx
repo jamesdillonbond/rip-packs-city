@@ -31,6 +31,7 @@ import SerialSearchPanel from "@/components/sniper/SerialSearchPanel";
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
+import ChainTag from "@/components/collection/ChainTag";
 import { sniperSubtitle } from "@/lib/sniper/header-copy";
 import { trackOutboundClick } from "@/lib/track-click";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
@@ -62,6 +63,7 @@ import {
   computeSniperStats,
   trackClick,
   resolveViewUrl,
+  fmtDiscount,
   resolveDapperUrl,
   timeAgo,
   fmt,
@@ -1595,6 +1597,7 @@ function SniperMomentsBody() {
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                         </span>
                       )}
+                      <ChainTag chain={deal.chain} kind="listing" detail={deal.venue} />
                     </div>
                   </div>
                   {/* Row 2: Set name + franchise */}
@@ -1612,7 +1615,7 @@ function SniperMomentsBody() {
                     {/* 2026-10-18 (Trevor): no user-facing pricing confidence — a
                         thin-data deal's discount is shown plain, no "thin data" label. */}
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
-                      {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                      {fmtDiscount(deal.discount)}
                     </span>
                   </div>
                   {/* Row 4: Adj. FMV + Listed + Own/Lock + Action */}
@@ -1844,6 +1847,7 @@ function SniperMomentsBody() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
+                        <ChainTag chain={deal.chain} kind="listing" detail={deal.venue} />
                         {isPinnacle ? (
                           <span
                             style={{
@@ -2055,7 +2059,7 @@ function SniperMomentsBody() {
                     {/* Discount */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
-                        {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                        {fmtDiscount(deal.discount)}
                       </span>
                       {deal.netOfFees ? (
                         <div style={{ marginTop: 2 }}>
@@ -2174,7 +2178,7 @@ function SniperMomentsBody() {
                                     <span style={{ color: "var(--rpc-text-secondary)", minWidth: 60 }}>#{dd.serial}</span>
                                     <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600, minWidth: 70 }}>${fmt(dd.askPrice)}</span>
                                     <span style={{ color: dd.discount >= 15 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)", minWidth: 60 }}>
-                                      {dd.discount > 0 ? `-${fmt(dd.discount, 1)}%` : "~0%"}
+                                      {fmtDiscount(dd.discount)}
                                     </span>
                                     <span style={{ color: "var(--rpc-text-muted)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
                                     <span style={{ color: "var(--rpc-text-muted)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>

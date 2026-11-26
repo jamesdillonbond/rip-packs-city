@@ -21,6 +21,13 @@ export type BadgeInfo = {
 }
 
 export type MomentRow = {
+  /**
+   * Where this asset lives (2026-11-26, Trevor: "a Flow or Aptos tag to identify where that asset
+   * lives"). Set only on collections that span chains (UFC Strike); absent = the collection's one chain.
+   */
+  chain?: "flow" | "aptos"
+  /** Aptos rows: the Rarible collection page for this Moment's Aptos collection (per-token links 404). */
+  raribleUrl?: string | null
   /** True when per-moment enrichment failed: lock state, badges and traits are UNKNOWN, not absent. */
   enrichFailed?: boolean
   /**

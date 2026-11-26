@@ -134,9 +134,10 @@ export function absoluteEditionPageUrl(
  *   · disney-pinnacle — its asks are RENDER-keyed and live in the `pinnacle_*`
  *     parallel tables, so `editions.id` does not key them. It has 16k open
  *     listings and is worth wiring; it needs the pinnacle router, not this map.
- *   · ufc — its Flow market CLOSED 2026-05-13. The honest answer there is
- *     "the market is closed", which the caller sources from `lib/market-closed`;
- *     reporting "we could not check" would imply it might be listed.
+ *   · ufc — its Flow market closed 2026-05-13 and it trades on APTOS now
+ *     (Rarible). Its asks are edition-keyed in `v_ufc_aptos_edition_floor`, read
+ *     by the caller's own UFC arm (lib/ufc-aptos-floor.ts) and by
+ *     `ufcAptosFloorReader` — not by this map, which serves Flow books.
  */
 export const EDITION_FLOOR_VIEW: Readonly<Record<string, string>> = Object.freeze({
   "nfl-all-day": "allday_edition_floor_ask",

@@ -112,17 +112,22 @@ describe("/api/og/moment/[id] — the data branch", () => {
 
   // ── The honesty constraint ────────────────────────────────────────────────
 
-  it("SUPPRESSES the FMV on a closed market (UFC Strike)", async () => {
-    // The value is present in the payload and must still not be published: UFC's
-    // market closed 2026-05-13, so the stored figure is frozen, not current.
+  it("SUPPRESSES the FMV on a closed market", async () => {
+    // The value is present in the payload and must still not be published: on a
+    // closed market the stored figure is frozen, not current. 2026-11-26: UFC
+    // reopened on Aptos, so the fixture record is keyed on a real collection
+    // ("pretend Golazos closed"), imported after the module reset so the route
+    // reads the same market-closed instance.
+    const { installClosedMarketFixture } = await import("./helpers/closed-market-fixture")
+    installClosedMarketFixture("laliga-golazos")
     mockDetail({
       data: {
         ...TOPSHOT_MOMENT,
         edition: {
-          player_name: "A Fighter",
+          player_name: "A Player",
           set_name: "Set",
-          tier: "CHALLENGER",
-          collection_slug: "ufc_strike",
+          tier: "FANDOM",
+          collection_slug: "laliga_golazos",
           circulation_count: 100,
         },
         fmv: { fmv_usd: 999 },
@@ -130,11 +135,25 @@ describe("/api/og/moment/[id] — the data branch", () => {
     })
     const text = ogText(await render())
 
-    expect(text).toContain("UFC STRIKE")
+    expect(text).toContain("GOLAZOS")
     expect(text).not.toContain("Current FMV")
     expect(text).not.toContain("$999")
     // The card still renders — it degrades to the brand line, not to nothing.
     expect(text).toContain("RIP PACKS CITY")
+  })
+
+  it("prints FMV for UFC Strike again — it trades on Aptos (inverted 2026-11-26)", async () => {
+    mockDetail({
+      data: {
+        ...TOPSHOT_MOMENT,
+        edition: { player_name: "A Fighter", set_name: "Set", tier: "CHALLENGER", collection_slug: "ufc_strike", circulation_count: 100 },
+        fmv: { fmv_usd: 999 },
+      },
+    })
+    const text = ogText(await render())
+    expect(text).toContain("UFC STRIKE")
+    expect(text).toContain("Current FMV")
+    expect(text).toContain("$999")
   })
 
   it("still prints FMV for an open market with the same shape", async () => {

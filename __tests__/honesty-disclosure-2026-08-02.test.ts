@@ -23,6 +23,12 @@ import {
   teamPageMetadata,
   seriesPageMetadata,
 } from "@/lib/seo"
+import { installClosedMarketFixture, FIXTURE_CLOSED_SLUG as FX } from "./helpers/closed-market-fixture"
+
+// 2026-11-26: UFC Strike REOPENED on Aptos, so the closed-market cases below run
+// on the fixture record (UFC's own 2026-08-02 record under a slug no collection
+// uses). The UFC-specific pins are INVERTED, not deleted.
+installClosedMarketFixture()
 
 // `Metadata.title` is `string | { absolute } | { default, template }`.
 // collectionLayoutMetadata and the four entity builders returned bare strings
@@ -44,13 +50,14 @@ const titleText = (t: unknown): string =>
 // unmapped_sales; last sale 2026-05-13).
 // ---------------------------------------------------------------------------
 describe("market-closed registry", () => {
-  it("marks UFC closed under BOTH its canonical slug and its accepted alias", () => {
-    // getCollectionByUrlSlug resolves "ufc-strike", so those URLs render real
-    // pages. If the alias were missing the disclosure would silently not apply
-    // to every /ufc-strike/* page.
-    expect(isMarketClosed("ufc")).toBe(true)
-    expect(isMarketClosed("ufc-strike")).toBe(true)
-    expect(closedMarket("ufc-strike")).toEqual(closedMarket("ufc"))
+  it("treats UFC as OPEN under BOTH its canonical slug and its alias (inverted 2026-11-26)", () => {
+    // Was "marks UFC closed under BOTH …". UFC trades on Aptos (Rarible) and RPC
+    // ingests those sales and asks; a stale alias key alone would keep the
+    // closure copy on every /ufc-strike/* page, so both slugs stay asserted.
+    expect(isMarketClosed("ufc")).toBe(false)
+    expect(isMarketClosed("ufc-strike")).toBe(false)
+    expect(closedMarket("ufc-strike")).toBeNull()
+    expect(isMarketClosed(FX)).toBe(true)
   })
 
   it("leaves every live collection alone", () => {
@@ -74,7 +81,7 @@ describe("market-closed registry", () => {
     expect(formatClosedOn("2026-05-13")).toBe("13 May 2026")
     expect(formatClosedOn("2026-01-01")).toBe("1 January 2026")
     expect(formatClosedOn("2026-12-31")).toBe("31 December 2026")
-    expect(closedPriceAsOf("ufc")).toBe("as of 13 May 2026")
+    expect(closedPriceAsOf(FX)).toBe("as of 13 May 2026")
   })
 
   it("returns the raw input for a malformed date rather than inventing one", () => {
@@ -118,20 +125,21 @@ describe("seo: closed markets publish no schema.org Offer", () => {
     })
   })
 
-  it("emits NO Offer for UFC even on a fresh, MEDIUM-confidence FMV", () => {
+  it("emits NO Offer for a closed market even on a fresh, MEDIUM-confidence FMV", () => {
     // This is the exact shape the confidence guard cannot catch: when a market
     // closes the FMV pipeline keeps re-stamping computed_at, so a dead price
     // carries MEDIUM confidence and a current timestamp. Measured 2026-08-02:
     // 15 UFC editions re-stamped that day off sales 470+ days old.
-    expect(offerOf(editionJsonLd(detail, "ufc"))).toBeUndefined()
-    expect(offerOf(editionJsonLd(detail, "ufc-strike"))).toBeUndefined()
+    expect(offerOf(editionJsonLd(detail, FX))).toBeUndefined()
+    // Inverted 2026-11-26: UFC is open again (Aptos), so it publishes like any live market.
+    expect(offerOf(editionJsonLd(detail, "ufc"))).toMatchObject({ "@type": "Offer", price: 123.45 })
   })
 
-  it("emits NO Offer for UFC from a residual low ask either", () => {
+  it("emits NO Offer for a closed market from a residual low ask either", () => {
     // A leftover ask on a shut marketplace is not executable, so it is not a
     // valid price source. Control: the same ask DOES publish on a live market.
     const noFmv = { ...detail, fmv: null }
-    expect(offerOf(editionJsonLd(noFmv, "ufc", 42))).toBeUndefined()
+    expect(offerOf(editionJsonLd(noFmv, FX, 42))).toBeUndefined()
     expect(offerOf(editionJsonLd(noFmv, "nba-top-shot", 42))).toMatchObject({ price: 42 })
   })
 
@@ -142,7 +150,7 @@ describe("seo: closed markets publish no schema.org Offer", () => {
   // not suppress the node — it still renders, as a CreativeWork, with the closure
   // disclosed and no Offer. The page's robots stay index, follow either way.
   it("still renders the node (as a CreativeWork, no Offer) with the closure disclosed", () => {
-    const graph = (editionJsonLd(detail, "ufc") as { "@graph": Array<Record<string, unknown>> })["@graph"]
+    const graph = (editionJsonLd(detail, FX) as { "@graph": Array<Record<string, unknown>> })["@graph"]
     expect(graph[0]["@type"]).toBe("CreativeWork")
     expect(graph[0].offers).toBeUndefined()
     expect(String(graph[0].name)).toContain("A Fighter")
@@ -177,7 +185,7 @@ describe("seo: closed markets do not title a dead price as a current value", () 
   })
 
   it("closed market: no price in the title, the closure named, and the description says LAST", () => {
-    const m = editionPageMetadata(payload, "ufc")
+    const m = editionPageMetadata(payload, FX)
     expect(titleText(m.title)).not.toMatch(/\$[\d,]/)
     expect(titleText(m.title)).toContain("market closed")
     expect(String(m.description)).toContain("last traded around $200")
@@ -192,7 +200,7 @@ describe("seo: closed markets do not title a dead price as a current value", () 
   it("no entity-detail title carries a dollar amount", () => {
     const titles = [
       editionPageMetadata({ route_slug: "x", fmv: { fmv_usd: 1234.5 } }, "nba-top-shot"),
-      editionPageMetadata({ route_slug: "x", fmv: { fmv_usd: 1234.5 } }, "ufc"),
+      editionPageMetadata({ route_slug: "x", fmv: { fmv_usd: 1234.5 } }, FX),
       setPageMetadata({ set_name: "S", fmv_total_usd: 9876 }, "nba-top-shot", "s"),
       playerPageMetadata({ name: "P", fmv_total_usd: 9876 }, "nba-top-shot", "p"),
       teamPageMetadata({ team_name: "T", fmv_total_usd: 9876 }, "nba-top-shot", "t"),

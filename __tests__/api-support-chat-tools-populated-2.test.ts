@@ -544,13 +544,23 @@ describe("concierge tools — search_across_collections", () => {
     expect(toolResult().failedCollections).toContain("Candy MLB")
   })
 
-  it("UFC's closed market is reported as closed, not as an empty search", async () => {
-    install({ cached_listings: { data: [], error: null } })
+  // INVERTED 2026-11-26 (was "UFC's closed market is reported as closed"): UFC Strike
+  // trades on Aptos, so the search reads RPC's Rarible index and tags the group.
+  it("UFC is searched on its Aptos (Rarible) book and tagged aptos, never reported closed", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [{ id: "u1", external_id: "9", player_name: "Jon Jones", set_name: "S", tier: "FANDOM" }], error: null },
+      v_ufc_aptos_edition_floor: { data: [{ edition_id: "u1", floor_usd: 20, checked_at: "2026-11-26T17:00:00Z" }], error: null },
+      ufc_aptos_collections: { data: [{ edition_id: "u1", aptos_collection_id: "0xabc" }], error: null },
+    })
     script("search_across_collections", { name: "Jones", limit: 3 })
     await POST(post("does RPC have Jones"))
     const ufc = (toolResult().groups as Array<Record<string, any>>).find((g) => g.collectionId === "ufc")!
-    expect(ufc.market_closed).toBeTruthy()
-    expect(String(ufc.note)).toMatch(/closed/i)
+    expect(ufc.market_closed).toBeUndefined()
+    expect(ufc.chain).toBe("aptos")
+    expect(ufc.results[0].price).toBe(20)
+    expect(ufc.results[0].buy_url).toBe("https://rarible.com/collection/aptos/0xabc/items")
+    expect(String(ufc.note)).toMatch(/Aptos/)
   })
 
   it("errors when no name is supplied", async () => {

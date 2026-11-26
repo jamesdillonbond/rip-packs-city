@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, screen, cleanup, within } from "@testing-library/react"
 import TrophiesBoardClient from "@/app/insights/trophies/TrophiesBoardClient"
+import { installClosedMarketFixture, removeClosedMarketFixture } from "./helpers/closed-market-fixture"
 
 // 2026-10-18 (Trevor: Panini and UFC grails belong on the Trophy Room): UFC
 // Strike's Flow market is closed, so its grails' values are the last ones seen
@@ -16,27 +17,42 @@ const row = (over: Record<string, unknown>) => ({
   fmv_usd: 100, confidence: null, fmv_computed_at: null, ...over,
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  removeClosedMarketFixture("laliga-golazos")
+})
 
 describe("Trophy Room — a closed market's value is historical", () => {
+  // 2026-11-26: UFC reopened on Aptos — the closed market is the fixture (keyed on
+  // Golazos), and UFC's grail is an ordinary open-market trophy again.
   const rows = [
-    row({ collection: "ufc_strike", player_name: "UFC Grail", fmv_usd: 6300 }),
+    row({ collection: "laliga_golazos", player_name: "Closed Grail", fmv_usd: 6300 }),
+    row({ collection: "ufc_strike", player_name: "UFC Grail", fmv_usd: 700 }),
     row({ collection: "nba_top_shot", player_name: "TS Grail", fmv_usd: 900 }),
     row({ collection: "panini_blockchain", player_name: "Panini Grail", fmv_usd: 500 }),
   ]
 
-  it("labels the UFC value as last seen before the market closed", () => {
+  it("labels a closed market's value as last seen before the market closed", () => {
+    installClosedMarketFixture("laliga-golazos")
     render(<TrophiesBoardClient initialRows={rows as never} initialFetchedAt={null} />)
     expect(screen.getAllByText(/last seen · market closed/).length).toBeGreaterThan(0)
   })
 
   it("keeps the closed-market grail out of the hero and out of Top value", () => {
+    installClosedMarketFixture("laliga-golazos")
     render(<TrophiesBoardClient initialRows={rows as never} initialFetchedAt={null} />)
     const hero = screen.getByLabelText("Featured trophies")
-    expect(within(hero).queryByText("UFC Grail")).toBeNull()
+    expect(within(hero).queryByText("Closed Grail")).toBeNull()
     expect(within(hero).getByText("TS Grail")).toBeTruthy()
     const kpis = screen.getByLabelText("Summary")
     expect(kpis.textContent).not.toMatch(/6,?300/)
+  })
+
+  it("UFC Strike is open again (inverted 2026-11-26): its grail is featured, with no closed label", () => {
+    render(<TrophiesBoardClient initialRows={rows.filter((r) => r.collection !== "laliga_golazos") as never} initialFetchedAt={null} />)
+    const hero = screen.getByLabelText("Featured trophies")
+    expect(within(hero).getByText("UFC Grail")).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/market closed/)
   })
 
   // 2026-10-18 (Trevor: "All supported collections should be usable there"):

@@ -255,17 +255,11 @@ export const COLLECTIONS: Collection[] = [
     partner: "Concept Labs",
     accent: "#EF4444",
     icon: "\u{1F94A}",
-    // ⛔ NO SNIPER TAB (Trevor, 2026-09-06): "get rid of the sniper section for
-    // ufc since there is no market currently". UFC Strike's Flow market last
-    // traded 13 May 2026 (lib/market-closed.ts), so a deal-finder here could
-    // only ever rank the final discounts before close — a tool nobody can act
-    // on, which the read-only product rule already forbids offering.
-    // ⭐ THIS ARRAY IS THE SWITCH. Removing "sniper" here drops the tab bar
-    // entry, the overview Tools card and Sniper panel, the mobile bottom-bar
-    // link, the sitemap URL and the folded-tab canonical, and turns /ufc/sniper
-    // into a redirect — all derived, none of it a second edit. Putting it back
-    // if the market reopens is the same one-word change.
-    pages: ["overview", "collection", "sets", "analytics"],
+    // SNIPER: retired 2026-09-06 (Flow market closed 13 May 2026), BACK 2026-11-26 as a board of live
+    // Aptos (Rarible) asks, each tagged Aptos (lib/sniper/ufc-aptos.ts). ⭐ THIS ARRAY IS THE SWITCH:
+    // the tab bar, overview Tools card and Sniper panel, mobile bottom bar, sitemap URL and folded-tab
+    // canonical all derive from it (pinned in __tests__/ufc-sniper-is-retired.test.ts).
+    pages: ["overview", "collection", "sniper", "sets", "analytics"],
     published: true,
     badge: "BETA",
     flowContractName: "UFC_NFT",
@@ -274,7 +268,7 @@ export const COLLECTIONS: Collection[] = [
     flowtyCollectionFilter: "0x329feb3ab062d289/UFC_NFT",
     cadenceCollectionPath: "/public/UFC_NFTCollection",
     supabaseCollectionId: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-    pitch: "Catalog browser for UFC Strike on Flow. The Flow marketplace closed in May 2026, so sales and prices here are historical.",
+    pitch: "UFC Strike across Flow and Aptos — sales, asks and holdings from both chains, each tagged with where it lives.",
   },
   {
     id: "panini-blockchain",

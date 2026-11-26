@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { makeInstrumentedSupabaseFixture, installFetchMock, jsonRoute, type FetchStub } from "./helpers/route-harness"
 import type { ScriptTurn } from "./helpers/anthropic-fixture"
+import { installClosedMarketFixture, removeClosedMarketFixture } from "./helpers/closed-market-fixture"
 
 // Concierge coverage for `get_edition_listings` — the tool added because the
 // bot had NO way to answer "what's the cheapest one listed right now?" about a
@@ -379,28 +380,65 @@ describe("get_edition_listings — collections beyond Top Shot", () => {
     expect(String(out.listings_note)).toMatch(/do NOT say nothing is listed/i)
   })
 
-  it("states that UFC's market is CLOSED rather than that the check failed", async () => {
-    install({
-      editions: {
-        data: [{ ...ALLDAY, collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" }],
-        error: null,
-      },
-      fmv_current: { data: [{ fmv_usd: 12, confidence: "STALE" }], error: null },
-    })
+  async function driveIn(collectionId: string, fixtures: Fixtures) {
+    install(fixtures)
     A.state.script = [{ tools: [{ name: "get_edition_listings", input: { editionKey: "12345" } }] }, { text: "done" }]
     A.state.cursor = 0
     await POST(
       new NextRequest("https://t/api/support-chat", {
         method: "POST",
         headers: new Headers({ "content-type": "application/json" }),
-        body: JSON.stringify({ message: "cheapest?", sessionId: `ufc-${Math.random()}`, collectionId: "ufc" }),
+        body: JSON.stringify({ message: "cheapest?", sessionId: `${collectionId}-${Math.random()}`, collectionId }),
       }),
     )
-    const out = toolResult()
-    expect((out.market_closed as Record<string, unknown>).closed_on).toBe("2026-05-13")
-    expect(String(out.listings_note)).toMatch(/market is closed/i)
-    // Must NOT read as an outage — that would imply it might still be listed.
-    expect(String(out.listings_note)).not.toMatch(/could NOT reach/i)
+    return toolResult()
+  }
+
+  // INVERTED 2026-11-26 (was "states that UFC's market is CLOSED rather than that the
+  // check failed"): UFC Strike trades on Aptos, so its floor is the cheapest Rarible ask.
+  it("answers UFC from its Aptos (Rarible) book, never as a closed market", async () => {
+    const out = await driveIn("ufc", {
+      editions: { data: [{ ...ALLDAY, collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" }], error: null },
+      fmv_current: { data: [{ fmv_usd: 12, confidence: "STALE" }], error: null },
+      v_ufc_aptos_edition_floor: { data: [{ edition_id: "ed-uuid-1", floor_usd: 9.5, floor_apt: 2, single_listings: 3, checked_at: "2026-11-26T17:00:00Z" }], error: null },
+      ufc_aptos_collections: { data: [{ edition_id: "ed-uuid-1", aptos_collection_id: "0xabc" }], error: null },
+    })
+    expect(out.market_closed).toBeNull()
+    expect(out.listings_status).toBe("listed")
+    expect(out.floor_ask).toBe(9.5)
+    expect(out.listings_count).toBe(3)
+    expect(out.floor_buy_url).toBe("https://rarible.com/collection/aptos/0xabc/items")
+    expect(String(out.listings_note)).toMatch(/Aptos/)
+    expect(String(out.listings_note)).not.toMatch(/market is closed/i)
+  })
+
+  it("a failed Aptos read is 'unavailable', never 'none_listed'", async () => {
+    const out = await driveIn("ufc", {
+      editions: { data: [{ ...ALLDAY, collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" }], error: null },
+      v_ufc_aptos_edition_floor: { data: null, error: { message: "timeout" } },
+    })
+    expect(out.listings_status).toBe("unavailable")
+    expect(out.floor_ask).toBeNull()
+  })
+
+  it("states that a CLOSED market is closed rather than that the check failed (fixture market)", async () => {
+    // Was pinned on UFC. With no real closed market the branch runs on the fixture
+    // record keyed on Golazos — which also makes the closed arm REACHABLE: it must
+    // answer before Golazos's own floor view is read.
+    installClosedMarketFixture("laliga-golazos")
+    try {
+      const out = await driveIn("laliga-golazos", {
+        editions: { data: [{ ...ALLDAY, collection_id: "06248cc4-b85f-47cd-af67-1855d14acd75" }], error: null },
+        fmv_current: { data: [{ fmv_usd: 12, confidence: "STALE" }], error: null },
+        golazos_edition_floor_ask: { data: [{ edition_id: "ed-uuid-1", floor_ask: 3 }], error: null },
+      })
+      expect((out.market_closed as Record<string, unknown>).closed_on).toBe("2026-05-13")
+      expect(String(out.listings_note)).toMatch(/market is closed/i)
+      expect(String(out.listings_note)).not.toMatch(/could NOT reach/i)
+      expect(out.floor_ask).toBeNull()
+    } finally {
+      removeClosedMarketFixture("laliga-golazos")
+    }
   })
 })
 

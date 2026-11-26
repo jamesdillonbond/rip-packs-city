@@ -26,7 +26,8 @@ describe("LastCollectionShortcut", () => {
   })
 
   it("renders nothing when the recorded collection has no sniper page", () => {
-    localStorage.setItem("rpc_last_collection", "ufc")
+    // Subject moved from "ufc" 2026-11-26 — UFC's sniper is back (Aptos asks); Candy has none.
+    localStorage.setItem("rpc_last_collection", "candy-mlb")
     const { queryByTestId } = render(<LastCollectionShortcut page="sniper" label="Sniper" />)
     expect(queryByTestId("last-collection-shortcut")).toBeNull()
   })

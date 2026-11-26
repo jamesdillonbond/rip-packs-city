@@ -31,6 +31,11 @@ import { describe, it, expect } from "vitest"
 import { CLOSED_MARKETS, closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { pageMetadata, PUBLIC_TAB_PAGES } from "@/lib/seo"
 import { MARKET_LIVENESS_CLAIM } from "./helpers/market-liveness"
+import { installClosedMarketFixture } from "./helpers/closed-market-fixture"
+
+// 2026-11-26: production CLOSED_MARKETS is empty (UFC reopened on Aptos). The
+// population below is the fixture record, so the machinery stays exercised.
+installClosedMarketFixture()
 
 // Words that assert the market is trading right now. Checked case-insensitively
 // on whole words, so "Live"/"live"/"LIVE" and "real-time" are all caught, while

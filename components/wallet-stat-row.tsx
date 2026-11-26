@@ -5,7 +5,7 @@ import { formatCurrency, formatCount } from "@/lib/format"
 import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { collectionHasLocking } from "@/lib/collections"
-import { FLOW_MIGRATE_NOTE, isUfcAptosBinder } from "@/lib/ufc-aptos"
+import { isUfcAptosBinder, type UfcAptosState } from "@/lib/ufc-aptos"
 
 // The binder's value header (2026-11-24: one big number + plain stats, was four tiles), used by every collection's
 // /[collection]/collection page (and the standalone Pinnacle page until
@@ -25,6 +25,8 @@ import { FLOW_MIGRATE_NOTE, isUfcAptosBinder } from "@/lib/ufc-aptos"
 // showing how much of the wallet has been hydrated.
 
 export type WalletStatRowProps = {
+  /** UFC Strike: the Aptos half of the wallet (2026-11-26), added into ONE value with the Flow half. */
+  ufcAptos?: UfcAptosState | null
   walletFmv: number | null
   unlockedFmv: number | null
   lockedFmv: number | null
@@ -108,6 +110,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     loadProgress,
     walletFmvAccessory,
     pnl,
+    ufcAptos,
     acquisition,
   } = props
 
@@ -122,30 +125,40 @@ export default function WalletStatRow(props: WalletStatRowProps) {
   // signal is a count + a closure note. Fall through to the normal tiles once
   // the count has loaded so we never render a bare "market closed" with no data.
   const closed = closedMarket(collectionSlug)
-  // UFC Strike (2026-11-16, Trevor's gate C): moments still on Flow are valued at the edition's
-  // current FMV with a migrate note, and the Aptos half renders in its own section
-  // (components/collection/UfcAptosHoldings.tsx). Every UFC snapshot is STALE while the Flow
-  // market is marked closed, so the summary puts the whole value in the stale share; the tile
-  // shows headline + stale (= the summary's total), never the netted near-$0 headline.
+  // UFC Strike across chains (2026-11-26, Trevor: "view this from a chain-agnostic view and … aggregate across
+  // the multiple chains/wallets"): ONE value = Flow holdings (the wallet summary; headline + stale share, since
+  // capped/stale snapshots land in the stale share) + Aptos holdings (/api/ufc/aptos-holdings). The Aptos half
+  // is never silently missing: loading says so, a failed read says "not included", never a zero.
   if (isUfcAptosBinder(collectionSlug) && !loading) {
     const flowTotal = walletFmv === null ? null : walletFmv + (typeof staleFmv === "number" ? staleFmv : 0)
-    // A collector who has migrated everything has nothing on Flow: no "$0", and no "migrate"
-    // instruction about moments that are not there (live, 2026-11-16: a fully migrated wallet
-    // read "$0 · 0 moments · Still on Flow — migrate"). Worded as what our read found.
-    const noneOnFlow = momentCount === 0
+    const flowCount = momentCount ?? 0
+    const aptosOk = ufcAptos?.status === "ok" ? ufcAptos : null
+    const aptosCount = aptosOk?.count ?? 0
+    const anyHeld = flowCount > 0 || aptosCount > 0
+    // A Flow half that did not load leaves the total unknown (an em-dash), never the Aptos half alone.
+    // Nothing priced on Aptos (totalFmv null) with nothing on Flow is unknown too, never $0.
+    const aptosPart = aptosOk ? aptosOk.totalFmv : 0
+    const total = !anyHeld || (flowCount > 0 && flowTotal === null) || (flowCount === 0 && aptosPart === null)
+      ? null
+      : (flowCount > 0 ? (flowTotal as number) : 0) + (aptosPart ?? 0)
+    const parts: string[] = []
+    if (flowCount > 0) parts.push(`${formatCount(flowCount)} on Flow`)
+    if (aptosCount > 0) parts.push(`${formatCount(aptosCount)} on Aptos`)
+    if (aptosOk && aptosOk.unpriced > 0) parts.push(`${formatCount(aptosOk.unpriced)} on Aptos without a current FMV, not in the total`)
+    if (ufcAptos?.status === "loading") parts.push("Adding Aptos holdings…")
+    if (ufcAptos?.status === "failed") parts.push("Aptos holdings couldn't load — not included")
+    const caption = !anyHeld && ufcAptos?.status !== "loading" && ufcAptos?.status !== "failed"
+      ? `No UFC Strike ${noun} found on Flow or on an Aptos account linked to this wallet`
+      : parts.join(" · ")
     return (
       <div>
-        <div className="rpc-stat-tile" data-testid="ufc-flow-holdings-tile">
+        <div className="rpc-stat-tile" data-testid="ufc-holdings-tile">
           <div className="rpc-stat-eyebrow">
-            <span>On Flow · current FMV</span>
+            <span>Your Holdings · current FMV</span>
             {walletFmvAccessory}
           </div>
-          <div className="rpc-stat-value">{noneOnFlow || flowTotal === null ? "—" : formatCurrency(flowTotal)}</div>
-          <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>
-            {noneOnFlow
-              ? `No UFC Strike ${noun} found on Flow for this wallet`
-              : <>{formatCount(momentCount)} {noun} · {FLOW_MIGRATE_NOTE}</>}
-          </div>
+          <div className="rpc-stat-value">{total === null ? "—" : formatCurrency(total)}</div>
+          <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>{caption}</div>
         </div>
       </div>
     )

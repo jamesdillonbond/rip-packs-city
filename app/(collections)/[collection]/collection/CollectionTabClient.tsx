@@ -27,8 +27,7 @@ import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
-import UfcAptosHoldings from "@/components/collection/UfcAptosHoldings"
-import { isUfcAptosBinder } from "@/lib/ufc-aptos"
+import { isUfcAptosBinder, aptosHoldingToRow, type UfcAptosState, type UfcAptosHolding } from "@/lib/ufc-aptos"
 import AutoSearchReader, { type AutoSearchSource } from "@/components/collection/AutoSearchReader"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
@@ -81,6 +80,9 @@ import {
 } from "@/lib/collection/helpers"
 import { ownLookup } from "@/lib/safe-lookup"
 import { signedInOnce } from "@/lib/auth/signed-in-client"
+
+// A Flow address (UFC Strike: the Aptos holdings lookup keys on it).
+const FLOW_ADDRESS_RE = /^0x[0-9a-fA-F]{16}$/
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -1391,33 +1393,72 @@ function WalletMomentsBody() {
     return computePackCount(packLookup, setName)
   }
 
-  const batchEditionStats = useMemo(() => buildBatchEditionStats(rows), [rows])
+  // ── UFC Strike across chains (2026-11-26, Trevor: "view this from a chain-agnostic view and can just
+  // aggregate across the multiple chains/wallets"). Flow holdings come from the wallet cache (paged
+  // above); Aptos holdings from /api/ufc/aptos-holdings, found from this Flow address through the
+  // linked Aptos accounts. Both land in ONE table, each row tagged Flow or Aptos. The fetch result is
+  // tagged with the wallet it answers, so a late answer for an older wallet is never shown.
+  const [ufcAptos, setUfcAptos] = useState<{ wallet: string; state: UfcAptosState; rows: MomentRow[] } | null>(null)
+  const ufcAptosWallet = isUfcAptosBinder(collectionSlug) && hasSearched
+    ? (FLOW_ADDRESS_RE.test(resolvedAddress) ? resolvedAddress : FLOW_ADDRESS_RE.test(activeWallet) ? activeWallet : "")
+    : ""
+  useEffect(() => {
+    if (!ufcAptosWallet) return
+    let live = true
+    fetch("/api/ufc/aptos-holdings?wallet=" + encodeURIComponent(ufcAptosWallet))
+      .then(async function(r) {
+        if (!r.ok) throw new Error("aptos holdings " + r.status)
+        const j = await r.json() as { linked?: boolean; count?: number; capped?: boolean; unpriced?: number; total_fmv?: number | null; moments?: UfcAptosHolding[] }
+        const moments = Array.isArray(j.moments) ? j.moments : []
+        const state: UfcAptosState = !j.linked || moments.length === 0
+          ? { status: "none" }
+          : { status: "ok", count: moments.length, totalFmv: typeof j.total_fmv === "number" ? j.total_fmv : null, unpriced: Number(j.unpriced) || 0, capped: !!j.capped }
+        if (live) setUfcAptos({ wallet: ufcAptosWallet, state, rows: moments.map(aptosHoldingToRow) })
+      })
+      .catch(function() { if (live) setUfcAptos({ wallet: ufcAptosWallet, state: { status: "failed" }, rows: [] }) })
+    return function() { live = false }
+  }, [ufcAptosWallet])
+  const ufcAptosCurrent = ufcAptos && ufcAptos.wallet === ufcAptosWallet ? ufcAptos : null
+  const ufcAptosState: UfcAptosState | null = ufcAptosWallet ? (ufcAptosCurrent?.state ?? { status: "loading" }) : null
+  const allRows = useMemo(function() {
+    if (!isUfcAptosBinder(collectionSlug)) return rows
+    const flow = rows.map(function(r) { return r.chain ? r : { ...r, chain: "flow" as const } })
+    return ufcAptosCurrent ? flow.concat(ufcAptosCurrent.rows) : flow
+  }, [rows, collectionSlug, ufcAptosCurrent])
 
-  const availablePlayers = useMemo(() => buildPlayerOptions(rows), [rows])
+  const batchEditionStats = useMemo(() => buildBatchEditionStats(allRows), [allRows])
 
-  const availableSets = useMemo(() => buildSetOptions(rows), [rows])
+  const availablePlayers = useMemo(() => buildPlayerOptions(allRows), [allRows])
 
-  const availableRarities = useMemo(() => buildRarityOptions(rows), [rows])
+  const availableSets = useMemo(() => buildSetOptions(allRows), [allRows])
+
+  const availableRarities = useMemo(() => buildRarityOptions(allRows), [allRows])
 
   const availableSeries = useMemo(
-    () => buildSeriesOptions(rows, collectionSeriesMap),
-    [rows, collectionSeriesMap],
+    () => buildSeriesOptions(allRows, collectionSeriesMap),
+    [allRows, collectionSeriesMap],
   )
 
   // ── Task 14: Detect duplicate editions ──────────────────────────────────
   const duplicateEditions = useMemo(function() {
-    return computeDuplicateEditionKeys(rows)
-  }, [rows])
+    return computeDuplicateEditionKeys(allRows)
+  }, [allRows])
 
   const filteredRows = useMemo(
     // ⚠ `lockedFilter` is persisted in localStorage ACROSS collections, so a
     // "Locked" picked on Top Shot would silently filter a Pinnacle wallet — a
     // collection with no locking and no lock filter on screen to undo it.
-    () => computeFilteredSortedRows(rows, collectionHasLocking(collectionSlug) ? view : { ...view, lockedFilter: "all" }, { collectionSeriesMap, duplicateEditions, batchEditionStats }),
-    [rows, collectionSlug, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap]
+    () => computeFilteredSortedRows(allRows, collectionHasLocking(collectionSlug) ? view : { ...view, lockedFilter: "all" }, { collectionSeriesMap, duplicateEditions, batchEditionStats }),
+    [allRows, collectionSlug, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap]
   )
 
   const totals = useMemo(() => computeCollectionTotals(filteredRows), [filteredRows])
+  // The value tile's fallback totals stay Flow-only for UFC: the Aptos half is added once, as its own
+  // figure (WalletStatRow), so summing Aptos rows here too would count it twice.
+  const summaryTotals = useMemo(
+    () => (isUfcAptosBinder(collectionSlug) ? computeCollectionTotals(filteredRows.filter(function(r) { return r.chain !== "aptos" })) : totals),
+    [collectionSlug, filteredRows, totals],
+  )
 
 
 
@@ -1633,7 +1674,7 @@ function WalletMomentsBody() {
           hasSearched={hasSearched}
           walletSummary={walletSummary}
           walletTotalFmv={walletTotalFmv}
-          totals={totals}
+          totals={summaryTotals}
           paginatedTotal={paginatedTotal}
           walletSummaryLoading={walletSummaryLoading}
           acquisitionStats={acquisitionStats}
@@ -1644,23 +1685,21 @@ function WalletMomentsBody() {
           connectedWallet={connectedWallet}
           ownerKey={ownerKey}
           input={input}
+          ufcAptos={ufcAptosState}
         />
 
         {/* 2026-11-17: the account ask at the moment a SIGNED-OUT visitor has just seen their
             collection (62 look-ups in 30 days, 5 sign-in clicks after). Affirmatively signed out
             only — a loading or failed session read shows nothing. */}
         <AnonSaveCollectionCta
-          show={hasSearched && !loading && !error && rows.length > 0 && !!activeWallet &&
+          show={hasSearched && !loading && !error && allRows.length > 0 && !!activeWallet &&
             !sessionOwner.loading && !sessionOwner.degraded && !sessionOwner.userId}
           wallet={activeWallet}
           collection={collectionSlug}
         />
 
-        {/* UFC Strike on Aptos (2026-11-16): the moments this collector has migrated, found
-            from their Flow address. Renders nothing until there is something true to show. */}
-        {hasSearched && isUfcAptosBinder(collectionSlug) && activeWallet ? (
-          <UfcAptosHoldings key={activeWallet} wallet={activeWallet} />
-        ) : null}
+        {/* UFC Strike on Aptos: since 2026-11-26 its Aptos Moments are rows in the one table below
+            (tagged Aptos), and its value is in the tile above — no separate panel. */}
 
         {/* Filters + sort — only once there is something to filter. Before a
             wallet is loaded the first thing a phone visitor saw on MY BINDER
@@ -1794,7 +1833,7 @@ function WalletMomentsBody() {
         <CollectionMomentTable
           isMobile={isMobile}
           filteredRows={filteredRows}
-          rowsCount={rows.length}
+          rowsCount={allRows.length}
           summary={summary}
           view={view}
           toggleExpanded={toggleExpanded}
@@ -1811,6 +1850,7 @@ function WalletMomentsBody() {
           showDebug={showDebug}
           getPackCount={sealedPackSource && !packsSignedOut ? getPackCount : null}
           accent={accent}
+          ufcAptosStatus={ufcAptosState?.status}
         />
 
         {paginatedPage < paginatedTotalPages ? (

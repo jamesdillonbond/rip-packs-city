@@ -10,7 +10,8 @@
 // data-fetch/filter/sort state and passes it down. The FMV-alert form state
 // (five useState pairs, used nowhere else) moved INTO this component.
 import CandyWalletMovedNote from "@/components/collection/CandyWalletMovedNote"
-import { isUfcAptosBinder, UFC_FLOW_TABLE_EMPTY } from "@/lib/ufc-aptos"
+import { isUfcAptosBinder, ufcBinderEmptyCopy, type UfcAptosState } from "@/lib/ufc-aptos"
+import ChainTag from "@/components/collection/ChainTag"
 import { Fragment, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -99,7 +100,12 @@ function AskDerivedMark({ show, capped }: { show: boolean; capped?: boolean | "c
 // links that 404 on Pinnacle. Each now comes from the collection.
 
 /** Where a row opens on RPC. Pinnacle has a page per catalog render. */
-export function momentRowHref(collectionSlug: string, row: Pick<MomentRow, "momentId" | "renderId" | "editionKey">): string {
+export function momentRowHref(collectionSlug: string, row: Pick<MomentRow, "momentId" | "renderId" | "editionKey" | "chain">): string {
+  // 2026-11-26: an Aptos-held UFC Moment has no Flow moment page; its edition page carries its
+  // sales on both chains and the live Aptos ask.
+  if (row.chain === "aptos") {
+    return row.editionKey ? "/" + collectionSlug + "/edition/" + encodeURIComponent(row.editionKey) : "/" + collectionSlug + "/collection"
+  }
   if (collectionSlug === "disney-pinnacle") {
     if (row.renderId) return pinnacleRenderHref(row.renderId)
     if (row.editionKey) return "/pinnacle/moment/" + encodeURIComponent(row.editionKey)
@@ -112,7 +118,8 @@ export function momentRowHref(collectionSlug: string, row: Pick<MomentRow, "mome
 const MARKETPLACE_NAME: Record<string, string> = { "candy-mlb": "Magic Eden" }
 
 /** "View on <marketplace>" for this row, or null where the collection has no per-moment URL. */
-export function momentMarketplaceLink(collectionSlug: string, momentId: string): { href: string; label: string } | null {
+export function momentMarketplaceLink(collectionSlug: string, momentId: string, row?: Pick<MomentRow, "chain" | "raribleUrl">): { href: string; label: string } | null {
+  if (row?.chain === "aptos") return row.raribleUrl ? { href: row.raribleUrl, label: "View on Rarible" } : null
   const href = marketplaceMomentUrl(collectionSlug, momentId)
   if (!href) return null
   const name = MARKETPLACE_NAME[collectionSlug] ?? getCollection(collectionSlug)?.label ?? collectionSlug
@@ -230,12 +237,14 @@ export default function CollectionMomentTable(props: {
   // Collection brand accent (collectionObj?.accent ?? var(--rpc-red)) — used by
   // the mobile thumbnail fallback + the primary-badge stat chip.
   accent: string
+  /** UFC Strike: the Aptos half's state, so an empty table never claims "none" while Aptos loads or failed. */
+  ufcAptosStatus?: UfcAptosState["status"]
 }) {
   const {
     isMobile, filteredRows, rowsCount, summary, view, toggleExpanded,
     batchEditionStats, costBasis, collectionSeriesMap, collectionSlug,
     badgeCollectionId, connectedWallet, ownerKey, input, hasSearched,
-    loading, showDebug, getPackCount, accent,
+    loading, showDebug, getPackCount, accent, ufcAptosStatus,
   } = props
   const router = useRouter()
   // ⛔ 2026-09-28: the All Day lock suppression (lockUntracked = the slug is
@@ -320,7 +329,7 @@ export default function CollectionMomentTable(props: {
               // collector holding 500 moments that they hold none.
               <div className="rpc-table-empty">
                 {rows.length === 0
-                  ? (isUfcAptosBinder(collectionSlug) ? UFC_FLOW_TABLE_EMPTY : "No " + unitNoun + " found for this wallet on this collection.")
+                  ? (isUfcAptosBinder(collectionSlug) ? ufcBinderEmptyCopy(ufcAptosStatus ?? "none") : "No " + unitNoun + " found for this wallet on this collection.")
                   : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                 {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
               </div>
@@ -418,14 +427,15 @@ export default function CollectionMomentTable(props: {
                     </button>
                   </div>
                   {/* Row 2: Tier + Lock state */}
-                  {(row.tier || hasLocking) && (
+                  {(row.tier || hasLocking || row.chain) && (
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <ChainTag chain={row.chain} />
                       {row.tier && (
                         <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + momentTierBgClass(row.tier)} style={{ color: accentText(momentTierColor(row.tier)) }}>
                           {row.tier}
                         </span>
                       )}
-                      {hasLocking && <LockPill row={row} />}
+                      {hasLocking && row.chain !== "aptos" && <LockPill row={row} />}
                     </div>
                   )}
                   {/* Row 2: Set + Series */}
@@ -586,7 +596,7 @@ export default function CollectionMomentTable(props: {
                         <div className="rpc-expand-section-eyebrow">Links</div>
                         <div className="flex flex-wrap gap-2">
                           <Link href={momentRowHref(collectionSlug, row)} prefetch={false} onClick={function(e) { e.stopPropagation(); track("moment-row-view-rpc", { collection: collectionSlug }) }} className="rpc-expand-link">View on RPC</Link>
-                          {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" onClick={function() { trackMomentRowClick(collectionSlug, row, m.href, "collection_table_mobile") }} className="rpc-expand-link">{m.label}</a> : null })()}
+                          {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId, row); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" onClick={function() { trackMomentRowClick(collectionSlug, row, m.href, "collection_table_mobile") }} className="rpc-expand-link">{m.label}</a> : null })()}
                         </div>
                       </div>
                       <div className="rpc-expand-section">
@@ -634,7 +644,7 @@ export default function CollectionMomentTable(props: {
                 <tr>
                   <td colSpan={15} className="rpc-table-empty">
                     {rows.length === 0
-                      ? (isUfcAptosBinder(collectionSlug) ? UFC_FLOW_TABLE_EMPTY : "No " + unitNoun + " found for this wallet on this collection.")
+                      ? (isUfcAptosBinder(collectionSlug) ? ufcBinderEmptyCopy(ufcAptosStatus ?? "none") : "No " + unitNoun + " found for this wallet on this collection.")
                       : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                     {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
                   </td>
@@ -740,7 +750,8 @@ export default function CollectionMomentTable(props: {
                               )}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1 items-center">
-                              {hasLocking && <LockPill row={row} />}
+                              <ChainTag chain={row.chain} />
+                              {hasLocking && row.chain !== "aptos" && <LockPill row={row} />}
                               {officialBadges.map(function(title) { return <BadgeIcon key={"official-" + title} title={title} collectionId={badgeCollectionId} /> })}
                               {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} collectionId={badgeCollectionId} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
@@ -1157,7 +1168,7 @@ export default function CollectionMomentTable(props: {
                               <div className="rpc-expand-section-eyebrow">Links</div>
                               <div className="flex flex-wrap gap-2">
                                 <Link href={momentRowHref(collectionSlug, row)} prefetch={false} onClick={function() { track("moment-row-view-rpc", { collection: collectionSlug }) }} className="rpc-expand-link">View on RPC</Link>
-                                {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" onClick={function() { trackMomentRowClick(collectionSlug, row, m.href, "collection_table") }} className="rpc-expand-link">{m.label}</a> : null })()}
+                                {(function() { const m = momentMarketplaceLink(collectionSlug, row.momentId, row); return m ? <a href={m.href} target="_blank" rel="noopener noreferrer" onClick={function() { trackMomentRowClick(collectionSlug, row, m.href, "collection_table") }} className="rpc-expand-link">{m.label}</a> : null })()}
                                 {summary && collectionSlug === "nba-top-shot" && (
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="rpc-expand-link rpc-expand-link--muted">View Set Progress →</a>
                                 )}

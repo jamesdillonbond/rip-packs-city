@@ -89,7 +89,8 @@ describe("sniper hub — tiles and chrome", () => {
     const { container } = await renderHub()
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "")
     expect(hrefs).toContain("/nba-top-shot/sniper")
-    expect(hrefs).not.toContain("/ufc/sniper")
+    // Inverted 2026-11-26: UFC's sniper is back (live Aptos asks).
+    expect(hrefs).toContain("/ufc/sniper")
     expect(hrefs).not.toContain("/candy-mlb/sniper")
   })
 

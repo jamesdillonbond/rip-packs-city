@@ -52,17 +52,13 @@ export interface ClosedMarket {
  * present -- `getCollectionByUrlSlug` resolves "ufc-strike" as well as "ufc", so
  * alias URLs render real pages and would otherwise skip the disclosure entirely.
  */
-export const CLOSED_MARKETS: Record<string, ClosedMarket> = {
-  ufc: {
-    closedOn: "2026-05-13",
-    venue: "Flow",
-    note:
-      "UFC Strike's Flow marketplace is closed - the last Flow sale was on 13 May 2026. " +
-      "Prices below are the last values we observed before it closed, kept for reference. " +
-      "They are historical, not current, and nothing here can be bought or sold on Flow.",
-  },
-}
-CLOSED_MARKETS["ufc-strike"] = CLOSED_MARKETS["ufc"]
+// 2026-11-26 — UFC Strike REOPENED (Trevor: "Do it all … view this from a chain-agnostic view"). UFC was here from
+// 2026-08-02 (Flow market closed 2026-05-13). It trades on Aptos now (Rarible), and RPC ingests those sales, live asks
+// and linked holdings, so UFC is one collection across two chains: each sale, listing and held Moment carries a Flow or
+// Aptos tag instead of a collection-wide "closed" disclosure. DB half: migration 20261126174033 (market_closed_at NULL,
+// marketplace status healthy). The map is empty today; the machinery stays for the next market that closes, and its
+// tests install their own fixture record.
+export const CLOSED_MARKETS: Record<string, ClosedMarket> = {}
 
 /**
  * Flowty's NFT marketplace (the NFTStorefrontV2 fork) went dormant on

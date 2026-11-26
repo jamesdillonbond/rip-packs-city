@@ -53,8 +53,15 @@ export interface SniperDeal {
   buyUrl: string;
   listingResourceID: string | null;
   storefrontAddress: string | null;
-  source?: "topshot" | "allday" | "golazos" | "pinnacle" | "flowty";
-  paymentToken?: "DUC" | "FUT" | "FLOW" | "USDC_E";
+  source?: "topshot" | "allday" | "golazos" | "pinnacle" | "flowty" | "ufc_aptos";
+  paymentToken?: "DUC" | "FUT" | "FLOW" | "USDC_E" | "APT";
+  /** Where the listing lives (2026-11-26): set on multi-chain collections (UFC Strike: "aptos"). */
+  chain?: "flow" | "aptos";
+  /** The venue on that chain ("Rarible"), shown with the chain tag. */
+  venue?: string;
+  /** UFC Strike on Aptos: the ask in APT (askPrice is its USD value at the day's APT/USD rate). */
+  askApt?: number;
+
   offerAmount?: number | null;
   offerFmvPct?: number | null;
   dealRating?: number;

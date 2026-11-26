@@ -1557,7 +1557,9 @@ describe("POST /api/sentinel — full battery", () => {
     for (const name of ["Top Shot", "All Day", "Candy MLB", "Pinnacle", "Golazos", "UFC"]) {
       expect(byColl.detail).toContain(name)
     }
-    expect(byColl.detail).toContain("market closed") // UFC labelled, never alarmed
+    // Inverted 2026-11-26: UFC reopened on Aptos, so its "off" row is a decision, not a closure — still never alarmed.
+    expect(byColl.detail).toMatch(/UFC [^·]*\(silent by decision\)/)
+    expect(byColl.detail).not.toContain("market closed")
     // Top Shot rolls up both sources: 2000 + 550 = 2550
     expect(byColl.detail).toContain("Top Shot 2550/24h")
 

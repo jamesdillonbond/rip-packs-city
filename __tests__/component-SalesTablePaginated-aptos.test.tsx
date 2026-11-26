@@ -15,7 +15,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/analytics/username-resolver", () => ({ useResolveUsernames: () => ({}) }))
 
 import SalesTablePaginated from "@/components/entity/SalesTablePaginated"
-import { aptosWalletDisplay, aptosSaleVenue, isAptosAccountAddress } from "@/lib/ufc-aptos"
+import { aptosWalletDisplay, aptosSaleVenue, isAptosAccountAddress, ufcSaleChain } from "@/lib/ufc-aptos"
 import { bannerCopy } from "@/lib/marketplace-status-banner"
 
 afterEach(cleanup)
@@ -52,11 +52,18 @@ describe("Aptos sale rows", () => {
     expect(container.textContent).toContain("Aptos · Tradeport")
   })
 
-  it("leave Flow rows exactly as before: analyzer link, no Aptos chip", () => {
+  // 2026-11-26: a UFC Flow sale keeps its analyzer link and now carries a Flow tag, never an Aptos one.
+  it("tag Flow rows Flow: analyzer link, no Aptos chip", () => {
     const { container } = render(<SalesTablePaginated {...props([sale({ source: "ufc_backfill", marketplace: "ufc", buyer_address: FLOW, seller_address: FLOW })])} />)
     const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "")
     expect(hrefs).toContain(`/ufc/collection?wallet=${FLOW}`)
     expect(container.textContent).not.toContain("Aptos")
+    expect([...container.querySelectorAll("[data-testid=\"chain-tag\"]")].map((n) => n.textContent)).toEqual(["Flow"])
+  })
+
+  it("every UFC sale row carries exactly one chain tag", () => {
+    const { container } = render(<SalesTablePaginated {...props([sale(), sale({ source: "ufc_studio_history_v1", marketplace: "ufcstrike", buyer_address: FLOW, seller_address: FLOW, transaction_hash: "0x3" })])} />)
+    expect([...container.querySelectorAll("[data-testid=\"chain-tag\"]")].map((n) => n.textContent)).toEqual(["Aptos · Rarible", "Flow"])
   })
 })
 
@@ -66,6 +73,12 @@ describe("lib/ufc-aptos helpers", () => {
     expect(isAptosAccountAddress(FLOW)).toBe(false)
     expect(isAptosAccountAddress("0x" + "a".repeat(40))).toBe(false)
     expect(aptosWalletDisplay(FLOW)).toBeNull()
+  })
+  it("ufcSaleChain reads the chain from the row: source, Aptos venue, or a 64-hex account", () => {
+    expect(ufcSaleChain({ source: "aptos_indexer_v1" })).toBe("aptos")
+    expect(ufcSaleChain({ marketplace: "tradeport" })).toBe("aptos")
+    expect(ufcSaleChain({ marketplace: null, buyer_address: BUYER })).toBe("aptos")
+    expect(ufcSaleChain({ source: "flowty_chain_v1", marketplace: "flowty", buyer_address: FLOW })).toBe("flow")
   })
   it("venue is null for every non-Aptos sale", () => {
     expect(aptosSaleVenue("topshot", "topshot")).toBeNull()

@@ -21,6 +21,7 @@ import {
   NOT_FOUND_METADATA,
 } from "@/lib/seo"
 import { COLLECTIONS } from "@/lib/collections"
+import { installClosedMarketFixture } from "./helpers/closed-market-fixture"
 
 // `Metadata.title` is `string | { absolute } | { default, template }`.
 // collectionLayoutMetadata and the four entity builders returned bare strings
@@ -140,9 +141,10 @@ describe("pageMetadata", () => {
   it("a closed market gets the historical sniper copy, with venue + date filled in", () => {
     // The other half of the case above: the same call on a closed market takes
     // the closed template, and its two extra placeholders resolve too.
-    const m = pageMetadata("sniper", "UFC Strike", "ufc")
+    // 2026-11-26: UFC reopened on Aptos — the closed template is exercised on the fixture.
+    const m = pageMetadata("sniper", "Fixture Market", installClosedMarketFixture())
     expect(m.description).not.toMatch(/\{(label|venue|closedOn)\}/)
-    expect(m.description).toContain("UFC Strike")
+    expect(m.description).toContain("Fixture Market")
     expect(m.description).toContain("Flow")
     expect(m.description).toContain("13 May 2026")
     expect(m.description).not.toContain("discount scoring")
@@ -736,7 +738,9 @@ describe("collection brand labels follow the registry (2026-09-24)", () => {
   // 2026-09-26: UFC's Sniper tab was retired 2026-09-06 but its keywords still
   // advertised "sniper deals". Keyed on the registry, never a hardcoded list.
   it("advertises 'sniper deals' only where the collection has a Sniper tab", () => {
-    expect(collectionLayoutMetadata("ufc").keywords).not.toContain("sniper deals")
+    // Subject moved from "ufc" 2026-11-26 (UFC's sniper is back); Candy MLB has no Sniper tab.
+    expect(collectionLayoutMetadata("candy-mlb").keywords).not.toContain("sniper deals")
+    expect(collectionLayoutMetadata("ufc").keywords).toContain("sniper deals")
     expect(collectionLayoutMetadata("nba-top-shot").keywords).toContain("sniper deals")
   })
 })

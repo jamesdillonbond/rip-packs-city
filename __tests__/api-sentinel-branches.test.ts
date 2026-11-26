@@ -25,6 +25,10 @@ process.env.RESEND_API_KEY = "re-key"
 process.env.ALERT_EMAIL = "ops@example.com"
 
 const { POST } = await import("@/app/api/sentinel/route")
+// 2026-11-26: UFC reopened on Aptos and left CLOSED_MARKETS; the "market closed"
+// arm is exercised on the fixture record (DB key closed_market_fixture).
+const { installClosedMarketFixture } = await import("./helpers/closed-market-fixture")
+installClosedMarketFixture()
 
 function post(): NextRequest {
   return new NextRequest("https://t/api/sentinel", { method: "POST", headers: new Headers({ authorization: "Bearer sentinel-token" }) })
@@ -407,11 +411,14 @@ describe("sentinel — sales-ingest health arms", () => {
     const rows = [
       ...ingestHealthy(),
       { collection: "candy_mlb", display_name: "Candy MLB", marketplace: "(none)", source: "(none)", sales_24h: 0, coll_hours_since_last: 72, silence_hours: 12, loudness: "off" },
+      { collection: "closed_market_fixture", display_name: "Fixture Market", marketplace: "(none)", source: "(none)", sales_24h: 0, coll_hours_since_last: 72, silence_hours: 12, loudness: "off" },
     ]
     const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
     const c = chk(r, "Sales Ingest by Collection")
     expect(c.status).toBe("ok")
-    expect(String(c.detail)).toMatch(/UFC [^·]*\(market closed\)/)
+    expect(String(c.detail)).toMatch(/Fixture Market [^·]*\(market closed\)/)
+    // Inverted 2026-11-26: UFC is open again (Aptos), so an "off" UFC row is a decision, not a closure.
+    expect(String(c.detail)).not.toMatch(/UFC [^·]*\(market closed\)/)
     expect(String(c.detail)).toMatch(/Candy MLB [^·]*\(silent by decision\)/)
     expect(String(c.detail)).not.toMatch(/Candy MLB [^·]*\(market closed\)/)
   })

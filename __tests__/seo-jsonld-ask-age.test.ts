@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { editionJsonLd } from "@/lib/seo"
+import { installClosedMarketFixture } from "./helpers/closed-market-fixture"
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 
@@ -112,7 +113,8 @@ describe("editionJsonLd — an ask-sourced price carries its own expiry", () => 
 
   it("CONTROL — a closed market still emits NO Offer, however fresh the ask", () => {
     // The pre-existing, stronger guard must survive this change.
-    expect(offerOf(editionJsonLd(NO_FMV, "ufc", 45, iso(1)))).toBeUndefined()
+    // 2026-11-26: UFC reopened on Aptos — the closed branch runs on the fixture record.
+    expect(offerOf(editionJsonLd(NO_FMV, installClosedMarketFixture(), 45, iso(1)))).toBeUndefined()
   })
 
   it("CONTROL — no price at all still means no Offer", () => {

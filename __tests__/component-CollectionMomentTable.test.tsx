@@ -252,12 +252,42 @@ describe("CollectionMomentTable", () => {
   // 2026-11-26: the UFC binder lists FLOW holdings in this table and Aptos holdings in their own panel above it.
   // The generic "No moments found for this wallet on this collection." sat under a linked collector's 1,855 Aptos
   // Moments — a false "you hold none". UFC says what the table covers and promises nothing about the Aptos panel.
-  it.each([false, true])("UFC (isMobile=%s): an empty Flow table says Flow only, never 'none on this collection'", (isMobile) => {
+  // RE-PINNED 2026-11-26: the UFC table lists BOTH chains now, so its empty copy names what was searched
+  // (Flow + linked Aptos accounts) and never claims "none" while Aptos is loading or failed.
+  it.each([false, true])("UFC (isMobile=%s): an empty table names both chains, never 'none on this collection'", (isMobile) => {
     const { container } = render(
-      <CollectionMomentTable {...baseProps({ collectionSlug: "ufc", isMobile, filteredRows: [], rowsCount: 0, hasSearched: true })} />
+      <CollectionMomentTable {...baseProps({ collectionSlug: "ufc", isMobile, filteredRows: [], rowsCount: 0, hasSearched: true, ufcAptosStatus: "none" })} />
     )
-    expect(container.textContent).toContain("No UFC Strike moments found on Flow for this wallet.")
+    expect(container.textContent).toContain("No UFC Strike Moments found for this wallet on Flow or on any Aptos account RPC has linked to it.")
     expect(container.textContent).not.toContain("found for this wallet on this collection")
+  })
+
+  it.each([false, true])("UFC (isMobile=%s): an empty table with a FAILED Aptos read says so, never 'none'", (isMobile) => {
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ collectionSlug: "ufc", isMobile, filteredRows: [], rowsCount: 0, hasSearched: true, ufcAptosStatus: "failed" })} />
+    )
+    expect(container.textContent).toContain("Aptos holdings couldn't load")
+    expect(container.textContent).not.toContain("on any Aptos account")
+  })
+
+  it.each([false, true])("UFC (isMobile=%s): each row carries its chain tag, and an Aptos row links to its edition and Rarible", (isMobile) => {
+    const flowRow = { momentId: "77", playerName: "Flow Fighter", setName: "S", chain: "flow" as const }
+    const aptosRow = { momentId: "aptos:0xa", playerName: "Aptos Fighter", setName: "S", chain: "aptos" as const, editionKey: "733", raribleUrl: "https://rarible.com/collection/aptos/0xabc/items" }
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ collectionSlug: "ufc", isMobile, filteredRows: [flowRow, aptosRow] as never, rowsCount: 2, hasSearched: true })} />
+    )
+    const tags = [...container.querySelectorAll('[data-testid="chain-tag"]')].map((n) => n.textContent)
+    expect(tags).toEqual(["Flow", "Aptos"])
+    const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))
+    expect(hrefs).toContain("/ufc/edition/733")
+    expect(hrefs).not.toContain("/moment/aptos:0xa")
+  })
+
+  it("a single-chain collection renders no chain tag", () => {
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ collectionSlug: "nba-top-shot", filteredRows: [{ momentId: "1", playerName: "P", setName: "S" }] as never, rowsCount: 1, hasSearched: true })} />
+    )
+    expect(container.querySelector('[data-testid="chain-tag"]')).toBeNull()
   })
 
   // 2026-11-08: Candy moved every collectible to new MoonPay wallets in October, so a

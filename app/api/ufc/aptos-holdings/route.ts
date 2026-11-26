@@ -35,6 +35,10 @@ const MAX_ROWS = 20000 // runaway guard; a wallet past it is reported as capped,
 export interface UfcAptosMoment {
   token_data_id: string
   edition_id: string | null
+  /** editions.external_id — the binder links an Aptos row to its edition page (2026-11-26). */
+  edition_key: string | null
+  /** The Moment's Aptos collection, for the Rarible collection link; null when unmapped or the read failed. */
+  aptos_collection_id: string | null
   name: string | null
   player_name: string | null
   set_name: string | null
@@ -79,15 +83,16 @@ export async function GET(req: NextRequest) {
 
     // 2. Edition facts + current FMV for the editions held.
     const editionIds = [...new Set(holdings.map((h) => h.edition_id).filter((x): x is string => !!x))]
-    const editions = new Map<string, { name: string | null; player_name: string | null; set_name: string | null; tier: string | null; circulation_count: number | null; thumbnail_url: string | null }>()
+    const editions = new Map<string, { external_id: string | null; name: string | null; player_name: string | null; set_name: string | null; tier: string | null; circulation_count: number | null; thumbnail_url: string | null }>()
     const fmv = new Map<string, number | null>()
+    const aptosColl = new Map<string, string>()
     for (let i = 0; i < editionIds.length; i += 200) {
       const slice = editionIds.slice(i, i + 200)
-      const [ed, fv] = await Promise.all([
+      const [ed, fv, ac] = await Promise.all([
         boundedRead(
           supabaseAdmin
             .from("editions")
-            .select("id, name, player_name, set_name, tier, circulation_count, thumbnail_url")
+            .select("id, external_id, name, player_name, set_name, tier, circulation_count, thumbnail_url")
             .in("id", slice),
           "api/ufc/aptos-holdings/editions",
         ),
@@ -95,11 +100,26 @@ export async function GET(req: NextRequest) {
           supabaseAdmin.rpc("get_editions_latest_fmv_wide", { p_edition_ids: slice }),
           "api/ufc/aptos-holdings/get_editions_latest_fmv_wide",
         ),
+        // Link only: a failed read drops the Rarible link, never a Moment or its value.
+        boundedRead(
+          supabaseAdmin
+            .from("ufc_aptos_collections")
+            .select("edition_id, aptos_collection_id")
+            .in("edition_id", slice)
+            .order("aptos_collection_id", { ascending: true }),
+          "api/ufc/aptos-holdings/ufc_aptos_collections",
+        ),
       ])
+      if (!ac.error) {
+        for (const c of (ac.data ?? []) as Array<{ edition_id: string; aptos_collection_id: string | null }>) {
+          if (c.aptos_collection_id && !aptosColl.has(c.edition_id)) aptosColl.set(c.edition_id, c.aptos_collection_id)
+        }
+      }
       if (ed.error) return apiErrorResponse(ed.error, "api/ufc/aptos-holdings", "Aptos holdings aren't available right now.")
       if (fv.error) return apiErrorResponse(fv.error, "api/ufc/aptos-holdings", "Aptos holdings aren't available right now.")
       for (const e of (ed.data ?? []) as Array<{ id: string } & Record<string, unknown>>) {
         editions.set(e.id, {
+          external_id: e.external_id == null ? null : String(e.external_id),
           name: (e.name as string) ?? null,
           player_name: (e.player_name as string) ?? null,
           set_name: (e.set_name as string) ?? null,
@@ -119,6 +139,8 @@ export async function GET(req: NextRequest) {
       return {
         token_data_id: h.token_data_id,
         edition_id: h.edition_id,
+        edition_key: e?.external_id ?? null,
+        aptos_collection_id: h.edition_id ? aptosColl.get(h.edition_id) ?? null : null,
         name: e?.name ?? null,
         player_name: e?.player_name ?? null,
         set_name: e?.set_name ?? null,

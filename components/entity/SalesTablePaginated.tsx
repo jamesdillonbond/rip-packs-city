@@ -4,7 +4,8 @@
 // Phase 1B. Recent-sales table with "Load 30 more" client-side pagination.
 
 import { useMemo, useState } from "react"
-import { aptosWalletDisplay, aptosSaleVenue } from "@/lib/ufc-aptos"
+import { aptosWalletDisplay, aptosVenueName, isUfcAptosBinder, ufcSaleChain } from "@/lib/ufc-aptos"
+import ChainTag from "@/components/collection/ChainTag"
 import { sectionEmptyCopy, sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
@@ -229,20 +230,16 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                         verticalAlign: "middle",
                       }}>buyback</span>
                     )}
-                    {aptosSaleVenue(s.source, s.marketplace) && (
-                      <span title="Sold on the Aptos blockchain (UFC Strike moved from Flow to Aptos)" style={{
-                        display: "inline-block",
-                        marginLeft: 6,
-                        padding: "1px 6px",
-                        borderRadius: 3,
-                        border: "1px solid var(--rpc-border)",
-                        color: "var(--rpc-text-secondary)",
-                        fontSize: 9,
-                        letterSpacing: "0.10em",
-                        textTransform: "uppercase",
-                        verticalAlign: "middle",
-                      }}>{aptosSaleVenue(s.source, s.marketplace)}</span>
-                    )}
+                    {/* 2026-11-26: every UFC sale says which chain it happened on (Flow or Aptos · venue). */}
+                    {(function() {
+                      const chain = isUfcAptosBinder(collectionUrlSlug) ? ufcSaleChain(s) : s.source === "aptos_indexer_v1" ? "aptos" : null
+                      if (!chain) return null
+                      return (
+                        <span style={{ display: "inline-block", marginLeft: 6, verticalAlign: "middle" }}>
+                          <ChainTag chain={chain} kind="sale" detail={chain === "aptos" ? aptosVenueName(s.marketplace) : null} />
+                        </span>
+                      )
+                    })()}
                   </td>
                   <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={collectionUrlSlug} /></td>
                   <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} collectionUrlSlug={collectionUrlSlug} /></td>

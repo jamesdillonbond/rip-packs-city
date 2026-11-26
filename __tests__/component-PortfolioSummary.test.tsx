@@ -140,11 +140,10 @@ describe("PortfolioSummary", () => {
       />,
     )
     const txt = container.textContent!
-    // Re-pinned 2026-11-16 (Trevor's gate C): UFC's Flow holdings are VALUED at current FMV with
-    // a migrate note, instead of the closure tile. Cost basis / P&L stays suppressed while the
-    // market is marked closed — that half of the property is unchanged.
-    expect(txt).toContain("On Flow · current FMV")
-    expect(txt).toContain("Still on Flow — migrate to Aptos to trade")
+    // Re-pinned 2026-11-26: UFC's holdings are ONE value across Flow and Aptos ("Your Holdings"),
+    // with no migration messaging. The UFC tile carries no P&L line.
+    expect(txt).toContain("Your Holdings · current FMV")
+    expect(txt).not.toMatch(/migrate/i)
     expect(txt).not.toContain("Profit / Loss") // P&L suppressed
     expect(txt).not.toContain("Collection value")  // the live-market hero is not shown
   })

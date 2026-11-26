@@ -2531,6 +2531,13 @@ const PINS = [
     migration: "supabase/migrations/20261117153744_audit_20261117_topshot_stale_cap_skips_premium_serials.sql",
   },
   {
+    // 2026-11-26 (Trevor, "Do it all" — UFC reopened on Aptos): a UFC FMV above the edition's cheapest live single
+    // Rarible ask on Aptos is capped at it (_aptoscap). 350 of 438 editions read FMV above the ask; median 1.81x.
+    fn: "fmv_snapshots_cap_ufc_to_aptos_ask",
+    test: "supabase/tests/fmv_snapshots_cap_ufc_to_aptos_ask.sql",
+    migration: "supabase/migrations/20261126174033_audit_20261126_ufc_reopen_on_aptos_and_ask_cap.sql",
+  },
+  {
     // 2026-10-26 (#202, panini-1.4.1): a Panini LOW price is capped at the edition's lowest live ask.
     // Forward shadow read 10-21..10-26: on the 82 sales the cap changed, within ±25 % 1.2 % -> 53.7 %; no tier loses.
     fn: "fmv_snapshots_cap_panini_low_to_live_ask",

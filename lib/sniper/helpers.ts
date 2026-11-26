@@ -552,3 +552,14 @@ export function discountColor(pct: number): CSSProperties {
   if (pct >= 5)  return { background: "rgba(16,185,129,0.2)", color: "rgb(110,231,183)", border: "1px solid rgba(16,185,129,0.4)" };
   return { border: "1px solid var(--rpc-border)" };
 }
+
+/**
+ * A deal's discount as shown on the board (2026-11-26). Below FMV reads "-12.0%"; within half a point
+ * reads "~0%"; ABOVE FMV reads "+12.0%". Before UFC's Aptos-ask board every row was below FMV, so a
+ * non-positive discount always printed "~0%" — on an ask 40 % over FMV that reads as "at FMV".
+ */
+export function fmtDiscount(discount: number): string {
+  if (discount > 0) return `-${fmt(discount, 1)}%`
+  if (discount < -0.5) return `+${fmt(-discount, 1)}%`
+  return "~0%"
+}

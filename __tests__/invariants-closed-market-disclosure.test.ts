@@ -35,7 +35,7 @@ const REPO = process.cwd()
 const COLLECTION_ROOT = path.join(REPO, "app", "(collections)", "[collection]")
 
 /** Per-collection tabs UFC registers, all of which render FMV or ask prices. */
-const UFC_PRICED_TABS = ["overview", "collection", "sets", "analytics"] as const
+const UFC_PRICED_TABS = ["overview", "collection", "sniper", "sets", "analytics"] as const
 
 /**
  * Priced tabs deliberately NOT guarded, with the reason. UFC does not register
@@ -45,15 +45,8 @@ const UFC_PRICED_TABS = ["overview", "collection", "sets", "analytics"] as const
 const KNOWN_UNMOUNTED: Record<string, string> = {
   market: "UFC does not register `market` (pages: all except UFC)",
   packs: "UFC does not register `packs` (pages: all except UFC)",
-  // ⭐ THIS GUARD FIRED ON THE CHANGE THAT MOVED IT HERE, which is the whole
-  // point of the registry check above: UFC's sniper tab was RETIRED 2026-09-06
-  // (Trevor — "there is no market currently"), so it can no longer render a
-  // dead UFC price because it can no longer render at all. /ufc/sniper 307s to
-  // the overview at the edge (proxy.ts RETIRED_COLLECTION_TABS).
-  // ⚠ If UFC's market reopens and the tab comes back, the registry check reds
-  // and this line moves back into UFC_PRICED_TABS — the banner must be mounted
-  // before it does.
-  sniper: "UFC's `sniper` was retired 2026-09-06 — no market since 2026-05-13",
+  // 2026-11-26: `sniper` moved back into UFC_PRICED_TABS (UFC's sniper returned as a board of
+  // live Aptos asks); its banner was already mounted in SniperClient.tsx.
 }
 
 function sourceOf(tab: string): string {
@@ -101,18 +94,16 @@ describe("invariant: closed-market disclosure reaches every priced UFC tab", () 
     }
   })
 
-  it("market-closed resolves UFC under BOTH the canonical slug and the alias", async () => {
-    // getCollectionByUrlSlug resolves "ufc-strike" as well as "ufc", so alias URLs
-    // render real pages; covering only one form skips the disclosure on the other.
-    // Asserted behaviourally, not by regex: the alias is registered by assignment
-    // (`CLOSED_MARKETS["ufc-strike"] = CLOSED_MARKETS.ufc`), not as a literal key,
-    // so a source match would pin the syntax rather than the guarantee.
+  it("market-closed treats UFC as OPEN under BOTH the canonical slug and the alias (inverted 2026-11-26)", async () => {
+    // Was: "resolves UFC under BOTH … as closed". UFC reopened on Aptos (Rarible);
+    // its sales, asks and holdings carry a per-row Flow/Aptos tag instead of a
+    // collection-wide closure. Both slugs are asserted because a stale ALIAS key
+    // alone would keep the dead-market copy on every /ufc-strike/* URL.
     const { isMarketClosed, closedMarket } = await import("@/lib/market-closed")
     for (const slug of ["ufc", "ufc-strike"]) {
-      expect(isMarketClosed(slug), `${slug} must be recognised as a closed market`).toBe(true)
-      expect(closedMarket(slug)?.closedOn).toBe("2026-05-13")
+      expect(isMarketClosed(slug), `${slug} trades on Aptos and must not read closed`).toBe(false)
+      expect(closedMarket(slug)).toBeNull()
     }
-    // The live Flow collections must NOT be flagged closed.
     for (const slug of ["nba-top-shot", "nfl-all-day", "laliga-golazos", "disney-pinnacle"]) {
       expect(isMarketClosed(slug), `${slug} is live and must not be flagged closed`).toBe(false)
     }

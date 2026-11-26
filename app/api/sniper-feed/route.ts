@@ -27,6 +27,7 @@ import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } f
 import { decorateAutographs, filterAutographsOnly, isAutographCollection } from "@/lib/sniper/autograph-decorate";
 import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE, fetchTopShotAutographedKeys } from "@/lib/autographs";
 import { textIncludes } from "@/lib/filter-match";
+import { computeUfcAptosSniperFeed } from "@/lib/sniper/ufc-aptos";
 import { CATALOG_PLAYER_COLLECTIONS, resolveCatalogPlayer } from "@/lib/market/catalog-player";
 import { getCollectionUuid } from "@/lib/collections";
 import { readCappedByExternalId } from "@/lib/fmv-capped";
@@ -188,8 +189,15 @@ export interface SniperDeal {
   storefrontAddress: string | null;
   // Marketplace tag — collection-native fetches use the per-collection slug.
   // UI consumes this for source labels.
-  source: "topshot" | "allday" | "golazos" | "pinnacle";
-  paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E";
+  source: "topshot" | "allday" | "golazos" | "pinnacle" | "ufc_aptos";
+  paymentToken: "DUC" | "FUT" | "FLOW" | "USDC_E" | "APT";
+  /** Where the listing lives (2026-11-26): set on multi-chain collections (UFC Strike: "aptos"). */
+  chain?: "flow" | "aptos";
+  /** The venue on that chain ("Rarible"), shown with the chain tag. */
+  venue?: string;
+  /** UFC Strike on Aptos: the ask in APT (askPrice is its USD value at the day's APT/USD rate). */
+  askApt?: number;
+
   offerAmount: number | null;
   offerFmvPct: number | null;
   dealRating: number;
@@ -1290,6 +1298,7 @@ export async function GET(req: Request) {
     laliga_golazos: "laliga-golazos",
     disney_pinnacle: "disney-pinnacle",
     ufc_strike: "ufc",
+    "ufc-strike": "ufc",
     pinnacle: "disney-pinnacle",
   };
   const rawCollection = params.collectionId ?? params.collection;
@@ -1330,8 +1339,13 @@ export async function GET(req: Request) {
         };
       };
     }
+    if (collection === "ufc") {
+      // 2026-11-26: UFC Strike trades on Aptos (Rarible). Every live single-Moment ask in RPC's
+      // index, against RPC FMV, tagged Aptos. A failed read throws → degraded board, never "none".
+      return () => computeUfcAptosSniperFeed({ minDiscount, rarity: effectiveRarity, maxPrice, player, sortBy });
+    }
     if (collection !== "nba-top-shot") {
-      // Other collections (golazos, ufc) — Flowty cache retired May 2026; no
+      // Other collections (golazos) — Flowty cache retired May 2026; no
       // live source plumbed yet. Return empty rather than read stale rows.
       return async () => ({
         count: 0,

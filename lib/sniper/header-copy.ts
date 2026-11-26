@@ -30,6 +30,9 @@ export const SNIPER_SUBTITLE_DEFAULT =
 
 export const SNIPER_SUBTITLE_PINNACLE = "LIVE PINNACLE DEALS BELOW FMV — VARIANT-AWARE"
 
+/** UFC Strike (2026-11-26): every live Aptos ask, not "deals below FMV" — UFC FMV is capped at the live ask. */
+export const SNIPER_SUBTITLE_UFC_APTOS = "EVERY APTOS ASK ON RARIBLE — AGAINST RPC FMV"
+
 /**
  * Subtitle for the Sniper header.
  *
@@ -50,5 +53,6 @@ export function sniperSubtitle(collectionUrlSlug: string, isPinnacle: boolean): 
       ` — FINAL OBSERVED DISCOUNTS, NOTHING IS TRADING`
     )
   }
+  if (collectionUrlSlug === "ufc" || collectionUrlSlug === "ufc-strike") return SNIPER_SUBTITLE_UFC_APTOS
   return isPinnacle ? SNIPER_SUBTITLE_PINNACLE : SNIPER_SUBTITLE_DEFAULT
 }

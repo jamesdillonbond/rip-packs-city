@@ -102,13 +102,26 @@ describe("/api/og/edition — the data branch", () => {
 
   // ── The honesty constraint ────────────────────────────────────────────────
 
-  it("SUPPRESSES the FMV on a closed market (UFC Strike)", async () => {
+  it("SUPPRESSES the FMV on a closed market", async () => {
+    // 2026-11-26: UFC Strike reopened on Aptos, so no real market is closed. The
+    // route resolves its slug through the registry first, so the fixture record
+    // is keyed on a real collection here ("pretend Golazos closed"). Imported
+    // after the per-test module reset so it lands in the instance the route reads.
+    const { installClosedMarketFixture } = await import("./helpers/closed-market-fixture")
+    installClosedMarketFixture("laliga-golazos")
     mockDetail({ data: { ...EDITION, player_name: "A Fighter", fmv: { fmv_usd: 999 } } })
-    const text = ogText(await render("?collection=ufc-strike&slug=1-2"))
+    const text = ogText(await render("?collection=laliga-golazos&slug=1-2"))
 
     expect(text).toContain("A Fighter")
     expect(text).not.toContain("Current FMV")
     expect(text).not.toContain("$999")
+  })
+
+  it("prints FMV for UFC Strike again — it trades on Aptos (inverted 2026-11-26)", async () => {
+    mockDetail({ data: { ...EDITION, player_name: "A Fighter", fmv: { fmv_usd: 999 } } })
+    const text = ogText(await render("?collection=ufc-strike&slug=1-2"))
+    expect(text).toContain("Current FMV")
+    expect(text).toContain("$999")
   })
 
   it("still prints FMV for an open market with the same shape", async () => {

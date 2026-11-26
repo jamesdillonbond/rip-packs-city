@@ -176,19 +176,17 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   "ufc": [
     {
       title: "Built for Fight Collectors",
-      body: "UFC Strike brought octagon moments to Flow — round-by-round highlights, finishes, and championship fights from the biggest stage in combat sports. RPC supports the Flow-era collector base with full catalogue intelligence across every fight card.",
+      body: "UFC Strike brought octagon moments to Flow, then moved them to Aptos — round-by-round highlights, finishes, and championship fights from the biggest stage in combat sports. RPC follows collectors across both chains with full catalogue intelligence on every fight card.",
     },
     {
       title: "The Strike Ecosystem",
       body: "UFC Strike's edition structure revolves around fighter- and fight-based scarcity, with Challenger and Contender tiers defining the hierarchy. RPC tracks every edition across every fighter so you can measure scarcity and price at the moment level, not just the fighter level.",
     },
     {
-      // ⛔ 2026-10-14: this card used to promise a sniper "catching fight moments
-      // priced below market" on a market that closed 13 May 2026 — the About
-      // panel the 09-06 closed-market chrome fix did not reach. Guarded in
-      // __tests__/closed-market-chrome-makes-no-trading-claim.test.ts.
-      title: "A Closed Market, Kept on Record",
-      body: "UFC Strike's Flow marketplace closed on 13 May 2026. Every value here is a closing one, built from the sales recorded through the last of them, and the full sales history stays searchable so collectors can still document and value what they hold.",
+      // 2026-11-26: was "A Closed Market, Kept on Record" (Flow closed 13 May 2026).
+      // UFC reopened on Aptos (Rarible) — RPC reads both chains and tags each row.
+      title: "Two Chains, One Collection",
+      body: "UFC Strike moved from Flow to Aptos. RPC reads both: every sale, listing and held Moment carries a Flow or Aptos tag showing where it lives or traded, and values are built from sales on both chains.",
     },
   ],
 }

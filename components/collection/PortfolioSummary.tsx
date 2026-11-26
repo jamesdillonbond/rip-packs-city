@@ -6,6 +6,7 @@
 // VERBATIM from collection/page.tsx in the Phase 2 refactor (behavior-preserving).
 import ExplainButton from "@/components/ExplainButton"
 import WalletStatRow from "@/components/wallet-stat-row"
+import type { UfcAptosState } from "@/lib/ufc-aptos"
 import { isMarketClosed } from "@/lib/market-closed"
 import type { MomentRow } from "@/lib/collection/types"
 import {
@@ -103,6 +104,8 @@ type PortfolioSummaryProps = {
   connectedWallet: string | null
   ownerKey: string
   input: string
+  /** UFC Strike: the Aptos half of the wallet, summed into the one value tile (2026-11-26). */
+  ufcAptos?: UfcAptosState | null
 }
 
 export default function PortfolioSummary(props: PortfolioSummaryProps) {
@@ -121,6 +124,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
     connectedWallet,
     ownerKey,
     input,
+    ufcAptos,
   } = props
   return (
     <>
@@ -191,6 +195,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               loading={walletSummaryLoading}
               pnl={pnl}
               acquisition={acquisition}
+              ufcAptos={ufcAptos}
               walletFmvAccessory={
                 <ExplainButton
                   context={`Wallet ${connectedWallet || ownerKey || input.trim()} on ${collectionSlug}`}

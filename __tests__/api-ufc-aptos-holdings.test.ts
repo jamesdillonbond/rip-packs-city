@@ -14,6 +14,8 @@ const db = {
   editions: [] as Array<Record<string, unknown>>,
   fmv: [] as Array<{ edition_id: string; fmv_usd: number | null }>,
   fmvError: null as unknown,
+  colls: [] as Array<{ edition_id: string; aptos_collection_id: string | null }>,
+  collsError: null as unknown,
   rpcCalls: [] as Array<{ name: string; args: unknown; range?: [number, number] }>,
 }
 
@@ -43,6 +45,9 @@ vi.mock("@/lib/supabase", () => ({
       throw new Error("unexpected rpc " + name)
     },
     from: (table: string) => {
+      if (table === "ufc_aptos_collections") {
+        return thenable(() => (db.collsError ? { data: null, error: db.collsError } : { data: db.colls, error: null }))
+      }
       if (table !== "editions") throw new Error("unexpected table " + table)
       return thenable(() => ({ data: db.editions, error: null }))
     },
@@ -59,6 +64,8 @@ beforeEach(() => {
   db.editions = []
   db.fmv = []
   db.fmvError = null
+  db.colls = []
+  db.collsError = null
   db.rpcCalls = []
 })
 
@@ -126,6 +133,29 @@ describe("GET /api/ufc/aptos-holdings", () => {
     db.fmv = []
     const body = await (await GET(req(`https://t/api/ufc/aptos-holdings?wallet=${WALLET}`))).json()
     expect(body.total_fmv).toBeNull()
+  })
+
+  // 2026-11-26: the binder renders Aptos Moments as table rows linking to their edition page and Rarible.
+  it("returns each Moment's edition key and Aptos collection (for the edition and Rarible links)", async () => {
+    db.holdings = [{ token_data_id: "0xa", edition_id: "e1", serial_number: 1 }]
+    db.editions = [{ id: "e1", external_id: "733", name: "X", player_name: "X", set_name: "S", tier: null, circulation_count: null, thumbnail_url: null }]
+    db.colls = [{ edition_id: "e1", aptos_collection_id: "0xabc" }]
+    const body = await (await GET(req(`https://t/api/ufc/aptos-holdings?wallet=${WALLET}`))).json()
+    expect(body.moments[0].edition_key).toBe("733")
+    expect(body.moments[0].aptos_collection_id).toBe("0xabc")
+  })
+
+  it("a failed Aptos-collection read drops the link only — the Moment and its value stay", async () => {
+    db.holdings = [{ token_data_id: "0xa", edition_id: "e1", serial_number: 1 }]
+    db.editions = [{ id: "e1", external_id: "733", name: "X", player_name: "X", set_name: "S", tier: null, circulation_count: null, thumbnail_url: null }]
+    db.fmv = [{ edition_id: "e1", fmv_usd: 2 }]
+    db.collsError = { message: "boom" }
+    const res = await GET(req(`https://t/api/ufc/aptos-holdings?wallet=${WALLET}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.count).toBe(1)
+    expect(body.total_fmv).toBe(2)
+    expect(body.moments[0].aptos_collection_id).toBeNull()
   })
 
   it("pages past PostgREST's 1,000-row RPC cap on a unique key", async () => {

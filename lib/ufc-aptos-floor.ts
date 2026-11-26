@@ -19,6 +19,7 @@
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiReadTimeoutMs } from "@/lib/api/bounded-read"
 import { withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
+import { raribleAptosCollectionUrl } from "@/lib/ufc-aptos"
 
 export interface UfcAptosFloor {
   floorUsd: number
@@ -35,11 +36,8 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** Rarible's collection page for an Aptos collection id (redirects to og.rarible.com). */
-export function raribleAptosCollectionUrl(aptosCollectionId: string | null | undefined): string | null {
-  if (!aptosCollectionId || !/^0x[0-9a-f]{1,64}$/i.test(aptosCollectionId)) return null
-  return `https://rarible.com/collection/aptos/${aptosCollectionId}/items`
-}
+// raribleAptosCollectionUrl lives in lib/ufc-aptos.ts (client-safe); re-exported here for server callers.
+export { raribleAptosCollectionUrl }
 
 export async function fetchUfcAptosEditionFloor(
   editionId: string,

@@ -269,7 +269,8 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 102 → 103 on 2026-11-23: /insights/pinnacle-pack-reality (Disney Pinnacle Pack Reality).
     // 103 → 106 the same afternoon: /insights/pinnacle-market, -serial-premiums, -squeeze (parity pass 3).
     // 106 → 108 that evening: /insights/candy-serial-premiums, /insights/candy-squeeze (Candy parity pass 1).
-    expect(s).toHaveLength(108)
+    // 108 → 109 on 2026-11-26: /ufc/sniper (UFC's sniper returned as a board of live Aptos asks).
+    expect(s).toHaveLength(109)
     expect(s.find((x) => x.url === `${BASE}/insights/candy-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/candy-serial-premiums`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/pinnacle-squeeze`)).toBeTruthy()
@@ -294,7 +295,8 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(s.find((x) => x.url === `${BASE}/teams`)).toBeDefined()
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/nba/fast-break`)).toBeUndefined()
-    expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
+    // Inverted 2026-11-26: UFC's sniper is back (live Aptos asks), so the sitemap advertises it.
+    expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeDefined()
     // ⚠ PRESENCE, not just the count — a bare length pin is satisfied by ANY
     // 76th URL, so each Candy tab that entered the sitemap is named here. That
     // is what makes the anon-gating arm in sitemap-urls-are-anon-public.test.ts

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
 import PackHistoryClient from "@/app/dashboard/packs/PackHistoryClient"
 import CollectionOverviewClient from "@/app/(collections)/[collection]/overview/CollectionOverviewClient"
+import { installClosedMarketFixture, removeClosedMarketFixture } from "./helpers/closed-market-fixture"
 
 // Two more client pages converted for coverage. NEITHER carried a new defect — both were
 // already hardened, and that is the point of recording it here: the next sweep should not
@@ -596,10 +597,21 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
 
   // 2026-10-20 sweep: /ufc/overview (market closed 13 May 2026) rendered "Insider Signals —
   // Anomalies in the last 24h", a live-trading monitor over a market with no trades.
+  // 2026-11-26: UFC reopened on Aptos, so the closed half runs on the fixture market
+  // (keyed on Golazos) and UFC now keeps the panel like any open market.
   it("renders no Insider Signals panel on a closed market, and keeps it on an open one", async () => {
-    mount(() => json(200, STATS({ fmv_pct: 73.6, fmv_high_medium_pct: 0 })), "ufc-strike")
+    installClosedMarketFixture("laliga-golazos")
+    try {
+      mount(() => json(200, STATS({ fmv_pct: 73.6, fmv_high_medium_pct: 0 })), "laliga-golazos")
+      await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
+      expect(document.querySelector('[data-testid="insider"]')).toBeNull()
+    } finally {
+      removeClosedMarketFixture("laliga-golazos")
+    }
+    cleanup()
+    mount(() => json(200, STATS({})), "ufc-strike")
     await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
-    expect(document.querySelector('[data-testid="insider"]')).toBeNull()
+    expect(document.querySelector('[data-testid="insider"]')).not.toBeNull()
     cleanup()
     mount(() => json(200, STATS({})), "nba-top-shot")
     await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Recent Sales/))
@@ -659,14 +671,24 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
   // and the box read "FMV Data Age: just now" over prices fixed at the 13 May 2026 close.
   // ⚠ ASSERTED AS AN ABSENCE of the fresh-age claim, and the close date in its place.
   it("states a closed market's close date, never a fresh write age", async () => {
+    // 2026-11-26: the closed market is the fixture (keyed on Golazos); UFC is open again.
+    installClosedMarketFixture("laliga-golazos")
+    try {
+      mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "laliga-golazos")
+      await waitFor(() => expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).not.toBeNull())
+      expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')!.textContent).toBe("13 May 2026")
+      // The Pipeline Status card (the fixture's top sales carry their own "just now" ages).
+      const card = document.querySelector('[data-testid="closed-market-prices-as-of"]')!.closest("section")!
+      expect(card.textContent).not.toMatch(/just now/i)
+      expect(card.textContent).not.toMatch(/FMV Data Age/)
+      expect(card.textContent).not.toMatch(/< 30 min/)
+    } finally {
+      removeClosedMarketFixture("laliga-golazos")
+    }
+    cleanup()
     mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "ufc-strike")
-    await waitFor(() => expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).not.toBeNull())
-    expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')!.textContent).toBe("13 May 2026")
-    // The Pipeline Status card (the fixture's top sales carry their own "just now" ages).
-    const card = document.querySelector('[data-testid="closed-market-prices-as-of"]')!.closest("section")!
-    expect(card.textContent).not.toMatch(/just now/i)
-    expect(card.textContent).not.toMatch(/FMV Data Age/)
-    expect(card.textContent).not.toMatch(/< 30 min/)
+    await waitFor(() => expect(document.body.textContent).toMatch(/FMV Data Age/))
+    expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).toBeNull()
     cleanup()
     mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "nba-top-shot")
     await waitFor(() => expect(document.body.textContent).toMatch(/FMV Data Age/))
