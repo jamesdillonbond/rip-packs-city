@@ -13,6 +13,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~8:34 AM PT · 🗄 APPLIED (`20261126162202`, `20261126162521`) + 🔧 script — UFC Aptos wallet links by MOMENT IDENTITY: reaches Aug–Oct 2025 migrants without mainnet26 history or Dune (Claude Code cloud; Trevor: "Keep going")
+
+- **Why.** ~73 % of UFC Aptos holdings are with wallets that migrated Aug–Oct 2025 (mainnet26). Those nodes are gone and the Dune path waits for 12-14. But UFC's Aptos `issuer::mint_for` carries each Moment's serial and edition name, and serials survived the migration. So the Aptos wallet UFC minted a saved user's known Flow Moments to is that user's wallet. No Flow history is needed.
+  - Measured: `0xaf78…fe85` → 11 of 11 Moments found on Aptos were minted to one wallet (one Aug 2025 burst).
+  - Counter-case: `0x525b…943e`'s bought-then-resold Moments went to 6 different wallets. That is why candidates are Moments the user still held per RPC's records: they are the last recorded Flow buyer, or acquired it with no later sale to anyone else. Moments still held on Flow (`wallet_moments_cache`) are excluded (`…162521`; a dry run showed 0/17 found, all still on Flow).
+- **Migrations:**
+  - `ufc_aptos_wallet_links.method` gains `moment_identity_match`. `refresh_ufc_aptos_wallet_links()` rewrites only `burn_mint_match` rows, so these rows are never overwritten.
+  - `get_ufc_identity_link_candidates(p_per_wallet)`: SECURITY DEFINER, EXECUTE service_role only (verified anon=false, authenticated=false). 2.4 s.
+  - File md5 = DB `statements` md5 for both.
+- **Script** `scripts/ufc-aptos-identity-link.mjs`, workflow step 2b (before holdings, so new links get holdings in the same run):
+  - Looks up each candidate's Aptos token (exactly one, else skipped) and its first transfer. The transfer must be `issuer::mint_for` to a non-UFC wallet.
+  - Links a recipient only when ≥3 Moments agree and they are ≥30 % of those found. Confidence is `high` only if all agree and n ≥5.
+  - Skips an Aptos wallet already burn-linked to a different Flow wallet and counts it as a conflict.
+  - Inserts with ON CONFLICT DO NOTHING.
+- Proof: local dry runs with the DB stubbed. `0xbd94…` found 2/12 → one recipient with 2 (<3) → no link, correctly. Three wallets whose candidates are all still on Flow → no link. `npm run preflight` 6/6 green.
+- Revert: `delete from public.ufc_aptos_wallet_links where method='moment_identity_match'; drop function public.get_ufc_identity_link_candidates(integer);` restore the 2-value method CHECK (migration header), and remove the workflow step and script.
+
 ### 2026-11-26 ~9:30 AM PT · 🗄 APPLIED (`20261126162440`) — fmv-recalc hot lane also re-prices a HIGH / MEDIUM edition once the market has left it (Claude Code cloud; Trevor: "Keep digging")
 - **Why:** the hot lane skipped HIGH / MEDIUM by design, so on a day the market moved, the price stayed wrong until the next sweep. Top Shot, last 30 days: on 466 busy edition-days the first 3 ordinary sales landed more than 30 % from the price in force, and the rest of those days' 3,313 sales scored 28.7 % within ±25 % against it. The engine's next price (median ratio 1.00 to those first 3 sales) scored 61.3 % on the same sales. The visible case was the Rookie Debut /500 drop: Lendeborg traded 38 times at a $98 median on 11-11 while FMV read $180 all day.
 - **What:** `fmv_recalc_hot_editions` gains one arm. A HIGH / MEDIUM edition is hot when at least 3 ordinary sales (serial > 25) it has not seen have a median more than 30 % from its `fmv_usd`; nothing else changed. Measured cost 2.2 s cold against the 15 s budget; 8 editions selected at apply. Pin `supabase/tests/fmv_recalc_hot_editions.sql` H6–H9: the old body fails H6, and dropping the serial filter fails H9 (both planted and confirmed). Preflight, including the DB-invariant tests, is green.
