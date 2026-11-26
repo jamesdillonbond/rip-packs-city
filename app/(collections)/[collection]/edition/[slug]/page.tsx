@@ -1179,7 +1179,9 @@ export default async function EditionPage(
         {/* "Floor" (recent-sale low) removed 2026-07-07 — redundant with the
             Recent Sales table; the FMV-strip prose still cites the recent-sale
             low when no live ask exists. */}
-        <StatCell
+        {/* UFC (2026-11-26): the "UFC ask" tile read a FLOW ask, which cannot exist since the Flow marketplace
+            closed (2026-05-13) — it rendered a permanent "—" beside the real "Lowest ask · Aptos" tile below. */}
+        {!isUfc && <StatCell
           label={askLabel}
           value={fmtUsd(askValue)}
           // On a parallel printing the ask is the printing's OWN row (#206), never
@@ -1215,7 +1217,7 @@ export default async function EditionPage(
                   )
                   : relTime(askAt)
           }
-        />
+        />}
         {/* UFC Strike on Aptos (2026-11-25): Rarible is UFC's only venue and almost nothing sells there
             (one UFC sale 09-13..11-25), so the cheapest live ask is the only current price evidence. Shown
             even while UFC's FMV reads as closed: it is a fact about a live listing, not an FMV. Rendered only

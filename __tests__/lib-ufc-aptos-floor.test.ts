@@ -83,6 +83,9 @@ describe("edition page wiring", () => {
     expect(page).toMatch(/isUfc && ufcFloorRes\.floor && \(/)
     expect(page).toContain('label="Lowest ask · Aptos"')
   })
+  it("hides the Flow 'UFC ask' tile on UFC — the Flow marketplace closed, so it could only ever show a dash", () => {
+    expect(page).toMatch(/\{!isUfc && <StatCell\s+label=\{askLabel\}/)
+  })
   it("defaults to a FAILED read on UFC, so a fan-out throw never reads as no ask", () => {
     expect(page).toMatch(/let ufcFloorRes: \{ floor: UfcAptosFloor \| null; ok: boolean \} = \{ floor: null, ok: !isUfc \}/)
   })
