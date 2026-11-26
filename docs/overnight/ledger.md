@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:55 PM PT · 🔧 SHIPPED (copy) — an opened pack with no pack NFT no longer carries a "Sealed pack — …" hover note on the binder's Opened tab (Claude Code cloud; found on the live check of the ~2:45 PM ship)
+
+- The note is for sealed rows (no distribution recorded until opened or resold); reconstructed rips on the Opened tab carried it too. Now only `status = held` rows get it. Test in `component-WalletPacksView.test.tsx`. **Revert:** `git revert` the commit "binder packs: Sealed-pack note on sealed rows only".
+
 ### 2026-11-26 ~2:45 PM PT · 🗄 APPLIED (`20261126221321`) + 🔧 SHIPPED — **sort opened packs by what you still hold; pack filters stay in the address bar** (Claude Code cloud; Trevor: "Keep going")
 
 - **DB:** `get_wallet_pack_history` v40 — `p_sort` `held_desc` / `held_asc` order opened packs by the pulls still in the wallet at wallet FMV (the `held_fmv_usd` rule; an unknown sorts last). Applied ~2:13 PM PT as a one-edit DO block asserting the v39 md5 before and `ff428d17…` after; ACL unchanged (anon false). Warm, Trevor's 2,578 opened Top Shot packs: 641–786 ms vs 665 ms newest-first. Pin V40-1..2 (red on v39).
