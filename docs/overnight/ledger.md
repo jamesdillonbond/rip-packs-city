@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:29 PM PT · 🔧 SHIPPED — **Top Sales board: a League row for Panini and Candy (`?property=`)** (Cowork cloud; Trevor: "Keep going and do it all")
+
+- **What:** `/insights/top-sales` shows a second pill row when Panini or Candy is picked, sent as `property=<slug>`. Panini reads its own view narrowed by product-id prefix and re-checked exactly; Candy reads `insights_top_sales_for_candy_property(slug)` — the view's own rows for one brand. The slug is resolved first (`lib/insights/league-scope.ts`): unknown or misplaced → 400, failed lookup → the board's unavailable response. Under a Panini league the "not shown" sales count reports unknown rather than the whole collection's number.
+- **Migration:** `20261126222256_audit_20261126_insights_top_sales_for_candy_property` (applied via MCP, file committed).
+- **Revert:** `git revert` the code commit (find by message "insights: league row on the Top Sales board"). The function is unread after that.
+
 ### 2026-11-26 1:41 PM PT · UFC Set Tracker counts Aptos holdings; accepts an Aptos address; ticker copy reworded
 - Before: `get_ufc_set_progress` read Flow `wallet_moments_cache` only. All four saved UFC collectors whose Moments are on Aptos showed 0 owned. After: rrx69 owns 530 editions with 386 sets complete, edogg1976 owns 126 with 80 complete, pashock8 owns 14 and awesemo owns 13.
 - How: `owned_editions` now also UNIONs `ufc_aptos_holdings`, reached through the linked Aptos wallets or directly for an Aptos address.
