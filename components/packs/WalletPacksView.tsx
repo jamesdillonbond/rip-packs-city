@@ -562,7 +562,11 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                           <>
                             <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-primary)", fontFamily: display, fontWeight: 700, whiteSpace: "nowrap" }}>{packValueLabel(row)}</td>
                             <td style={{ padding: "9px 12px", textAlign: "right", color: realizedPlTint(unrl), fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(unrl)}</td>
-                            <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{market || "—"}</td>
+                            {/* 2026-11-25: one long "Ask · Rip EV · Last" line ran the table off the right edge
+                                at laptop widths; each part now sits on its own line. */}
+                            <td data-testid="pack-market-cell" style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", lineHeight: 1.45 }}>
+                              {market ? market.split(" · ").map((part) => <div key={part} style={{ whiteSpace: "nowrap" }}>{part}</div>) : "—"}
+                            </td>
                           </>
                         )
                       })()}

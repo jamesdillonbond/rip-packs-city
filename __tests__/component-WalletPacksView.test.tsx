@@ -342,6 +342,18 @@ describe("WalletPacksView", () => {
     expect(titles).toContain("2 of 3 pulls still held")
   })
 
+  // 2026-11-25: the Unopened tab's Market cell ran one long "Ask · Rip EV · Last" line off the
+  // table's right edge at laptop widths. Each part is its own line now; the text is unchanged.
+  it("Unopened tab: the Market cell stacks Ask / Rip EV / Last one per line", async () => {
+    ownerKey = "0xowner"
+    const withMarket = { ...heldRow, lowest_ask_usd: 16, pack_gross_ev_usd: 5.11, last_sale_usd: 12 }
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [withMarket], total_count: 1 }) }))
+    const { getByText, getByTestId } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    const lines = [...getByTestId("pack-market-cell").querySelectorAll("div")].map((d) => d.textContent)
+    expect(lines).toEqual(["Ask $16.00", "Rip EV $5.11", "Last $12.00"])
+  })
+
   it("an older payload with no tab_totals renders no metric tiles (and no $0)", async () => {
     ownerKey = "0xowner"
     fetchMock = routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [heldRow], total_count: 1 }) })
