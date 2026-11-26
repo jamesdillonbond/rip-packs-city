@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:45 PM PT · 🔧 SHIPPED (DB) — job 901 retired into the pack-value cache; job 330 off minute 9; remaining dated reads moved to cloud routines (Claude Code, attended)
+- **`20261126013806`:** `refresh_wallet_pack_value_cache` (job 913, :16) now ends by filling today's `portfolio_snapshots` pack columns from `wallet_pack_value_cache` (owner filled only when every saved Flow wallet has a < 2 h cache row; logs `portfolio-snapshot-packs` with `source=wallet_pack_value_cache`); job 901 `rpc-portfolio-snapshot-packs` unscheduled (Trevor-approved 11-22; the 11-25 9:07 AM laptop task never fired). Precondition: both jobs clean since 11-23. Dry run vs 11-25: 58/58 fillable, $235.8k vs $236.3k. **Revert:** `cron.schedule('rpc-portfolio-snapshot-packs','56 7,8,9,10,11 * * *','CALL public.fill_portfolio_snapshot_pack_values(100);')` + re-apply 20261122170115's procedure body.
+- **`20261126013912`:** job 330 `rpc-thp-leg-panini` `9 0,6,12,18` → `58 0,6,12,18` (fmv-recalc :08 6-hour layer; cron_heavy-owned → re-`cron.schedule`d as cron_heavy, jobid kept). **Revert:** same call as cron_heavy with `9 0,6,12,18`.
+- Dated reads now live outside this thread: `trig_01Qei47zESZXJXBihtV2WuUZ` (11-26 10:15 AM PT: 901 fill, job 926 >120 s, :08 even−odd gap, `?token=` week + removal) and `trig_015pBws5qfmnot6KhYPRV35d` (11-29 8:05 AM PT: index re-bloat, 330 6h gap, cache week). Docs: focus.md, packs.md, cron-and-schedulers.md.
+
 ### 2026-11-25 ~5:34 PM PT · 🗄 APPLIED (`20261126012426`, `20261126012723`) + 🔧 SHIPPED (code) — the last two deferred 11-24 review findings: Panini product market-cap coverage honest; pack-identity targeted enqueue no longer guesses the collection (Claude Code cloud; Trevor: "work through everything you can in this thread")
 
 - **`get_panini_product_market_cap`** (review of c8accc6ef).
