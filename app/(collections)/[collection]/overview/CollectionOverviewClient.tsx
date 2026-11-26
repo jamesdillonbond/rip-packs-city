@@ -303,20 +303,24 @@ export default function CollectionOverviewClient({
   // age and 5s have elapsed (real outage). This prevents the "UNKNOWN" flash
   // first-time visitors used to see during normal pipeline-health resolution.
   const showLoading = loading || (fmvAge == null && !timedOut)
-  // UFC Strike's Flow market is frozen by design (Aptos migration) — its FMV is
-  // legitimately stale, so don't flash a red OUTDATED pipeline-broken pill.
-  const frozenMarket = collection === "ufc"
-  // Thin, non-Flow collections (Candy MLB): FMV is recomputed on each sale, the
-  // sniper + insider detectors have no arm for the chain, and the tabs those
-  // panels link to do not exist. Each panel below asks for what it needs.
-  const saleDrivenFmv = collection === "candy-mlb"
+  // No market is frozen by design any more: UFC Strike reopened 2026-11-26 on Aptos (Rarible)
+  // and was the only one. Its pill used to read ARCHIVED beside live Aptos sales and asks.
+  const frozenMarket = false
+  // Thin markets whose FMV is recomputed when a sale lands, not on a clock (Candy MLB;
+  // UFC Strike on Aptos — measured 2026-11-24..26: 7 UFC snapshots a night plus repricing
+  // passes, ≈0–10 sales a month). Against the 30/60-min buckets that reads as a broken
+  // pipeline; it is not. Each panel below asks for what it needs.
+  const saleDrivenFmv = collection === "candy-mlb" || collection === "ufc"
+  const isUfc = collection === "ufc"
   const hasSniperTab = enabledPages.has("sniper" as never)
   // ⚠ Explicit "flow", not `?? "flow"`: Panini's dbChain is null (no chain
   // identity established), and the old default ran Flow detectors for it.
   // 2026-10-20 sweep: a closed market (UFC Strike, 13 May 2026) rendered "Insider
   // Signals — Anomalies in the last 24h" — a live-trading monitor over a market that
   // has no trades. It is a Flow-chain panel for OPEN markets only.
-  const hasInsiderDetectors = (collectionObj ? collectionObj.dbChain === "flow" : true) && !closedMarket(collection)
+  // UFC Strike (2026-11-26): its dbChain is still "flow", but it trades on Aptos — the Flow
+  // detectors would watch a venue with no trades and report "no signals" about it.
+  const hasInsiderDetectors = (collectionObj ? collectionObj.dbChain === "flow" : true) && !closedMarket(collection) && !isUfc
   // Panini (published 2026-09-25): its 24h sales KPIs stay null (Panini sales
   // reach RPC ~2 days late), its list panels read Panini's own deal snapshot and
   // $100+ sales (2026-10-14, lib/panini/overview-feeds.ts), and every surface
@@ -525,7 +529,7 @@ export default function CollectionOverviewClient({
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
             <span className="rpc-label">
-              {collection === "disney-pinnacle" ? "Cheapest Available Asks" : "Top Sniper Deals"}
+              {collection === "disney-pinnacle" ? "Cheapest Available Asks" : isUfc ? "Cheapest Aptos Asks" : "Top Sniper Deals"}
             </span>
             <Link href={basePath + "/sniper"} className="rpc-mono rpc-tap44" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
@@ -539,7 +543,9 @@ export default function CollectionOverviewClient({
             <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: "16px 0", textAlign: "center" }}>
               {collection === "disney-pinnacle"
                 ? "No active listings right now"
-                : <>No deals {"\u2265"}15% off right now</>}
+                : isUfc
+                  ? "No live Aptos asks right now"
+                  : <>No deals {"\u2265"}15% off right now</>}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   const partner = collection?.partner ?? "RPC";
   const chain = collection?.chain ?? "flow";
 
-  const chainLabel = CHAIN_LABELS[chain] ?? chain.toUpperCase();
+  const chainLabel = collection?.chainDisplay ?? CHAIN_LABELS[chain] ?? chain.toUpperCase();
   const tagline = PAGE_TAGLINES[page] ?? FALLBACK_TAGLINE;
   const url = collection ? `rippackscity.com/${collection.id}` : "rippackscity.com";
 

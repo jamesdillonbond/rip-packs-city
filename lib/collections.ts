@@ -56,6 +56,11 @@ export interface Collection {
    * (additive, zero caller-breakage); every entry here populates it explicitly.
    */
   dbChain?: ChainType | null
+  /**
+   * Display-only chain chip text, for a collection that lives on more than one chain
+   * (UFC Strike: Flow + Aptos, 2026-11-26). Never branch on it — use `dbChain`.
+   */
+  chainDisplay?: string
   partner: string
   accent: string
   /** Secondary accent for hover states + tier chips. Defaults to accent. */
@@ -254,6 +259,7 @@ export const COLLECTIONS: Collection[] = [
   {
     id: "ufc",
     label: "UFC Strike",
+    chainDisplay: "Flow + Aptos",
     shortLabel: "Strike",
     sport: "MMA",
     chain: "flow",

@@ -17,6 +17,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { readPaniniOverviewDeals, readPaniniTopSales, PANINI_TOP_SALES_DAYS, PANINI_TOP_SALES_MIN_USD } from "@/lib/panini/overview-feeds"
+import { computeUfcAptosSniperFeed } from "@/lib/sniper/ufc-aptos"
 
 export type CollectionStatsRead =
   | { ok: true; stats: Record<string, unknown> }
@@ -110,6 +111,17 @@ export async function readCollectionStats(
       })
     }
 
+    // ── UFC Strike on Aptos (reopened 2026-11-26) ─────────────────────────
+    // get_collection_stats' sniper_deals arm reads Flow listings, and UFC's Flow market
+    // closed 2026-05-13, so it always answered "No deals ≥15% off" — a claim about a
+    // venue nobody trades on, beside a Sniper tab of ~465 live Aptos asks. The panel
+    // now lists the five cheapest live Aptos (Rarible) asks from the same source as
+    // /ufc/sniper. A failed read nulls the list and flags it ("couldn't load"), never
+    // an empty board.
+    if (isUfcSlug(normalizedSlug, (enriched as any).slug)) {
+      Object.assign(enriched, await readUfcAptosOverviewAsks())
+    }
+
     return { ok: true, stats: enriched }
   } catch (err) {
     return { ok: false, kind: "unavailable", error: err }
@@ -179,4 +191,37 @@ export async function readRecentSaleShare(
  */
 export function readCollectionStatsForPage(collectionUrlSlug: string, where = "overview/page"): Promise<CollectionStatsRead> {
   return readCollectionStats(supabaseAdmin, normalizeStatsSlug(collectionUrlSlug), where)
+}
+
+/** The RPC answers its own slug (`ufc_strike`) for the `ufc` alias; either names UFC. */
+export function isUfcSlug(normalizedSlug: string, rpcSlug: unknown): boolean {
+  return normalizedSlug === "ufc" || normalizedSlug === "ufc_strike" || rpcSlug === "ufc_strike"
+}
+
+/** Five cheapest live Aptos asks, in the overview's SniperDeal shape. */
+export async function readUfcAptosOverviewAsks(
+  feed: typeof computeUfcAptosSniperFeed = computeUfcAptosSniperFeed,
+): Promise<{ sniper_deals: Record<string, unknown>[] | null; sniper_deals_failed: boolean }> {
+  try {
+    const res = await feed({ sortBy: "price_asc" })
+    return {
+      sniper_deals: res.deals.slice(0, 5).map((d) => ({
+        player_name: d.playerName,
+        set_name: d.setName || null,
+        tier: d.tier || null,
+        ask_price: d.askPrice,
+        fmv: d.adjustedFmv,
+        discount: d.discount,
+        buy_url: d.buyUrl || null,
+        thumbnail_url: d.thumbnailUrl ?? null,
+        serial_number: d.serial || null,
+        flow_id: d.editionKey || null,
+        chain: "aptos",
+      })),
+      sniper_deals_failed: false,
+    }
+  } catch (err) {
+    console.log("[collection-stats] ufc_aptos_asks failed: " + (err instanceof Error ? err.message : String(err)))
+    return { sniper_deals: null, sniper_deals_failed: true }
+  }
 }
