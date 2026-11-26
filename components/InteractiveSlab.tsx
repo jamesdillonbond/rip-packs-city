@@ -421,6 +421,11 @@ export default function InteractiveSlab({
   const finishColor =
     finish === "first" ? "var(--rpc-warning, #F59E0B)" : finish === "jersey" ? "var(--rpc-red-text, #FF4D40)" : finish === "perfect" ? "var(--rpc-silver, #BFC0BF)" : null;
 
+  // Text drawn in the tier / finish colour is mixed toward the theme's text colour so it keeps its
+  // contrast in both themes (a bright tier green on the light theme's white face was hard to read).
+  // Borders and fills keep the pure colour.
+  const textTint = (c: string) => `color-mix(in srgb, ${c} 72%, var(--rpc-text-primary, #F1F1F1))`;
+
   const faceBase: CSSProperties = {
     position: "absolute",
     inset: 0,
@@ -500,8 +505,10 @@ export default function InteractiveSlab({
                 visibility: "hidden",
                 transform: "rotateY(180deg) translateZ(1px)",
                 border: `2px solid ${frameColor}`,
+                // A faint sheen mixed from the theme's own surface and text colours, so the back reads
+                // in the light theme too (a hard-coded near-black middle put dark text on black there).
                 background:
-                  "linear-gradient(160deg, var(--rpc-surface, #0D0D0D) 0%, #151515 55%, var(--rpc-surface, #0D0D0D) 100%)",
+                  "linear-gradient(160deg, var(--rpc-surface, #0D0D0D) 0%, color-mix(in srgb, var(--rpc-surface, #0D0D0D) 94%, var(--rpc-text-primary, #F1F1F1)) 55%, var(--rpc-surface, #0D0D0D) 100%)",
                 boxShadow: finishColor ? `0 0 0 1px ${finishColor}` : undefined,
               }}
             >
@@ -540,7 +547,7 @@ export default function InteractiveSlab({
                 {finish ? (
                   <span
                     style={{
-                      color: finishColor ?? undefined,
+                      color: finishColor ? textTint(finishColor) : undefined,
                       border: `1px solid ${finishColor}`,
                       borderRadius: 999,
                       padding: "2px 8px",
@@ -574,7 +581,7 @@ export default function InteractiveSlab({
                       fontFamily: "var(--font-mono)",
                       fontSize: "clamp(16px, 5vw, 30px)",
                       lineHeight: 1,
-                      color: finishColor ?? frameColor,
+                      color: textTint(finishColor ?? frameColor),
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -588,7 +595,7 @@ export default function InteractiveSlab({
                     fontFamily: "var(--font-mono)",
                     fontSize: "clamp(28px, 9vw, 52px)",
                     lineHeight: 1,
-                    color: finishColor ?? frameColor,
+                    color: textTint(finishColor ?? frameColor),
                     letterSpacing: "0.02em",
                   }}
                 >
@@ -596,7 +603,7 @@ export default function InteractiveSlab({
                 </div>
               ) : null}
               {badges && badges.length > 0 ? <BadgeRow badges={badges} /> : null}
-              {stats?.game ? <StatBlockView block={stats.game} accent={finishColor ?? frameColor} /> : null}
+              {stats?.game ? <StatBlockView block={stats.game} accent={textTint(finishColor ?? frameColor)} /> : null}
               {stats?.season ? <StatBlockView block={stats.season} accent={null} /> : null}
               <dl
                 style={{
@@ -736,7 +743,7 @@ function StatBlockView({ block, accent }: { block: SlabStatBlock; accent: string
         {block.chips.map((c) => (
           <div key={c.label} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
             <span
-              style={{ fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4.6vw, 24px)", lineHeight: 1, color: c.aboveAverage ? (accent ?? undefined) : undefined }}
+              style={{ fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4.6vw, 24px)", lineHeight: 1, color: c.aboveAverage ? "var(--rpc-success-text, #34D399)" : undefined }}
             >
               {c.value}
               {c.aboveAverage ? (
