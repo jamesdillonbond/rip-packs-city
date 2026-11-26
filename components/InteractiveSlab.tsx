@@ -181,7 +181,8 @@ export default function InteractiveSlab({
     (feature: string, meta?: Record<string, unknown>) => {
       if (sent.current.has(feature)) return;
       sent.current.add(feature);
-      track(feature, { has_game: !!stats?.game, has_season: !!stats?.season, ...meta });
+      const path = typeof window !== "undefined" ? window.location.pathname : null;
+      track(feature, { path, has_game: !!stats?.game, has_season: !!stats?.season, ...meta });
     },
     [stats],
   );

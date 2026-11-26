@@ -404,7 +404,7 @@ describe("InteractiveSlab usage", () => {
     run(3000)
     expect(features().filter((f) => f === "moment-slab-flipped")).toHaveLength(1)
     expect(features().filter((f) => f === "moment-slab-back-seen")).toHaveLength(1)
-    expect(trackMock).toHaveBeenCalledWith("moment-slab-flipped", { has_game: false, has_season: false, via: "button" })
+    expect(trackMock).toHaveBeenCalledWith("moment-slab-flipped", { path: "/moment/x", has_game: false, has_season: false, via: "button" })
   })
 
   it("counts a real drag as a spin and a tap or a nudge as nothing", () => {
@@ -419,7 +419,7 @@ describe("InteractiveSlab usage", () => {
     fireEvent.pointerMove(group, { pointerId: 2, pointerType: "touch", clientX: 80, clientY: 0 })
     fireEvent.pointerUp(group, { pointerId: 2, pointerType: "touch" })
     run(3000)
-    expect(trackMock).toHaveBeenCalledWith("moment-slab-spun", { has_game: false, has_season: false, pointer: "touch" })
+    expect(trackMock).toHaveBeenCalledWith("moment-slab-spun", { path: "/moment/x", has_game: false, has_season: false, pointer: "touch" })
   })
 
   it("sends nothing when the slab is off", () => {
