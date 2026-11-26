@@ -136,6 +136,55 @@ describe("concierge tools — get_collection_snapshot", () => {
     expect(String(r.summary)).toContain("Dame")
   })
 
+  // 2026-11-26 (Trevor 11-25: Panini "should be" in Portfolio FMV): a signed-in member asking about
+  // their OWN saved wallet gets the dashboard's number, linked Panini cards included; any other
+  // wallet stays wallet-scoped; a failed Panini read is said, never folded in as $0.
+    function snapshotWithPanini(fixtures: Record<string, unknown>) {
+    install(fixtures as Parameters<typeof install>[0])
+    stubFetch([
+      jsonRoute("/api/collection-snapshot", { totalMoments: 50, totalFmv: 1000, perCollection: [], topMoments: [] }),
+      jsonRoute("/api/public/wallet-packs", { held: 0, listed: 0, low_ask_usd: 0, unpriced: 0 }),
+    ])
+    script("get_collection_snapshot", { walletAddress: WALLET })
+  }
+  it("adds the member's linked Panini cards when the wallet is their own", async () => {
+    A.authedEmail = "t@x.test"
+    snapshotWithPanini({
+      saved_wallets: { data: [{ wallet_addr: WALLET }] },
+      saved_collector_identities: { data: [{ identity_value: "trevp" }] },
+      panini_portfolio_daily: { data: [{ username: "trevp", day: "2026-11-25", cards: 151, fmv_usd: 279 }] },
+    })
+    await POST(post("what is my portfolio worth"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.panini_cards).toEqual({ cards: 151, fmvUsd: 279 })
+    expect(String(r.summary)).toContain("151 Panini cards")
+    expect(String(r.summary)).toContain("same number as their dashboard")
+  })
+  it("leaves Panini out for a wallet that is not the asker's own", async () => {
+    A.authedEmail = "t@x.test"
+    snapshotWithPanini({
+      saved_wallets: { data: [] },
+      saved_collector_identities: { data: [{ identity_value: "trevp" }] },
+      panini_portfolio_daily: { data: [{ username: "trevp", day: "2026-11-25", cards: 151, fmv_usd: 279 }] },
+    })
+    await POST(post("what is this wallet worth"))
+    const r = toolResult()
+    expect(r.panini_cards ?? null).toBeNull()
+    expect(String(r.summary)).not.toContain("Panini")
+  })
+  it("says a failed Panini read instead of folding in $0", async () => {
+    A.authedEmail = "t@x.test"
+    snapshotWithPanini({
+      saved_wallets: { data: [{ wallet_addr: WALLET }] },
+      saved_collector_identities: { data: null, error: { message: "timeout" } },
+    })
+    await POST(post("what is my portfolio worth"))
+    const r = toolResult()
+    expect(r.panini_cards).toEqual({ failed: true })
+    expect(String(r.summary)).toContain("NOT in that figure")
+  })
+
   it("returns error when the snapshot API is not ok", async () => {
     stubFetch([jsonRoute("/api/collection-snapshot", {}, { ok: false, status: 500 })])
     script("get_collection_snapshot", { walletAddress: WALLET })

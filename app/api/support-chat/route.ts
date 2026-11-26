@@ -144,6 +144,7 @@ import { TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections";
 import { REPLY_TO } from "@/lib/emails/sender-identity";
 import { ilikeLiteral } from "@/lib/db/ilike-literal";
 import { shareWalletTotalUsd, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
+import { readLinkedPaniniValue } from "@/lib/panini/linked-value";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -3639,20 +3640,50 @@ async function executeToolInner(
           packsFailed = true;
         }
       }
-      const portfolioFmv = shareWalletTotalUsd(data.perCollection, data.totalFmv, packs, packsFailed);
+      // 2026-11-26 (Trevor 11-25: Panini "should be" in Portfolio FMV): when a signed-in member asks
+      // about one of their OWN saved wallets, add their linked Panini cards so this matches the
+      // dashboard. Another wallet stays wallet-scoped like the share card — a Panini collection is
+      // owned by username, never by a wallet. A failed read is said, never folded in as $0.
+      let panini: { cards: number; fmvUsd: number } | null = null;
+      let paniniFailed = false;
+      if (ctx.userId && /^0x[0-9a-fA-F]{16}$/.test(String(toolInput.walletAddress).trim())) {
+        try {
+          const { data: own, error: ownErr } = await supabase
+            .from("saved_wallets")
+            .select("wallet_addr")
+            .eq("user_id", ctx.userId)
+            .ilike("wallet_addr", ilikeLiteral(String(toolInput.walletAddress).trim()))
+            .limit(1);
+          if (ownErr) throw ownErr;
+          if ((own ?? []).length > 0) {
+            const v = await readLinkedPaniniValue(supabase, ctx.userId, "api/support-chat/get_collection_snapshot");
+            if (v.failed) paniniFailed = true;
+            else if (v.usernames > 0) panini = { cards: v.cards, fmvUsd: v.fmvUsd };
+          }
+        } catch {
+          paniniFailed = true;
+        }
+      }
+      const portfolioFmv = shareWalletTotalUsd(data.perCollection, data.totalFmv, packs, packsFailed) + (panini?.fmvUsd ?? 0);
       const moments = Number(data.totalMoments) || 0;
-      const totalAssets = moments + (!packsFailed && packs ? packs.held : 0);
+      const totalAssets = moments + (!packsFailed && packs ? packs.held : 0) + (panini?.cards ?? 0);
       const packPart = packsFailed
         ? " Sealed packs couldn't be read just now, so they are NOT in that figure — say so."
         : packs && packs.held > 0
           ? ` That includes ${packs.held} sealed pack${packs.held === 1 ? "" : "s"} worth $${packs.lowAskUsd.toFixed(2)} at the lowest live ask.`
           : "";
+      const paniniPart = paniniFailed
+        ? " Their linked Panini cards couldn't be read just now, so they are NOT in that figure — say so."
+        : panini
+          ? ` It also includes their linked Panini cards: ${panini.cards} card${panini.cards === 1 ? "" : "s"} worth $${panini.fmvUsd.toFixed(2)} — the same number as their dashboard.`
+          : "";
       return JSON.stringify({
         status: "ok",
-        summary: `Your collection: ${totalAssets} assets (${moments} moments and cards${!packsFailed && packs && packs.held > 0 ? ` + ${packs.held} sealed packs` : ""}), Portfolio FMV $${portfolioFmv.toFixed(2)} — every collection, UFC included, plus sealed packs.${packPart} Top moments: ${topList}. Share your collection at ${siteUrl()}/share/${encodeURIComponent(toolInput.walletAddress)}`,
+        summary: `Your collection: ${totalAssets} assets (${moments} moments and cards${!packsFailed && packs && packs.held > 0 ? ` + ${packs.held} sealed packs` : ""}${panini ? ` + ${panini.cards} Panini cards` : ""}), Portfolio FMV $${portfolioFmv.toFixed(2)} — every collection, UFC included, plus sealed packs.${packPart}${paniniPart} Top moments: ${topList}. Share your collection at ${siteUrl()}/share/${encodeURIComponent(toolInput.walletAddress)}`,
         portfolio_fmv_usd: portfolioFmv,
         total_assets: totalAssets,
         sealed_packs: packsFailed ? { failed: true } : packs,
+        panini_cards: paniniFailed ? { failed: true } : panini,
         raw: data,
       });
     } catch (err: any) {

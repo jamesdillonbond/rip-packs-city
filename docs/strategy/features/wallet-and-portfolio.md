@@ -50,6 +50,13 @@ Trevor (11-24 ~5:05 PM PT): "We need to make these figures very simple and diges
   - The Unopened Market cell stacks Ask / Rip EV / Last one per line.
 - **Record:** ledger 11-24/11-25; session log 11-24 ~5:05 PM entry; handoff `claude/handoff-2026-11-24-binder-simple-hero.md` (project).
 
+## ⭐ 2026-11-25/26 — Saved Wallets tiles, Panini inside the one number (Trevor)
+
+- **Units:** Pinnacle counts are "Pins"; Panini and Candy are "Cards" (`getEntityLabels`; Candy now uses Panini's sports labels sitewide). Never "Moments" for those three.
+- **Unopened Packs per collection:** each Flow tile shows that collection's held sealed packs (`wallet_held_pack_value.by_collection`, from `get_wallet_pack_history` v37 `held_by_collection`); the tile FMV = fresh + stale-priced Moments + those packs at capped low ask, so **the tiles add up to Portfolio FMV** (verified live 11-26: $66,593 both ways). A cache row written before v4 has no split → the tile shows no pack column, never "0".
+- **Panini and Candy tiles:** the first Flow wallet card carries a Panini tile per linked username (newest `panini_portfolio_daily` value) or "+ Link your Panini username", and "+ Add your Candy wallet" until a Solana wallet is saved.
+- **Panini inside Portfolio FMV** (Trevor 11-25: "Yes it should be"): linked Panini usernames' cards and recorded value join Total Assets / Portfolio FMV / Collections on the dashboard and public profile (`/api/public/profile/<u>/panini`, totals only), a third "Panini cards" band on Value / 30D, the weekly email's Estimated value (like-for-like week rule), and the concierge snapshot for the asker's own wallet. The wallet-scoped share card / OG keep no Panini part. One server reader: `lib/panini/linked-value.ts`. A failed read adds nothing and says "Panini cards couldn't load — not included".
+
 ## ⭐ 2026-11-22 — one Portfolio FMV number, Total Assets (Trevor)
 
 - **Portfolio FMV** (dashboard, public profile, share card) is ONE figure: fresh + stale-priced Moments across EVERY collection — UFC included (Trevor ~3:09 PM PT: "We should have ufc"; a 3:05 PM closed-market exclusion was reversed) — + sealed packs at capped low ask.
