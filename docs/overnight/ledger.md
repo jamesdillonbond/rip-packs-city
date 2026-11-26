@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~3:20 PM PT · 🔧 SHIPPED — **Candy Sets tab: "Every Candy collection you hold", with brand chips** (Cowork cloud; Trevor: "Do it all")
+
+- **Why:** the Sets tab tracked one set (the 2026 MLB Base Series), so a brand filter there had one option. The fix is the missing content: a second panel listing every Candy collection the wallet holds a card of — different cards owned of those RPC has catalogued, cards held, and its brand — with League / brand chips (exact: the whole list is on the client). On a 125,407-card wallet: 222 of 398 collections.
+- **Honesty:** three states (failed read says so; a wallet with nothing says that; rows). "Catalogued" is RPC's count for the collection, a floor on its checklist, and the panel says so. A non-Solana address is refused, never answered with an empty list.
+- **Plumbing:** `candy_wallet_collection_progress(wallet)`; public GET `/api/candy-collections-progress` (`proxy.ts`).
+- **Still one option, by fact:** Candy's Packs tab — every row of `candy_packs` is the "2026 MLB Base Series ICONs" pack; there is no second brand of sealed pack to filter to.
+- **Migration:** `20261126231408_audit_20261126_candy_wallet_collection_progress` (applied via MCP, file committed).
+- **Revert:** `git revert` the code commit (find by message "candy: every collection a wallet holds on the Sets tab"). The function is unread after that.
+
 ### 2026-11-26 3:20 PM PT · /ufc/analytics Order Book Depth reads the live Aptos book
 - The card said "No live listings." because `analytics_listings_summary` reads Flow listings only, while about 465 Aptos asks were live on Rarible.
 - `/api/analytics/listings/summary?collections=ufc` now replaces the UFC row with the Aptos book. The source is the same as `/ufc/sniper`: `lib/analytics/ufc-aptos-book.ts` builds count, median and p90 from `computeUfcAptosSniperFeed`.
