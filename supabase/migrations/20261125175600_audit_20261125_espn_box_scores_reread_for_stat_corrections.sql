@@ -1,4 +1,5 @@
 -- audit_20261125_espn_box_scores_reread_for_stat_corrections
+-- ✅ APPLIED 2026-11-25 ~5:12 PM PT via apply_migration (recorded version 20261126011219; Trevor: "Apply"). Post-check: function present, anon EXECUTE false, cron jobid 927 '5 * * * *' active. One-off NBA re-read restat(96, 45, 'nba') run the same minute.
 --
 -- Trevor 11-25 ("Yes do it all and update everything"), found checking the Wednesday rookie post.
 -- MEASURED 2026-11-25 ~9:45 AM PT: `espn_gamelog_dispatch` fetches a box score only while
