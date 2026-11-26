@@ -15,12 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
-    // Added 2026-11-25. The interactive Moment slab's back: the game a Moment is from (exact date, US date
-    // first — a back-to-back's UTC date is the previous night's game), no nearest-day fallback, no stats for an
-    // All Day play without both teams (melts, draft picks), ESPN's season numbering.
+    // Added 2026-11-25. The interactive Moment slab's back: the game a Moment is from — Top Shot dates Moments
+    // by the US date OR the UTC date, so a back-to-back is settled by the edition's teams / description or left
+    // blank; recorded teams veto; no nearest-day fallback; no stats for an All Day play without both teams.
     fn: "get_moment_game_context",
     test: "supabase/tests/get_moment_game_context.sql",
-    migration: "supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql",
+    migration: "supabase/migrations/20261126031648_audit_20261125_moment_game_context_team_placeholders.sql",
   },
   {
     // Added 2026-11-25. ESPN's season number for a game date (NBA by the year it ends, NFL by the year it starts).

@@ -2,20 +2,22 @@
 --
 -- The back of the interactive Moment slab shows the player's line from the Moment's game and that
 -- season's averages. Rules pinned here, each measured on production before it was written:
---   (a) the Moment's date must match the game EXACTLY. Top Shot and All Day date a Moment by the US
---       game date (NBA 40 US-only vs 0 UTC-only; All Day 69 / 69). On a back-to-back the UTC date of
---       the previous night's late game equals the Moment's date — Giannis 2026-11-14 got the 11-13
---       Cleveland game before 20261126020836 — so the US date wins;
---   (b) a UTC-dated Moment still resolves (Lillard NBA Cup: Moment 12-11, game 12-10 ET);
---   (c) no nearest-day fallback — a game a day away is a different game: no line, season still shown;
+--   (a) Top Shot dates Moments BOTH ways — the US game date (Giannis 2026-11-14: DET) or the UTC date of
+--       the tip-off (Brunson 2025-12-19, recorded Pacers vs Knicks: the IND game the night before, ET).
+--       One game on the date, read either way, is that game;
+--   (b) on a back-to-back (one game on each reading) the game whose opponent the edition's own teams
+--       name wins (2 points), else the one its description names (1 point); a tie, or no evidence,
+--       is NO game line — the season still shows (20261126031512);
+--   (c) an edition that records its teams never gets a game against someone else;
 --   (d) an All Day play without both teams (a Player/Team Melt, a Draft Pick) has no game and no
 --       season: NULL (20261126021927);
 --   (e) the season is ESPN's number for that date (NBA by the year it ENDS, NFL by the year it starts);
---   (f) the box-score fallback matches the exact date too;
+--   (f) the box-score fallback answers only when the night before is empty;
 --   (g) a collection without ESPN stats, or a player without an ESPN id, is NULL.
 --
 -- The function DDL below is VERBATIM from
--- supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql;
+-- supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql (moment_gamelog_season)
+-- and supabase/migrations/20261126031648_audit_20261125_moment_game_context_team_placeholders.sql (get_moment_game_context);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -24,7 +26,8 @@ BEGIN;
 
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.editions (
-  id uuid PRIMARY KEY, collection_id uuid, player_id uuid, game_date date, home_team text, away_team text
+  id uuid PRIMARY KEY, collection_id uuid, player_id uuid, game_date date, home_team text, away_team text,
+  description text
 );
 CREATE TABLE public.player_identities (
   player_id uuid, league text, espn_league text, espn_id text, stats_refreshed_at timestamptz
@@ -48,34 +51,49 @@ CREATE TABLE public.player_game_stats (
 \set PIN 'aaaaaaaa-0000-0000-0000-000000000001'
 INSERT INTO public.collections VALUES (:'TS'::uuid, 'nba_top_shot'), (:'AD'::uuid, 'nfl_all_day'), (:'PIN'::uuid, 'disney_pinnacle');
 
--- players: Giannis, Lillard, an NFL QB, and a Top Shot player with no ESPN id
+-- players: Giannis, Lillard, an NFL QB, a Top Shot player with no ESPN id, Brunson
 INSERT INTO public.player_identities VALUES
   ('10000000-0000-0000-0000-000000000001', 'nba', 'nba', '3032977', now()),
   ('10000000-0000-0000-0000-000000000002', 'nba', 'nba', '6606', now()),
   ('10000000-0000-0000-0000-000000000003', 'nfl', 'nfl', '3139477', now()),
-  ('10000000-0000-0000-0000-000000000004', 'nba', 'nba', NULL, now());
+  ('10000000-0000-0000-0000-000000000004', 'nba', 'nba', NULL, now()),
+  ('10000000-0000-0000-0000-000000000005', 'nba', 'nba', '3934672', now());
 
 INSERT INTO public.editions VALUES
-  -- (a) Giannis, Moment dated 2026-11-14 (US date of the DET game)
-  ('20000000-0000-0000-0000-000000000001', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-14', NULL, NULL),
-  -- (b) Lillard, Moment dated 2024-12-11 (UTC date of the 12-10 ET ORL game)
-  ('20000000-0000-0000-0000-000000000002', :'TS'::uuid, '10000000-0000-0000-0000-000000000002', '2024-12-11', NULL, NULL),
-  -- (c) Lillard, Moment dated 2025-01-05: his nearest game is 01-04
-  ('20000000-0000-0000-0000-000000000003', :'TS'::uuid, '10000000-0000-0000-0000-000000000002', '2025-01-05', NULL, NULL),
-  -- (d) All Day Player Melt (no teams) and (d') a real All Day game
-  ('20000000-0000-0000-0000-000000000004', :'AD'::uuid, '10000000-0000-0000-0000-000000000003', '2023-09-10', NULL, NULL),
-  ('20000000-0000-0000-0000-000000000005', :'AD'::uuid, '10000000-0000-0000-0000-000000000003', '2025-02-09', 'Philadelphia Eagles', 'Kansas City Chiefs'),
-  -- (f) Giannis, a later Moment only the box-score lane knows; and one a day off it
-  ('20000000-0000-0000-0000-000000000006', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-20', NULL, NULL),
-  ('20000000-0000-0000-0000-000000000007', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-22', NULL, NULL),
+  -- (b) Giannis 2026-11-14, a back-to-back; the description names Detroit (the US-date game)
+  ('20000000-0000-0000-0000-000000000001', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-14', NULL, NULL,
+   'Giannis Antetokounmpo was named the East''s Player of the Week, and his passing set the tone early against Detroit … the Pistons defense'),
+  -- (a) Lillard 2024-12-11: one game (12-10 ET vs ORL, UTC 12-11)
+  ('20000000-0000-0000-0000-000000000002', :'TS'::uuid, '10000000-0000-0000-0000-000000000002', '2024-12-11', NULL, NULL, NULL),
+  -- (a) Lillard 2025-01-05: his nearest game is 01-04, neither reading of 01-05
+  ('20000000-0000-0000-0000-000000000003', :'TS'::uuid, '10000000-0000-0000-0000-000000000002', '2025-01-05', NULL, NULL, NULL),
+  -- (d) All Day Player Melt (no teams) and a real All Day game
+  ('20000000-0000-0000-0000-000000000004', :'AD'::uuid, '10000000-0000-0000-0000-000000000003', '2023-09-10', NULL, NULL, NULL),
+  ('20000000-0000-0000-0000-000000000005', :'AD'::uuid, '10000000-0000-0000-0000-000000000003', '2025-02-09', 'Philadelphia Eagles', 'Kansas City Chiefs', NULL),
+  -- (f) Giannis, recent Moments only the box-score lane knows
+  ('20000000-0000-0000-0000-000000000006', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-20', NULL, NULL, NULL),
+  ('20000000-0000-0000-0000-000000000007', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-22', NULL, NULL, NULL),
+  ('20000000-0000-0000-0000-000000000010', :'TS'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-21', NULL, NULL, NULL),
   -- (g) Pinnacle, and a Top Shot player with no ESPN id
-  ('20000000-0000-0000-0000-000000000008', :'PIN'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-14', NULL, NULL),
-  ('20000000-0000-0000-0000-000000000009', :'TS'::uuid, '10000000-0000-0000-0000-000000000004', '2026-11-14', NULL, NULL);
+  ('20000000-0000-0000-0000-000000000008', :'PIN'::uuid, '10000000-0000-0000-0000-000000000001', '2026-11-14', NULL, NULL, NULL),
+  ('20000000-0000-0000-0000-000000000009', :'TS'::uuid, '10000000-0000-0000-0000-000000000004', '2026-11-14', NULL, NULL, NULL),
+  -- (b) Brunson 2025-12-19 back-to-back, recorded Pacers vs Knicks: the UTC-date IND game, not the US-date PHI game
+  ('20000000-0000-0000-0000-000000000011', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2025-12-19', 'Indiana Pacers', 'New York Knicks', NULL),
+  -- (b) Brunson 2026-02-22 back-to-back with no teams and no description: no game line
+  ('20000000-0000-0000-0000-000000000012', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-02-22', NULL, NULL, 'A step-back three from the wing.'),
+  -- (c) Brunson 2026-01-10: one game on the date, but the edition records a different opponent
+  ('20000000-0000-0000-0000-000000000013', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'New York Knicks', 'Boston Celtics', NULL),
+  -- (c) and one where "LA Clippers" (ESPN) is recorded as "Los Angeles Clippers"
+  ('20000000-0000-0000-0000-000000000014', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-12', 'Los Angeles Clippers', 'New York Knicks', NULL),
+  -- (c) "N/A" is not a team: it must not veto the one game on the date; a trailing space is not a name
+  ('20000000-0000-0000-0000-000000000015', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'New York Knicks', 'N/A', NULL),
+  ('20000000-0000-0000-0000-000000000016', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'Miami Heat ', 'New York Knicks', NULL);
 
 INSERT INTO public.player_season_stats VALUES
   ('nba', '3032977', 2027, 2, 'averages', 'Averages', 'miami-heat', false, '{PTS}', '{avgPoints}', '{28.2}'),
   ('nba', '6606',    2025, 2, 'averages', 'Averages', 'milwaukee-bucks', false, '{PTS}', '{avgPoints}', '{24.9}'),
   ('nba', '6606',    2024, 2, 'averages', 'Averages', 'portland-trail-blazers', false, '{PTS}', '{avgPoints}', '{32.2}'),
+  ('nba', '3934672', 2026, 2, 'averages', 'Averages', 'new-york-knicks', false, '{PTS}', '{avgPoints}', '{27.1}'),
   ('nfl', '3139477', 2024, 2, 'passing', 'Passing', 'kansas-city-chiefs', false, '{YDS}', '{passingYards}', '{3928}');
 
 INSERT INTO public.player_gamelog_lines VALUES
@@ -86,9 +104,17 @@ INSERT INTO public.player_gamelog_lines VALUES
   ('nba', '6606', 'orl', 2025, '2024-25 Regular Season', '2024-12-11 00:00+00', '2024-12-10', '2024-12-11', 'vs', 'ORL', 'Orlando Magic', '114-109', 'W', '{points}', '{PTS}', '{28}'),
   ('nba', '6606', 'jan4', 2025, '2024-25 Regular Season', '2025-01-04 20:00+00', '2025-01-04', '2025-01-04', '@', 'BKN', 'Brooklyn Nets', '100-95', 'W', '{points}', '{PTS}', '{19}'),
   -- the QB: Week 1 2023 (where the melt is dated) and the Super Bowl
-  ('nfl', '3139477', 'wk1', 2023, '2023 Regular Season', '2023-09-08 00:20+00', '2023-09-07', '2023-09-08', 'vs', 'DET', 'Detroit Lions', '20-21', 'L', '{passingYards}', '{YDS}', '{226}'),
   ('nfl', '3139477', 'wk1b', 2023, '2023 Regular Season', '2023-09-10 17:00+00', '2023-09-10', '2023-09-10', 'vs', 'X', 'X', '1-0', 'W', '{passingYards}', '{YDS}', '{1}'),
-  ('nfl', '3139477', 'sb', 2024, '2024 Postseason', '2025-02-09 23:30+00', '2025-02-09', '2025-02-09', 'vs', 'PHI', 'Philadelphia Eagles', '22-40', 'L', '{passingYards}', '{YDS}', '{257}');
+  ('nfl', '3139477', 'sb', 2024, '2024 Postseason', '2025-02-09 23:30+00', '2025-02-09', '2025-02-09', 'vs', 'PHI', 'Philadelphia Eagles', '22-40', 'L', '{passingYards}', '{YDS}', '{257}'),
+  -- Brunson 12-18 ET @ IND (UTC 12-19) and 12-19 vs PHI (US 12-19)
+  ('nba', '3934672', 'ind', 2026, '2025-26 Regular Season', '2025-12-19 00:30+00', '2025-12-18', '2025-12-19', '@', 'IND', 'Indiana Pacers', '110-104', 'W', '{points}', '{PTS}', '{33}'),
+  ('nba', '3934672', 'phi', 2026, '2025-26 Regular Season', '2025-12-20 00:30+00', '2025-12-19', '2025-12-20', 'vs', 'PHI', 'Philadelphia 76ers', '99-101', 'L', '{points}', '{PTS}', '{21}'),
+  -- Brunson 02-21 ET vs HOU (UTC 02-22) and 02-22 @ CHI (US 02-22)
+  ('nba', '3934672', 'hou', 2026, '2025-26 Regular Season', '2026-02-22 00:30+00', '2026-02-21', '2026-02-22', 'vs', 'HOU', 'Houston Rockets', '120-111', 'W', '{points}', '{PTS}', '{30}'),
+  ('nba', '3934672', 'chi', 2026, '2025-26 Regular Season', '2026-02-23 01:00+00', '2026-02-22', '2026-02-23', '@', 'CHI', 'Chicago Bulls', '105-112', 'L', '{points}', '{PTS}', '{18}'),
+  -- Brunson 01-10 @ MIA (one game; the edition says Celtics) and 01-12 vs LAC (one game; recorded "Los Angeles Clippers")
+  ('nba', '3934672', 'mia', 2026, '2025-26 Regular Season', '2026-01-10 20:00+00', '2026-01-10', '2026-01-10', '@', 'MIA', 'Miami Heat', '100-90', 'W', '{points}', '{PTS}', '{25}'),
+  ('nba', '3934672', 'lac', 2026, '2025-26 Regular Season', '2026-01-12 20:00+00', '2026-01-12', '2026-01-12', 'vs', 'LAC', 'LA Clippers', '118-115', 'W', '{points}', '{PTS}', '{29}');
 
 INSERT INTO public.player_game_stats VALUES
   ('nba', '3032977', 'box20', '2026-11-20', true,  'BOS', false, '{"points":"31"}'),
@@ -120,8 +146,13 @@ declare
   v_season int;
   v_rows   jsonb;
   v_game   jsonb;
+  v_n      int;
+  v_top    int;
+  v_tops   int;
+  v_home   text;
+  v_away   text;
 begin
-  select e.player_id, e.game_date, c.slug, e.home_team, e.away_team into v_e
+  select e.player_id, e.game_date, c.slug, e.home_team, e.away_team, e.description into v_e
     from public.editions e
     join public.collections c on c.id = e.collection_id and c.slug in ('nba_top_shot', 'nfl_all_day')
    where e.id = p_edition_id;
@@ -133,6 +164,14 @@ begin
   -- game and no season, so the slab shows no stats for it.
   if v_e.slug = 'nfl_all_day' and (v_e.home_team is null or v_e.away_team is null) then
     return null;
+  end if;
+  -- The edition's two teams as nicknames ("Los Angeles Clippers" -> "clippers"), trimmed; a
+  -- placeholder ("N/A") or a missing side means the teams are not recorded.
+  v_home := nullif(lower(regexp_replace(btrim(coalesce(v_e.home_team, '')), '^.*\s', '')), '');
+  v_away := nullif(lower(regexp_replace(btrim(coalesce(v_e.away_team, '')), '^.*\s', '')), '');
+  if v_home = 'n/a' or v_away = 'n/a' or v_home is null or v_away is null then
+    v_home := null;
+    v_away := null;
   end if;
 
   select i.league, i.espn_id, coalesce(i.espn_league, i.league) as el into v_i
@@ -159,30 +198,69 @@ begin
     from public.player_season_stats s
    where s.league = v_i.league and s.espn_id = v_i.espn_id and s.season = v_season and s.season_type = 2;
 
-  select jsonb_build_object(
-           'source', 'gamelog',
-           'event_id', l.event_id,
-           'game_date', l.game_date,
-           'season_type', l.season_type_name,
-           'at_vs', l.at_vs,
-           'opponent_abbr', l.opponent_abbr,
-           'opponent_name', l.opponent_name,
-           'score', l.score,
-           'result', l.result,
-           'labels', to_jsonb(l.labels),
-           'names', to_jsonb(l.names),
-           'values', to_jsonb(l."values"))
-    into v_game
-    from public.player_gamelog_lines l
-   where l.espn_league = v_el and l.espn_id = v_i.espn_id
-     and (l.game_date = v_e.game_date or l.game_date_utc = v_e.game_date)
-   order by (l.game_date = v_e.game_date) desc,
-            (l.season_type_name ilike '%preseason%'),
-            l.game_at
-   limit 1;
+  -- The game: every stored game on the Moment's date, read as the US date OR the UTC date — Top
+  -- Shot dates Moments both ways (Giannis 2026-11-14 is the US date of the DET game; Brunson
+  -- 2025-12-19, recorded Pacers vs Knicks, is the UTC date of the IND game the night before).
+  --   · one game          → it, unless the edition records its teams and this opponent is not one;
+  --   · two (back-to-back) → the one whose opponent the edition's teams name (2 points) or its
+  --                          description names (1 point), if exactly one scores highest; else none.
+  -- No line beats a wrong one: the season line still shows.
+  with cand as (
+    select l.*,
+           lower(regexp_replace(coalesce(l.opponent_name, ''), '^.*\s', '')) as opp_nick
+      from public.player_gamelog_lines l
+     where l.espn_league = v_el and l.espn_id = v_i.espn_id
+       and (l.game_date = v_e.game_date or l.game_date_utc = v_e.game_date)
+  ), scored as (
+    select c.*,
+           (case when v_home is not null and c.opp_nick in (v_home, v_away) then 2 else 0 end)
+         + (case when v_e.description is not null and c.opp_nick <> ''
+                  and v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '^.*\s', '') || '\M')
+                 then 1 else 0 end) as evidence
+      from cand c
+  )
+  select count(*), max(evidence), count(*) filter (where evidence = (select max(evidence) from scored))
+    into v_n, v_top, v_tops
+    from scored;
 
-  -- The box-score lane (2026-10-01 on) for a basketball game the game log has not reached yet.
-  if v_game is null and v_el in ('nba', 'wnba') then
+  if v_n = 1 or (v_n > 1 and v_top > 0 and v_tops = 1) then
+    select jsonb_build_object(
+             'source', 'gamelog',
+             'event_id', s.event_id,
+             'game_date', s.game_date,
+             'season_type', s.season_type_name,
+             'at_vs', s.at_vs,
+             'opponent_abbr', s.opponent_abbr,
+             'opponent_name', s.opponent_name,
+             'score', s.score,
+             'result', s.result,
+             'labels', to_jsonb(s.labels),
+             'names', to_jsonb(s.names),
+             'values', to_jsonb(s."values"))
+      into v_game
+      from (
+        select c.*,
+               (case when v_home is not null and c.opp_nick in (v_home, v_away) then 2 else 0 end)
+             + (case when v_e.description is not null and c.opp_nick <> ''
+                      and v_e.description ~ ('\m' || regexp_replace(c.opponent_name, '^.*\s', '') || '\M')
+                     then 1 else 0 end) as evidence,
+               (v_home is not null and c.opp_nick not in (v_home, v_away)) as teams_disagree
+          from (
+            select l.*, lower(regexp_replace(coalesce(l.opponent_name, ''), '^.*\s', '')) as opp_nick
+              from public.player_gamelog_lines l
+             where l.espn_league = v_el and l.espn_id = v_i.espn_id
+               and (l.game_date = v_e.game_date or l.game_date_utc = v_e.game_date)
+          ) c
+      ) s
+     where not s.teams_disagree
+     order by s.evidence desc, s.game_at
+     limit 1;
+  end if;
+
+  -- The box-score lane (2026-10-01 on, US dates only) for a basketball game the game log has not
+  -- reached yet — only when the night before is empty, since a UTC-dated Moment for a game the
+  -- night before reads as this date too.
+  if v_game is null and v_n = 0 and v_el in ('nba', 'wnba') then
     select jsonb_build_object(
              'source', 'box',
              'event_id', g.event_id,
@@ -195,6 +273,8 @@ begin
       from public.player_game_stats g
      where g.league = v_el and g.espn_id = v_i.espn_id
        and g.game_date = v_e.game_date
+       and not exists (select 1 from public.player_game_stats p
+                        where p.league = v_el and p.espn_id = v_i.espn_id and p.game_date = v_e.game_date - 1)
      limit 1;
   end if;
 
@@ -209,30 +289,45 @@ end
 $$;
 -- <<< END verbatim <<<
 
--- (a) the US date wins a back-to-back
-SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000001')->'game'->>'opponent_abbr', 'DET',
-  '(a) a Moment dated 2026-11-14 is the 11-14 DET game, not the 11-13 CLE game whose UTC date is 11-14');
--- (b) a UTC-dated Moment still resolves
+-- (a) one game on the date, either reading
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000002')->'game'->>'opponent_abbr', 'ORL',
-  '(b) Lillard''s 12-11 Moment is the 12-10 ET ORL game');
--- (c) no nearest-day fallback; the season still shows
+  '(a) Lillard''s 12-11 Moment is the 12-10 ET ORL game (its UTC date)');
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000003')->'game' = 'null'::jsonb,
-  '(c) a game a day away is not this Moment''s game');
+  '(a) a game on neither reading of the date is not this Moment''s game');
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000003')->>'season', '2025',
-  '(c, e) the season still resolves: a January 2025 NBA game is the 2024-25 season, numbered 2025');
+  '(e) a January 2025 NBA game is the 2024-25 season, numbered 2025');
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000003')->'season_rows'->0->'values'->>0, '24.9',
   '(e) the 2025 season''s line, not 2024''s');
+-- (b) back-to-backs
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000001')->'game'->>'opponent_abbr', 'DET',
+  '(b) Giannis 11-14: the description names Detroit, the US-date game');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000011')->'game'->>'opponent_abbr', 'IND',
+  '(b) Brunson 12-19, recorded Pacers vs Knicks: the UTC-date IND game, not the US-date PHI game');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000012')->'game' = 'null'::jsonb,
+  '(b) a back-to-back with no evidence either way gets no game line');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000012')->>'season', '2026',
+  '(b) ... and still its season');
+-- (c) recorded teams veto a single candidate; nicknames match across spellings
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000013')->'game' = 'null'::jsonb,
+  '(c) an edition recorded vs Boston never gets the Miami game on its date');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000014')->'game'->>'opponent_abbr', 'LAC',
+  '(c) "LA Clippers" is the recorded "Los Angeles Clippers"');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000015')->'game'->>'opponent_abbr', 'MIA',
+  '(c) an "N/A" side is no record of the teams: the one game on the date stands');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000016')->'game'->>'opponent_abbr', 'MIA',
+  '(c) "Miami Heat " (trailing space) is the Heat');
 -- (d) an All Day play with no teams is not a game: nothing, not the Week 1 game on its date
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000004') IS NULL,
   '(d) a Player Melt dated to the 2023 opener has no game and no season');
--- (d') a real All Day game resolves, in the season it STARTED (a February Super Bowl is 2024)
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000005')->'game'->>'opponent_abbr', 'PHI',
-  '(d'') the Super Bowl Moment is the Super Bowl');
+  '(d) the Super Bowl Moment is the Super Bowl');
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000005')->>'season', '2024',
   '(e) an NFL February game belongs to the season that started the year before');
--- (f) the box-score lane: exact date only
+-- (f) the box-score lane: exact date, and only with the night before empty
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000006')->'game'->>'source', 'box',
   '(f) a recent game only the box-score lane knows');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000010')->'game' = 'null'::jsonb,
+  '(f) 11-21 has a box row but so does 11-20 — a UTC-dated Moment for 11-20 reads as 11-21: no line');
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000007')->'game' = 'null'::jsonb,
   '(f) the box-score lane does not lend the 11-21 game to an 11-22 Moment');
 -- (g) out of scope
