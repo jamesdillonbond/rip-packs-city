@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:45 PM PT · 🗄 APPLIED (`20261126221321`) + 🔧 SHIPPED — **sort opened packs by what you still hold; pack filters stay in the address bar** (Claude Code cloud; Trevor: "Keep going")
+
+- **DB:** `get_wallet_pack_history` v40 — `p_sort` `held_desc` / `held_asc` order opened packs by the pulls still in the wallet at wallet FMV (the `held_fmv_usd` rule; an unknown sorts last). Applied ~2:13 PM PT as a one-edit DO block asserting the v39 md5 before and `ff428d17…` after; ACL unchanged (anon false). Warm, Trevor's 2,578 opened Top Shot packs: 641–786 ms vs 665 ms newest-first. Pin V40-1..2 (red on v39).
+- **Code:** "Still held: high to low / low to high" in the sort menu on the Opened tab and the dashboard's mixed list (a tab without it falls back to Newest). The binder's tab + filters and `/dashboard/packs`' status + filters are kept in the address bar (`packs_view`, `packs_q`, `packs_tier`, `packs_result`, `packs_sort`), so a filtered list survives a refresh, the back button and a shared link; route allowlist takes the two new sorts.
+- **Revert:** re-apply `get_wallet_pack_history` from `20261126220235_audit_20261126_pack_history_v39_outcome_paid_packs_only.sql` (revert the code with it: v39 reads `held_desc` as Newest, harmlessly); `git revert` the commit "packs: sort opened by still held; filters in the address bar".
+
 ### 2026-11-26 ~2:29 PM PT · 🔧 SHIPPED — **Top Sales board: a League row for Panini and Candy (`?property=`)** (Cowork cloud; Trevor: "Keep going and do it all")
 
 - **What:** `/insights/top-sales` shows a second pill row when Panini or Candy is picked, sent as `property=<slug>`. Panini reads its own view narrowed by product-id prefix and re-checked exactly; Candy reads `insights_top_sales_for_candy_property(slug)` — the view's own rows for one brand. The slug is resolved first (`lib/insights/league-scope.ts`): unknown or misplaced → 400, failed lookup → the board's unavailable response. Under a Panini league the "not shown" sales count reports unknown rather than the whole collection's number.
