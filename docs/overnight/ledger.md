@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~1:35 PM PT · 🗄 APPLIED (`20261126212338`) — the Top Shot offer pull now logs every step it takes (`fmv_offer_pull_log`); pricing unchanged (chat session; Trevor: "Yes do it all")
+
+- Why: the pre-pull price was stored nowhere, so a floored row could not be read back (`pre = 2 × fmv`, not the inverse) and a Legendary / Ultimate row the rule skipped could not be found at all (no suffix). Those are the rows the falsifier and the Mon 11-30 read need. The trigger fn writes one row per price it pulled, floored or skipped — pre-pull price, offer, result — in its own block; a failed log write never fails a price.
+- Verified: file md5 = `schema_migrations` md5; rolled-back inserts on prod logged `skipped` (Legendary $96.33, $27 offer), `pulled` (Legendary $40 → $29.79) and `floored` (Rare $18 → $9.00) with prices identical to before; pin case 8 added (two planted defects caught); preflight 8 / 8. Table: RLS on, no anon / authenticated grants. ~2–4k rows a day, nothing on a request path reads it.
+- **Revert:** re-apply the function body of `20261126195919` (prosrc md5 `ae54375a2df5f1b334cd6bb0315310e1`), repoint the pin and drift guard, `DROP TABLE public.fmv_offer_pull_log;`.
+
 ### 2026-11-26 1:30 PM PT · UFC overview reads Aptos: "Flow + Aptos" chip, PER SALE pill, cheapest Aptos asks panel, no Flow insider detectors
 - `/ufc/overview` still showed the old closed market: a FLOW-only chip, an ARCHIVED pipeline pill, "No deals ≥15% off" from the closed Flow venue (next to a Sniper tab of ~465 live Aptos asks), and Flow insider detectors watching a venue with no trades.
 - What changed:
