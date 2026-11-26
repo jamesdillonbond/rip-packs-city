@@ -90,7 +90,7 @@
 --      page-by-page sums over the rows (V29-1), so no number moves.
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (get_wallet_pack_history v39: supabase/migrations/20261126220235_audit_20261126_pack_history_v39_outcome_paid_packs_only.sql;
+-- (get_wallet_pack_history v40: supabase/migrations/20261126221321_audit_20261126_pack_history_v40_sort_by_held_value.sql;
 --  wallet_held_pack_value v4: supabase/migrations/20261126033201_audit_20261125_held_packs_by_collection.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -256,9 +256,11 @@ DECLARE
   -- neither is a pack that cost $0 (reward, out of a box).
   v_outcome text := CASE WHEN lower(p_outcome) IN ('up', 'down') THEN lower(p_outcome) END;
   -- p_sort: recent (default) | oldest | value_desc | value_asc | cost_desc | cost_asc |
-  -- pl_desc | pl_asc | name. An unknown value is recent. Unknown values sort last.
+  -- pl_desc | pl_asc | name | (v40) held_desc | held_asc -- an opened pack's pulls still in this
+  -- wallet at their wallet FMV (held_fmv_usd's rule). An unknown value is recent. Unknown values sort last.
   v_sort text := CASE WHEN lower(p_sort) IN ('oldest', 'value_desc', 'value_asc', 'cost_desc', 'cost_asc',
-                                            'pl_desc', 'pl_asc', 'name') THEN lower(p_sort) ELSE 'recent' END;
+                                            'pl_desc', 'pl_asc', 'name', 'held_desc', 'held_asc')
+                      THEN lower(p_sort) ELSE 'recent' END;
   v_ts uuid;
   v_ad uuid;
   v_gz uuid;
@@ -982,9 +984,14 @@ BEGIN
       CASE WHEN f.status = 'held'   THEN hv.value_usd
            WHEN f.status = 'ripped' THEN f.pull_value_usd
            WHEN f.status IN ('flipped', 'sold') THEN f.sell_price END AS n_sort_value,
-      CASE WHEN f.status = 'held' THEN hv.value_usd - hv.buy_usd ELSE f.realized_pl_usd END AS n_sort_pl
+      CASE WHEN f.status = 'held' THEN hv.value_usd - hv.buy_usd ELSE f.realized_pl_usd END AS n_sort_pl,
+      -- v40 (2026-11-26, Trevor: "Keep going" -- sort Opened by what you still hold): the row's
+      -- held_fmv_usd, under the same rule (NULL unless every held pull is priced; 0 = none held)
+      CASE WHEN hp.pulls_held IS NOT NULL AND hp.pulls_held_priced = hp.pulls_held
+           THEN COALESCE(hp.held_fmv_sum, 0) END AS n_sort_held
     FROM filtered f
     LEFT JOIN held_valued hv ON hv.collection_id = f.collection_id AND hv.pack_nft_id = f.pack_nft_id
+    LEFT JOIN held_pulls hp ON hp.collection_id = f.collection_id AND hp.pack_nft_id = f.pack_nft_id
     WHERE (v_search IS NULL OR f.pack_name ILIKE '%' || v_search || '%')
       AND (v_tier IS NULL OR lower(f.pack_tier) = v_tier)
   ),
@@ -997,6 +1004,8 @@ BEGIN
         CASE WHEN v_sort = 'cost_asc'   THEN n.buy_usd      END ASC  NULLS LAST,
         CASE WHEN v_sort = 'pl_desc'    THEN n.n_sort_pl    END DESC NULLS LAST,
         CASE WHEN v_sort = 'pl_asc'     THEN n.n_sort_pl    END ASC  NULLS LAST,
+        CASE WHEN v_sort = 'held_desc'  THEN n.n_sort_held  END DESC NULLS LAST,
+        CASE WHEN v_sort = 'held_asc'   THEN n.n_sort_held  END ASC  NULLS LAST,
         CASE WHEN v_sort = 'name'       THEN lower(n.pack_name) END ASC NULLS LAST,
         CASE WHEN v_sort = 'oldest'     THEN n.latest_event_at END ASC NULLS LAST,
         n.latest_event_at DESC NULLS LAST, n.collection_id, n.pack_nft_id) AS n_rn
@@ -2695,6 +2704,22 @@ BEGIN
   PERFORM _assert_eq(ids, '22.50,22.50,3.50,3.50,null,null,null', 'V39-2 and still sort by value');
   PERFORM _assert_eq(r->'tab_totals'->>'held_value_usd', '52.00', 'V39-2 and still count in the tab value');
   RAISE NOTICE '✓ V39 winners / losers are packs paid for';
+END $$;
+
+-- V40 (2026-11-26, Trevor "Keep going" -- sort Opened by what you still hold): held_desc / held_asc order
+-- opened packs by held_fmv_usd (0xv27w: HPK1 $12, HAD1 $2.50, HBURST $0, HPK2 unknown).
+DO $$
+DECLARE ids text;
+BEGIN
+  SELECT string_agg(p->>'pack_nft_id', ',' ORDER BY o) INTO ids
+    FROM jsonb_array_elements((public.get_wallet_pack_history('0xv27w', NULL, 'ripped', 50, 0, p_sort => 'held_desc'))->'packs') WITH ORDINALITY x(p, o);
+  PERFORM _assert_eq(ids, 'HPK1,HAD1,HBURST,HPK2', 'V40-1 held_desc: most still held first, a real $0 before an unknown');
+  SELECT string_agg(p->>'pack_nft_id', ',' ORDER BY o) INTO ids
+    FROM jsonb_array_elements((public.get_wallet_pack_history('0xv27w', NULL, 'ripped', 50, 0, p_sort => 'held_asc'))->'packs') WITH ORDINALITY x(p, o);
+  PERFORM _assert_eq(ids, 'HBURST,HAD1,HPK1,HPK2', 'V40-1 held_asc: least first, the unknown still last');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xv27w', NULL, 'ripped', 50, 0, p_sort => 'held_desc'))->'filters'->>'sort', 'held_desc',
+                     'V40-2 held_desc is a known sort, not recent');
+  RAISE NOTICE '✓ V40 opened packs sort by what is still held';
 END $$;
 
 ROLLBACK;

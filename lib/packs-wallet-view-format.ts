@@ -704,10 +704,17 @@ export interface PackTabTotals {
 
 export type PackSort =
   | "recent" | "oldest" | "value_desc" | "value_asc" | "cost_desc" | "cost_asc" | "pl_desc" | "pl_asc" | "name"
+  | "held_desc" | "held_asc"
 
 export const PACK_SORTS: readonly PackSort[] = [
-  "recent", "oldest", "value_desc", "value_asc", "cost_desc", "cost_asc", "pl_desc", "pl_asc", "name",
+  "recent", "oldest", "value_desc", "value_asc", "cost_desc", "cost_asc", "pl_desc", "pl_asc", "held_desc", "held_asc", "name",
 ]
+
+/** The sorts a tab offers. "Still held" (v40, an opened pack's pulls still in the wallet at wallet FMV)
+ *  only means something where packs were opened: the Opened tab and the dashboard's mixed list. */
+export function packSortsFor(filter: PackFilter | "all"): readonly PackSort[] {
+  return filter === "opened" || filter === "all" ? PACK_SORTS : PACK_SORTS.filter((s) => s !== "held_desc" && s !== "held_asc")
+}
 
 export type PackOutcome = "all" | "up" | "down"
 
@@ -727,6 +734,8 @@ export function packSortLabel(filter: PackFilter | "all", sort: PackSort): strin
     case "cost_asc": return "Cost: low to high"
     case "pl_desc": return `${gain}: best first`
     case "pl_asc": return `${gain}: worst first`
+    case "held_desc": return "Still held: high to low"
+    case "held_asc": return "Still held: low to high"
     case "name": return "Name A–Z"
   }
 }
@@ -778,6 +787,58 @@ export interface PackFilterState {
 }
 
 export const PACK_FILTER_DEFAULTS: PackFilterState = { search: "", tier: null, outcome: "all", sort: "recent" }
+
+// ── Filters in the address bar (2026-11-26, Trevor: "Keep going") ─────────────────────────────
+// A filtered pack list survives a refresh, the back button and a shared link. Keys are prefixed so
+// they never collide with the Moments view's own params (?q=, ?tier=, ?sort= …). Every value read
+// back is validated; anything unknown is dropped, never passed to the read.
+
+export const PACK_URL_KEYS = {
+  view: "packs_view",
+  q: "packs_q",
+  tier: "packs_tier",
+  outcome: "packs_result",
+  sort: "packs_sort",
+} as const
+
+const TIER_URL_RE = /^[a-z0-9][a-z0-9 _-]{0,29}$/
+
+/** The filters a URL carries (validated) and its raw view value (the caller validates that). */
+export function packFiltersFromUrl(get: (key: string) => string | null): { filters: PackFilterState; view: string | null } {
+  const q = (get(PACK_URL_KEYS.q) ?? "").trim().slice(0, 80)
+  const tierRaw = (get(PACK_URL_KEYS.tier) ?? "").trim().toLowerCase()
+  const outcomeRaw = (get(PACK_URL_KEYS.outcome) ?? "").trim().toLowerCase()
+  const sortRaw = (get(PACK_URL_KEYS.sort) ?? "").trim().toLowerCase()
+  return {
+    filters: {
+      search: q,
+      tier: TIER_URL_RE.test(tierRaw) ? tierRaw : null,
+      outcome: outcomeRaw === "up" || outcomeRaw === "down" ? outcomeRaw : "all",
+      sort: (PACK_SORTS as readonly string[]).includes(sortRaw) ? (sortRaw as PackSort) : "recent",
+    },
+    view: get(PACK_URL_KEYS.view),
+  }
+}
+
+/** `href` with the pack filters written in (defaults removed, every other param kept). Returns the
+ *  same string when nothing changed, so a caller can skip a history write. */
+export function packFiltersHref(href: string, f: PackFilterState, view: string | null, defaultView: string): string {
+  const url = new URL(href)
+  const set = (k: string, v: string | null) => { if (v) url.searchParams.set(k, v); else url.searchParams.delete(k) }
+  const p = packFilterParams(f)
+  set(PACK_URL_KEYS.q, p.q ?? null)
+  set(PACK_URL_KEYS.tier, p.tier ?? null)
+  set(PACK_URL_KEYS.outcome, p.outcome ?? null)
+  set(PACK_URL_KEYS.sort, p.sort ?? null)
+  set(PACK_URL_KEYS.view, view && view !== defaultView ? view : null)
+  const out = url.toString()
+  return out === new URL(href).toString() ? href : out
+}
+
+/** A sort the tab does not offer (Still held on the Sealed tab) falls back to newest. */
+export function packSortForTab(filter: PackFilter | "all", sort: PackSort): PackSort {
+  return packSortsFor(filter).includes(sort) ? sort : "recent"
+}
 
 /** True when any filter narrows the tab (a sort alone does not narrow). */
 export function packFiltersNarrow(f: PackFilterState): boolean {

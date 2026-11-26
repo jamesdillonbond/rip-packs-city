@@ -9,12 +9,12 @@
 // summary.by_collection. Row click expands the lifecycle via /api/wallet/
 // pack-lifecycle.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import UnclaimedRewardCard from "@/components/profile/UnclaimedRewardCard"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packCoverage, collectionPlWithheld, PACK_FILTER_DEFAULTS, packFilterForStatus, packFilterParams, packFiltersNarrow, packTierOptions, type PackFilterState, type PackTabTotals } from "@/lib/packs-wallet-view-format"
+import { packCoverage, collectionPlWithheld, PACK_FILTER_DEFAULTS, packFilterForStatus, packFilterParams, packFiltersNarrow, packTierOptions, packFiltersFromUrl, packFiltersHref, packSortForTab, type PackFilterState, type PackTabTotals } from "@/lib/packs-wallet-view-format"
 import PackFilterBar from "@/components/packs/PackFilterBar"
 import { heldPacksCaption, pullsHeldLine, packHeldFmvLabel, packHeldPullsLabel, packValueLabel, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
@@ -282,7 +282,32 @@ export default function PackHistoryClient() {
     return () => clearTimeout(id)
   }, [searchInput])
   // A tier belongs to the list it was offered for; a new status, collection or wallet clears it.
-  useEffect(() => { setFilters((f) => (f.tier == null ? f : { ...f, tier: null })) }, [status, collection, activeWallet])
+  // 2026-11-26: status + filters start from the address bar and are written back. Read once on mount (this page
+  // has no useSearchParams, and reading window during render would mismatch the server's HTML); the history
+  // read waits for it so the first fetch is the right one.
+  const [urlRead, setUrlRead] = useState(false)
+  const statusSeen = useRef(false)
+  useEffect(() => {
+    const { filters: f, view } = packFiltersFromUrl((k) => new URLSearchParams(window.location.search).get(k))
+    const st = STATUS_OPTIONS.find((o) => o.key === view)?.key ?? "all"
+    setStatus(st)
+    setFilters({ ...f, sort: packSortForTab(packFilterForStatus(st), f.sort) })
+    setSearchInput(f.search)
+    setUrlRead(true)
+  }, [])
+  useEffect(() => {
+    if (!urlRead) return
+    if (!statusSeen.current) { statusSeen.current = true; return } // the URL's own tier survives the mount
+    setFilters((f) => {
+      const sort = packSortForTab(packFilterForStatus(status), f.sort)
+      return f.tier == null && sort === f.sort ? f : { ...f, tier: null, sort }
+    })
+  }, [status, collection, activeWallet, urlRead])
+  useEffect(() => {
+    if (!urlRead) return
+    const next = packFiltersHref(window.location.href, filters, status, "all")
+    if (next !== window.location.href) window.history.replaceState(window.history.state, "", next)
+  }, [filters, status, urlRead])
   const narrowing = packFiltersNarrow(filters)
   const clearFilters = useCallback(() => { setSearchInput(""); setFilters(PACK_FILTER_DEFAULTS) }, [])
   const tierKey = `${activeWallet ?? ""}|${status}|${collection ?? ""}`
@@ -344,7 +369,7 @@ export default function PackHistoryClient() {
 
   // ── Load history when wallet / filters / page change ─────────────────────
   const loadHistory = useCallback(async () => {
-    if (!activeWallet) return
+    if (!activeWallet || !urlRead) return
     setHistoryLoading(true)
     setHistoryError(null)
     try {
@@ -371,7 +396,7 @@ export default function PackHistoryClient() {
     } finally {
       setHistoryLoading(false)
     }
-  }, [activeWallet, status, collection, page, filters, tierKey])
+  }, [activeWallet, status, collection, page, filters, tierKey, urlRead])
 
   useEffect(() => {
     loadHistory()

@@ -40,7 +40,11 @@ function json(status: number, body: unknown, ok = status < 400) {
   return { ok, status, json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response
 }
 
-beforeEach(() => vi.useRealTimers())
+beforeEach(() => {
+  vi.useRealTimers()
+  // /dashboard/packs writes its status + filters to the address bar (2026-11-26); start each test clean
+  window.history.replaceState(null, "", "/")
+})
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -183,6 +187,27 @@ describe("PackHistoryClient", () => {
     await screen.findByText("No packs match these filters.")
     fireEvent.click(screen.getByText("Clear filters"))
     await waitFor(() => expect(urls.at(-1)).not.toMatch(/[?&](q|tier|outcome|sort)=/))
+  })
+
+  it("starts from the address bar's status and filters, and writes changes back", async () => {
+    window.history.replaceState(null, "", "/dashboard/packs?packs_view=ripped&packs_sort=held_asc&packs_q=Rookie")
+    const urls: string[] = []
+    mount().mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("saved-wallets")) return json(200, WALLETS)
+      if (url.includes("pack-summary")) return json(200, SUMMARY)
+      if (url.includes("pack-history")) { urls.push(url); return json(200, { packs: [ROW()], total_count: 1 }) }
+      return json(200, {})
+    })
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0))
+    // the FIRST read already carries the URL's state -- no default read first
+    expect(urls[0]).toContain("status=ripped")
+    expect(urls[0]).toContain("sort=held_asc")
+    expect(urls[0]).toContain("q=Rookie")
+    fireEvent.click(screen.getByText("Winners"))
+    await waitFor(() => expect(window.location.search).toContain("packs_result=up"))
+    expect(window.location.search).toContain("packs_view=ripped")
+    window.history.replaceState(null, "", "/")
   })
 
   it("renders the summary and the pack table for the active wallet", async () => {

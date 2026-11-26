@@ -1126,7 +1126,8 @@ const PINS = [
     // v38 (2026-11-26, Trevor: binder Packs filters): p_search / p_tier / p_outcome / p_sort, applied before
     // the page; tab_totals follow them and gain tab_packs + tiers. Signature changed (old 5-arg overload dropped).
     // v39 (2026-11-26, Trevor "Yes do that"): winners / losers count only packs with a cost above $0.
-    migration: "supabase/migrations/20261126220235_audit_20261126_pack_history_v39_outcome_paid_packs_only.sql",
+    // v40 (2026-11-26): p_sort held_desc / held_asc -- opened packs by the pulls still held, at wallet FMV.
+    migration: "supabase/migrations/20261126221321_audit_20261126_pack_history_v40_sort_by_held_value.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

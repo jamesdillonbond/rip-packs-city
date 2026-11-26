@@ -48,6 +48,9 @@ import {
   packTierOptions,
   packFiltersNarrow,
   packFilterParams,
+  packFiltersFromUrl,
+  packFiltersHref,
+  packSortForTab,
   type PackFilterState,
 } from "@/lib/packs-wallet-view-format"
 import { accentText, labelOn, accentFill } from "@/lib/accent-text"
@@ -207,13 +210,17 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
   // Together these cover every status the classifier can emit except 'other',
   // which is degenerate (no buy, no sell, no rip) and measured empty
   // platform-wide. Verified on this wallet: held 94 + ripped 117 = 211 = all.
-  const [packFilter, setPackFilter] = useState<PackFilter>("unopened")
+  // 2026-11-26: the tab and the filters below start from the address bar (packs_view, packs_q …), so a
+  // filtered list survives a refresh, the back button and a shared link; they are written back as they change.
+  const [fromUrl] = useState(() => packFiltersFromUrl((k) => searchParams.get(k))) // read once, on mount
+  const [packFilter, setPackFilter] = useState<PackFilter>(() =>
+    fromUrl.view === "opened" || fromUrl.view === "sold" || fromUrl.view === "unopened" ? fromUrl.view : "unopened")
 
   // ── Search / tier / winners-losers / sort (Trevor 2026-11-26) ──────────
   // Applied server-side (get_wallet_pack_history v38) before the page, so the count, the page and the
   // tab metrics are one population. The search box is debounced; the read takes `filters`.
-  const [filters, setFilters] = useState<PackFilterState>(PACK_FILTER_DEFAULTS)
-  const [searchInput, setSearchInput] = useState("")
+  const [filters, setFilters] = useState<PackFilterState>(() => ({ ...fromUrl.filters, sort: packSortForTab(packFilter, fromUrl.filters.sort) }))
+  const [searchInput, setSearchInput] = useState(fromUrl.filters.search)
   useEffect(() => {
     const id = setTimeout(() => {
       setFilters((f) => (f.search === searchInput.trim() ? f : { ...f, search: searchInput.trim() }))
@@ -221,8 +228,23 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
     return () => clearTimeout(id)
   }, [searchInput])
   // A tier belongs to its tab (All Day's PREMIUM is not on the Sold tab of a Top Shot wallet), so a tab
-  // switch clears it; search, winners / losers and sort carry over.
-  useEffect(() => { setFilters((f) => (f.tier == null ? f : { ...f, tier: null })) }, [packFilter, collection])
+  // switch clears it; search, winners / losers and sort carry over -- except a sort the new tab does not
+  // offer (Still held is an Opened sort), which falls back to newest. The first run is the mount: the
+  // tier read from the address bar is kept.
+  const tabSeen = useRef(false)
+  useEffect(() => {
+    if (!tabSeen.current) { tabSeen.current = true; return }
+    setFilters((f) => {
+      const sort = packSortForTab(packFilter, f.sort)
+      return f.tier == null && sort === f.sort ? f : { ...f, tier: null, sort }
+    })
+  }, [packFilter, collection])
+  // Written back to the address bar (replaceState: no history entry per keystroke, no navigation).
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const next = packFiltersHref(window.location.href, filters, packFilter, "unopened")
+    if (next !== window.location.href) window.history.replaceState(window.history.state, "", next)
+  }, [filters, packFilter])
   // The tab's tiers, kept while a filtered read is in flight so the chips do not blink out.
   const [tabTiers, setTabTiers] = useState<{ tab: PackFilter; tiers: Record<string, number> } | null>(null)
   const narrowing = packFiltersNarrow(filters)

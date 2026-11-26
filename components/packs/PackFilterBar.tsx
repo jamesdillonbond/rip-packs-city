@@ -7,7 +7,7 @@
 
 import { accentFill, labelOn } from "@/lib/accent-text"
 import {
-  PACK_SORTS,
+  packSortsFor,
   PACK_OUTCOMES,
   packSortLabel,
   packOutcomeLabel,
@@ -79,7 +79,7 @@ export default function PackFilterBar({
           data-testid="pack-sort"
           style={{ ...field, flex: "0 1 auto", cursor: "pointer" }}
         >
-          {PACK_SORTS.map((s) => <option key={s} value={s}>{packSortLabel(tab, s)}</option>)}
+          {packSortsFor(tab).map((s) => <option key={s} value={s}>{packSortLabel(tab, s)}</option>)}
         </select>
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>

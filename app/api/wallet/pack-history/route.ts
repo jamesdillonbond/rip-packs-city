@@ -36,6 +36,8 @@ const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held",
 // never silently dropped: a binder that asked for "winners" and got every pack would read as an answer.
 export const PACK_HISTORY_SORTS = new Set([
   "recent", "oldest", "value_desc", "value_asc", "cost_desc", "cost_asc", "pl_desc", "pl_asc", "name",
+  // v40: opened packs by the pulls still in the wallet, at wallet FMV
+  "held_desc", "held_asc",
 ])
 export const PACK_HISTORY_OUTCOMES = new Set(["up", "down"])
 const MAX_SEARCH_LEN = 80

@@ -13,7 +13,8 @@ import WalletPacksView from "@/components/packs/WalletPacksView"
 let urlWallet: string | null = null
 let ownerKey = ""
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => ({ get: (k: string) => (k === "wallet" ? urlWallet : null) }),
+  // packs_* (2026-11-26) come from the real address bar, as they do through Next's useSearchParams
+  useSearchParams: () => ({ get: (k: string) => (k === "wallet" ? urlWallet : k.startsWith("packs_") ? new URLSearchParams(window.location.search).get(k) : null) }),
 }))
 vi.mock("@/lib/owner-key", () => ({ getOwnerKey: () => ownerKey }))
 vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
@@ -70,6 +71,8 @@ const heldRow = {
 beforeEach(() => {
   urlWallet = null
   ownerKey = ""
+  // the view writes its tab + filters to the address bar (2026-11-26); start every test from a clean one
+  window.history.replaceState(null, "", "/")
 })
 afterEach(() => {
   cleanup()
@@ -450,5 +453,37 @@ describe("WalletPacksView", () => {
     fireEvent.click(getByText("Clear filters"))
     await waitFor(() => expect(historyUrls.at(-1)).not.toMatch(/[?&](q|tier|outcome|sort)=/))
     await findByText("Base Pack")
+  })
+
+  // 2026-11-26: filters live in the address bar, and Still held is an Opened-tab sort.
+  it("starts from the address bar's filters, writes changes back, and offers Still held only on Opened", async () => {
+    ownerKey = "0xowner"
+    window.history.replaceState(null, "", "/nba-top-shot/collection?section=packs&packs_view=opened&packs_sort=held_desc&packs_result=up")
+    const historyUrls: string[] = []
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url) => { historyUrls.push(url); return res(200, { packs: [heldRow], total_count: 1 }) },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, getByLabelText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(historyUrls.length).toBeGreaterThan(0))
+    expect(historyUrls[0]).toContain("status=ripped")
+    expect(historyUrls[0]).toContain("sort=held_desc")
+    expect(historyUrls[0]).toContain("outcome=up")
+    const sortSelect = getByLabelText("Sort packs") as HTMLSelectElement
+    expect(Array.from(sortSelect.options).map((o) => o.value)).toContain("held_desc")
+
+    fireEvent.click(getByText("Losers"))
+    await waitFor(() => expect(window.location.search).toContain("packs_result=down"))
+    expect(window.location.search).toContain("section=packs") // other params kept
+
+    // Sealed has no Still held: the sort falls back to newest, and the URL follows
+    fireEvent.click(getByText("Sealed"))
+    await waitFor(() => expect(historyUrls.at(-1)).toContain("status=held"))
+    await waitFor(() => expect(historyUrls.at(-1)).not.toContain("sort=held"))
+    expect(Array.from((getByLabelText("Sort packs") as HTMLSelectElement).options).map((o) => o.value)).not.toContain("held_desc")
+    await waitFor(() => expect(window.location.search).not.toContain("packs_sort"))
+    expect(window.location.search).not.toContain("packs_view")
+    window.history.replaceState(null, "", "/")
   })
 })

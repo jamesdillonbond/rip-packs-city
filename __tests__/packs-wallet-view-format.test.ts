@@ -3,6 +3,7 @@ import {
   packValueLabel, packUnrealizedUsd, packHeldPullsLabel, packHeldFmvLabel, packRoiLabel, packHoldLabel,
   packFilterParams, packFiltersNarrow, packSortLabel, packTierOptions, packTierLabel, packOutcomeLabel, packOutcomeHint,
   PACK_FILTER_DEFAULTS, PACK_SORTS, PACK_OUTCOMES,
+  packSortsFor, packSortForTab, packFiltersFromUrl, packFiltersHref, PACK_URL_KEYS,
   packTabMetrics, pullsHeldLine,
   PACK_FILTER_STATUS,
   PACK_FILTER_LABEL,
@@ -628,5 +629,40 @@ describe("binder Packs filters", () => {
     expect(packOutcomeHint("sold")).toMatch(/sold for more/)
     // v39 (Trevor 11-26): only packs paid for count -- the hint says so on every tab
     for (const tab of [...PACK_FILTERS, "all" as const]) expect(packOutcomeHint(tab)).toMatch(/Only packs you paid for count/)
+  })
+})
+
+// 2026-11-26: Still held sort (v40) + filters in the address bar
+describe("binder Packs filters: Still held sort and the address bar", () => {
+  it("offers Still held only where packs were opened", () => {
+    expect(packSortsFor("opened")).toContain("held_desc")
+    expect(packSortsFor("all")).toContain("held_asc")
+    expect(packSortsFor("unopened")).not.toContain("held_desc")
+    expect(packSortsFor("sold")).not.toContain("held_asc")
+    expect(packSortLabel("opened", "held_desc")).toBe("Still held: high to low")
+    expect(packSortForTab("unopened", "held_desc")).toBe("recent")
+    expect(packSortForTab("opened", "held_desc")).toBe("held_desc")
+  })
+
+  it("reads validated filters back from the URL and drops anything unknown", () => {
+    const q = new URLSearchParams("packs_q=%20Rookie%20&packs_tier=RARE&packs_result=up&packs_sort=held_desc&packs_view=opened")
+    expect(packFiltersFromUrl((k) => q.get(k))).toEqual({
+      filters: { search: "Rookie", tier: "rare", outcome: "up", sort: "held_desc" }, view: "opened",
+    })
+    const bad = new URLSearchParams("packs_tier=%25x&packs_result=sideways&packs_sort=cheapest")
+    expect(packFiltersFromUrl((k) => bad.get(k)).filters).toEqual(PACK_FILTER_DEFAULTS)
+  })
+
+  it("writes only non-defaults, keeps every other param, and is a no-op when nothing changed", () => {
+    const base = "https://x.test/nba-top-shot/collection?section=packs&wallet=0xabc"
+    const out = packFiltersHref(base, { search: "Rookie Debut", tier: "rare", outcome: "down", sort: "pl_desc" }, "sold", "unopened")
+    const u = new URL(out)
+    expect(u.searchParams.get("section")).toBe("packs")
+    expect(u.searchParams.get("wallet")).toBe("0xabc")
+    expect(u.searchParams.get(PACK_URL_KEYS.q)).toBe("Rookie Debut")
+    expect(u.searchParams.get(PACK_URL_KEYS.view)).toBe("sold")
+    expect(packFiltersHref(base, PACK_FILTER_DEFAULTS, "unopened", "unopened")).toBe(base)
+    // and clearing removes them again
+    expect(new URL(packFiltersHref(out, PACK_FILTER_DEFAULTS, "unopened", "unopened")).search).toBe("?section=packs&wallet=0xabc")
   })
 })
