@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:10 PM PT · 📏 READ (no change) — candy owner-moved fix verified; fmv-recalc :08 fallback errors closed (Claude Code, attended)
+- **candy-listings-indexer** (`20261125154323` + route): 10:35 AM, 1:35 PM, 4:35 PM PT runs all ok, 41–46 s (was 76–81 s, failing every other run on "owner-moved retire" timeout); `owner_moved_cleared` 0, not null. Closed.
+- **fmv-recalc :08**: post-`20261125030623` fallback errors 0/21 at :07–:09 (pre 7/50) → closed under the 5 % rule. Job 924 move not yet provable (control fell too); 11-26 ~8 AM PT read on the even−odd gap stands (focus.md). Revert: n/a (read only; focus.md note).
+
 ### 2026-11-25 ~12:20 PM PT · 🔧 SHIPPED (code) — Interactive slab motion is time-based, not frame-based (Claude Code cloud; Trevor: "Use chrome if you need to QA it")
 
 - Chrome QA of the 11:35 slab on /moment/48276189?slab=1 (Trevor's Chrome): real Top Shot media renders on the front face, drag spins, Flip shows the back, no console errors. It also showed the physics stepped once per animation frame: the throttled tab ran ~2 frames/s and the spin crawled; a 120 Hz phone would spin twice as fast.
