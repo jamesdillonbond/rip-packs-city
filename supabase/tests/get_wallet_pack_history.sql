@@ -986,6 +986,14 @@ BEGIN
       'held_capped_ask_usd', (SELECT round(COALESCE(sum(round(capped_ask_usd::numeric, 2)), 0), 2) FROM held_valued),
       'held_ask_capped_n',   (SELECT count(*) FROM held_valued WHERE value_basis = 'ask_capped'),
       'held_ask_unreferenced_n', (SELECT count(*) FROM held_valued WHERE ask_unreferenced),
+      -- v37 (2026-11-25, Trevor: "show Unopened Packs totals here, with it counting into that
+      -- collection's total fmv"): the same held counts and capped asks, per collection_id, so the
+      -- dashboard's wallet tiles can carry each collection's own sealed packs.
+      'held_by_collection', (SELECT COALESCE(jsonb_object_agg(g.collection_id::text, jsonb_build_object(
+                                 'packs', g.n, 'capped_ask_n', g.cn, 'capped_ask_usd', g.cu)), '{}'::jsonb)
+                               FROM (SELECT collection_id, count(*) AS n, count(capped_ask_usd) AS cn,
+                                            round(COALESCE(sum(round(capped_ask_usd::numeric, 2)), 0), 2) AS cu
+                                       FROM held_valued GROUP BY collection_id) g),
       'held_last_sale_n',    (SELECT count(last_sale_usd) FROM held_valued),
       'held_last_sale_usd',  (SELECT round(COALESCE(sum(round(last_sale_usd::numeric, 2)), 0), 2) FROM held_valued),
       'held_rip_ev_n',       (SELECT count(rip_ev_usd) FROM held_valued),
@@ -1225,6 +1233,8 @@ BEGIN
     'capped_ask_usd',        (t->>'held_capped_ask_usd')::numeric,
     'ask_capped_count',      (t->>'held_ask_capped_n')::int,
     'unreferenced_ask_count', (t->>'held_ask_unreferenced_n')::int,
+    -- v4 (2026-11-25): per collection_id {packs, capped_ask_n, capped_ask_usd} for the wallet tiles.
+    'by_collection',         COALESCE(t->'held_by_collection', '{}'::jsonb),
     'oldest_ask_checked_at', (t->>'held_ask_oldest_checked_at')::timestamptz,
     'last_sale_count',       (t->>'held_last_sale_n')::int,
     'last_sale_usd',         (t->>'held_last_sale_usd')::numeric,
@@ -2503,6 +2513,25 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'G36A';
   PERFORM _assert(row_->>'buy_usd' IS NULL,
                   'V36-3 a Golazos drop before our marketplace history (2022-10-26) stays unknown. got ' || coalesce(row_::text, 'NULL'));
+END $$;
+
+-- V37 (2026-11-25): held_by_collection splits the held totals per collection_id, the same rows and
+-- rounding as held_capped_ask_*, and wallet_held_pack_value passes it through as by_collection.
+-- Reuses the V33 wallet (3 held Top Shot packs, capped $27 over 2).
+DO $$
+DECLARE t jsonb; c jsonb; v jsonb;
+BEGIN
+  t := public.get_wallet_pack_history('0xv33w', NULL, 'held', 1, 0)->'tab_totals';
+  c := t->'held_by_collection'->'95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  PERFORM _assert(c->>'packs' = '3' AND c->>'capped_ask_n' = '2' AND c->>'capped_ask_usd' = '27.00'
+                  AND (SELECT count(*) FROM jsonb_object_keys(t->'held_by_collection')) = 1,
+                  'V37-1 held_by_collection: Top Shot 3 packs, $27 over 2 capped asks, no other collection. got ' || coalesce(t->'held_by_collection', 'null'::jsonb)::text);
+  v := public.wallet_held_pack_value('0xv33w');
+  PERFORM _assert(v->'by_collection' = t->'held_by_collection',
+                  'V37-2 wallet_held_pack_value passes held_by_collection through as by_collection. got ' || v::text);
+  v := public.wallet_held_pack_value('0xnobody37');
+  PERFORM _assert(v->'by_collection' = '{}'::jsonb OR v ? 'error',
+                  'V37-3 a wallet with no held packs reads an empty by_collection, never null. got ' || v::text);
 END $$;
 
 ROLLBACK;

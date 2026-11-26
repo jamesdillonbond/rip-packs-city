@@ -45,6 +45,8 @@ export async function GET() {
       unpriced: t.unpriced ?? 0,
       wallets: addrs.length,
       wallets_failed: t.walletsFailed,
+      // 2026-11-25: per wallet → per collection_id { packs, listed, usd } for the Saved Wallets tiles.
+      by_wallet: t.byWallet ?? {},
     }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (err) {
     return apiErrorResponse(err, "api/profile/held-pack-value")

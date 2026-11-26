@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { heldPacksCaption, sumHeldPacks, walletTotalUsd, walletTotalCaption } from "@/lib/dashboard/held-packs"
+import { heldPacksCaption, packsByCollection, sumHeldPacks, walletTotalUsd, walletTotalCaption } from "@/lib/dashboard/held-packs"
 
 const fmt = (n: number) => "$" + n.toFixed(2)
 
@@ -82,5 +82,21 @@ describe("sumPortfolioFmv (2026-11-22 single number, UFC included)", () => {
         { collection_id: UFC, fmv_total: 0, fmv_stale_total: 364.26 },
       ],
     })).toBeCloseTo(46355.88, 2)
+  })
+})
+
+describe("packsByCollection (2026-11-25 Saved Wallets tiles)", () => {
+  it("reads the per-collection split; a pre-split answer is null, never zero packs", () => {
+    expect(packsByCollection({
+      count: 489,
+      by_collection: {
+        ts: { packs: 430, capped_ask_n: 430, capped_ask_usd: 15887.71 },
+        ad: { packs: 59, capped_ask_n: 58, capped_ask_usd: "554.37" },
+        none: { packs: 0, capped_ask_n: 0, capped_ask_usd: 0 },
+      },
+    })).toEqual({ ts: { packs: 430, listed: 430, usd: 15887.71 }, ad: { packs: 59, listed: 58, usd: 554.37 } })
+    expect(packsByCollection({ count: 3 })).toBeNull()
+    expect(packsByCollection(null)).toBeNull()
+    expect(packsByCollection({ by_collection: {} })).toEqual({})
   })
 })

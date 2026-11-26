@@ -13,9 +13,11 @@ import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
-import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
+import PaniniUsernamesPanel, { type PaniniIdentity } from "@/components/profile/PaniniUsernamesPanel";
 import { sumMoments, sumPortfolioFmv, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
-import { walletTotalUsd, walletTotalCaption, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
+import { walletTotalUsd, walletTotalCaption, type CollectionPacks, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
+import { getEntityLabels } from "@/lib/entity-labels";
+import { paniniCaption, sumPaniniIdentities } from "@/lib/dashboard/panini-total";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
 import FollowedWalletsList from "@/components/profile/FollowedWalletsList";
@@ -574,6 +576,9 @@ function ProfilePageInner() {
   // never holds back the moment tiles; a failure says so instead of rendering $0.
   const [heldPacks, setHeldPacks] = useState<HeldPacksTotal | null>(null);
   const [heldPacksFailed, setHeldPacksFailed] = useState(false);
+  // Linked Panini usernames, as the Panini panel reads them — the Saved Wallets card's Panini
+  // tile (2026-11-25). undefined = not read yet; null = the read failed.
+  const [paniniIds, setPaniniIds] = useState<PaniniIdentity[] | null | undefined>(undefined);
   const loadHeldPacks = useCallback(async () => {
     try {
       const res = await fetch("/api/profile/held-pack-value", { cache: "no-store" });
@@ -585,6 +590,7 @@ function ProfilePageInner() {
         lowAskUsd: Number(d?.low_ask_usd) || 0,
         unpriced: Number(d?.unpriced) || 0,
         walletsFailed: Number(d?.wallets_failed) || 0,
+        byWallet: d?.by_wallet && typeof d.by_wallet === "object" ? d.by_wallet : undefined,
       });
       setHeldPacksFailed(false);
     } catch {
@@ -906,7 +912,13 @@ function ProfilePageInner() {
   // The single Portfolio FMV figure's Moment part (2026-11-22, Trevor: one number for
   // everything in the wallet, UFC included): fresh + stale-priced FMV across every collection.
   const momentsFmv = useMemo(() => sumPortfolioFmv(statsByWallet), [statsByWallet]);
-  const collectionCount = useMemo(() => countActiveCollections(statsByWallet), [statsByWallet]);
+  // 2026-11-25 (Trevor: Panini "should be" in Portfolio FMV): linked Panini usernames' cards and
+  // their recorded value join Total Assets, Portfolio FMV and Collections.
+  const panini = useMemo(() => sumPaniniIdentities(paniniIds), [paniniIds]);
+  const collectionCount = useMemo(
+    () => countActiveCollections(statsByWallet) + (panini.cards > 0 ? 1 : 0),
+    [statsByWallet, panini.cards],
+  );
 
   // At least one wallet's stats could not be loaded, so every headline figure is
   // a PARTIAL sum. An unavailable answer must render as unavailable — never as a
@@ -1111,15 +1123,17 @@ function ProfilePageInner() {
         <section data-tour-anchor="portfolio-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
           <StatTile
             /* 2026-11-22 (Trevor): "Total Assets" — Moments and cards (every collection's
-               held assets) plus sealed packs. ⚠ NOT Panini: get_wallet_collection_stats excludes it (#64 —
-               Panini cards are owned by username, not by a saved address), so a Panini collector's cards
-               are in neither this count nor Portfolio FMV. */
+               held assets) plus sealed packs. 2026-11-25: plus linked Panini usernames' cards
+               (owned by username, so get_wallet_collection_stats never had them — #64). */
             label="Total Assets"
-            value={(totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0)).toLocaleString("en-US")}
+            value={(totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0) + panini.cards).toLocaleString("en-US")}
             color="var(--rpc-text-primary)"
             /* 2026-11-22: packs are left out of this count while their read is in flight or failed — say so
                here too, not only under Portfolio FMV. */
-            caption={walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0) ?? undefined}
+            caption={[
+              walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0),
+              paniniCaption(paniniIds),
+            ].filter(Boolean).join(" · ") || undefined}
             unavailable={statsIncomplete}
             loading={statsLoading}
             pending={statsPending}
@@ -1130,10 +1144,11 @@ function ProfilePageInner() {
             /* 2026-11-22 (Trevor: "one number that encompasses everything in the wallet.
                Keep it simple"): Moments — stale-priced included — plus sealed packs at
                capped low ask, as ONE figure. No breakdown caption. */
-            value={fmtUsd(walletTotalUsd(momentsFmv, 0, heldPacks, heldPacksFailed))}
+            value={fmtUsd(walletTotalUsd(momentsFmv + panini.fmvUsd, 0, heldPacks, heldPacksFailed))}
             color="var(--rpc-success)"
             caption={[
               walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0),
+              paniniCaption(paniniIds),
               cacheAgeHours != null ? `as of ${Math.round(cacheAgeHours)}h ago` : null,
             ].filter(Boolean).join(" · ") || undefined}
             unavailable={statsIncomplete}
@@ -1316,10 +1331,30 @@ function ProfilePageInner() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {groupedWallets.map((g) => (
+              {groupedWallets.map((g, gi) => (
                 <WalletGroupCard
                   key={g.addr}
                   group={g}
+                  packs={heldPacksFailed ? null : heldPacks?.byWallet?.[normalizeAddress(g.addr)]}
+                  /* 2026-11-25 (Trevor: "add ways for panini and candy to be added to these
+                     graphics"): the account's Panini and Candy tiles ride on the FIRST Flow
+                     wallet card — the one card every collector sees. */
+                  extraTiles={gi === groupedWallets.findIndex((x) => detectAddressChain(x.addr) !== "solana") ? (
+                    <>
+                      <PaniniTiles ids={paniniIds} />
+                      {canAddWallet && hasDapperWallet && !hasSolanaWallet && candyPublished ? (
+                        <AddCollectionTile
+                          collectionId="candy-mlb"
+                          cta="+ Add your Candy wallet"
+                          hint="Solana address"
+                          onClick={() => {
+                            setShowAddWallet(true);
+                            document.querySelector('[data-tour-anchor="saved-wallets-card"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
                   stats={statsByWallet[normalizeAddress(g.addr)] ?? []}
                   /* ⚠ `?? []` above is a FALLBACK, never a result. An empty
                      array is what a failed read and a genuinely empty wallet
@@ -1342,7 +1377,7 @@ function ProfilePageInner() {
         {/* ── Panini username (2026-09-25) ── A Panini owner is a USERNAME, so
             it has its own field: the one-field add above sends non-address
             input to the Top Shot resolver. */}
-        <PaniniUsernamesPanel />
+        <PaniniUsernamesPanel onIdentities={setPaniniIds} />
         {/* ── Friend Activity ── */}
         <section className="rpc-section">
           <div className="rpc-section-title">Friend Activity</div>
@@ -2405,8 +2440,16 @@ function WalletGroupCard({
   indexing,
   onRemove,
   onVerify,
+  packs,
+  extraTiles,
 }: {
   group: { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null };
+  /** Sealed packs per collection_id for this wallet (2026-11-25). undefined = not answered (yet,
+   *  or an old cached answer with no split); null = the read failed. Either way: no pack figure,
+   *  and FMV stays the Moments-only figure — never a manufactured 0 packs. */
+  packs?: Record<string, CollectionPacks> | null;
+  /** Account-level tiles appended to this card's grid (Panini / Candy, 2026-11-25). */
+  extraTiles?: React.ReactNode;
   stats: CollectionStat[];
   /** The collection-stats read for this wallet FAILED this pass. `stats` is then [] for
    *  a reason that has nothing to do with what the wallet holds. */
@@ -2543,7 +2586,15 @@ function WalletGroupCard({
             cardUnknown ||
             (coveredSet != null && col.supabaseCollectionId != null && !coveredSet.has(col.supabaseCollectionId));
           const moments = stat?.moment_count ?? 0;
-          const fmv = stat?.fmv_total ?? 0;
+          // Unopened packs (2026-11-25): counted into the collection's FMV at their capped low ask —
+          // the same figure the Portfolio FMV already includes. Known only when this wallet's pack
+          // read carried the per-collection split; a collection absent from a known split holds none.
+          const packsKnown = packs != null && !unknown && col.dbChain === "flow";
+          const colPacks = packsKnown && col.supabaseCollectionId ? packs[col.supabaseCollectionId] : undefined;
+          const packCount = colPacks?.packs ?? 0;
+          const packUsd = colPacks?.usd ?? 0;
+          const fmv = (stat?.fmv_total ?? 0) + packUsd;
+          const unitsLabel = getEntityLabels(col.id).units;
           const locked = stat?.locked_count ?? 0;
           const fmvMax = stat?.fmv_max ?? 0;
           const showSpinner = moments === 0 && indexing && !unknown;
@@ -2568,11 +2619,17 @@ function WalletGroupCard({
                 </div>
                 {showSpinner && <span className="rpc-spinner-sm" aria-hidden />}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: packsKnown ? "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
                 <div>
-                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
+                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{unitsLabel}</div>
                   <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: unknown ? "var(--rpc-text-muted)" : "var(--rpc-text-primary)" }}>{unknown ? "—" : moments.toLocaleString("en-US")}</div>
                 </div>
+                {packsKnown && (
+                  <div>
+                    <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Unopened Packs</div>
+                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: packCount > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>{packCount.toLocaleString("en-US")}</div>
+                  </div>
+                )}
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                   {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
@@ -2588,8 +2645,98 @@ function WalletGroupCard({
             </Link>
           );
         })}
+        {extraTiles}
       </div>
     </div>
+  );
+}
+
+// ── Panini / Candy tiles on the Saved Wallets card (2026-11-25) ─────────────────
+// Trevor: "We should add ways for panini and candy to be added to these graphics." A Panini
+// owner is a USERNAME (no wallet card of its own), so its tile shows each linked username's
+// newest recorded collection value, or a link to the Panini panel below. Candy gets an add
+// tile until a Solana wallet is saved (its own card then carries the Candy tile).
+
+const tileShellStyle = (accent: string): React.CSSProperties => ({
+  background: "var(--rpc-black)",
+  border: "1px solid var(--rpc-border)",
+  borderBottom: `2px solid ${accent}`,
+  borderRadius: 8,
+  padding: "8px 10px",
+  display: "block",
+  ["--rpc-accent" as any]: accent,
+});
+
+function TileHeading({ collectionId, sub }: { collectionId: string; sub?: string | null }) {
+  const col = getPublishedCollection(collectionId);
+  if (!col) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: accentText(col.accent), whiteSpace: "nowrap" }}>
+        {col.icon} {col.shortLabel}
+      </div>
+      {sub ? (
+        <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function AddCollectionTile({ collectionId, cta, hint, href, onClick }: { collectionId: string; cta: string; hint: string; href?: string; onClick?: () => void }) {
+  const col = getPublishedCollection(collectionId);
+  if (!col) return null;
+  const body = (
+    <>
+      <TileHeading collectionId={collectionId} />
+      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)", marginTop: 8 }}>{cta}</div>
+      <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase", marginTop: 2 }}>{hint}</div>
+    </>
+  );
+  const style = { ...tileShellStyle(col.accent), borderStyle: "dashed" as const, borderBottomStyle: "solid" as const, cursor: "pointer", textAlign: "left" as const, width: "100%" };
+  return href ? (
+    <a href={href} className="rpc-wallet-subcard" style={style}>{body}</a>
+  ) : (
+    <button type="button" onClick={onClick} className="rpc-wallet-subcard" style={style}>{body}</button>
+  );
+}
+
+function PaniniTiles({ ids }: { ids: PaniniIdentity[] | null | undefined }) {
+  const col = getPublishedCollection("panini-blockchain");
+  if (!col) return null;
+  // Not read yet, or the read failed: say nothing here (the Panini panel below says which).
+  if (ids === undefined || ids === null) return null;
+  if (ids.length === 0) {
+    return <AddCollectionTile collectionId="panini-blockchain" cta="+ Link your Panini username" hint="Panini username" href="#panini-username" />;
+  }
+  const units = getEntityLabels("panini-blockchain").units;
+  return (
+    <>
+      {ids.map((i) => {
+        const value = i.summary?.profile?.value ?? null;
+        const held = i.summary?.profile?.cards_held ?? null;
+        // Cards: the recorded day's count (matches its FMV), else the profile read's count.
+        const cards = value ? value.cards : held;
+        const fmv = value?.fmv_usd ?? null;
+        const href = col.pages.includes("collection")
+          ? `/${col.id}/collection?q=${encodeURIComponent(i.username)}`
+          : `/${col.id}/overview`;
+        return (
+          <Link key={i.username} href={href} className="rpc-wallet-subcard" style={tileShellStyle(col.accent)}>
+            <TileHeading collectionId="panini-blockchain" sub={`@${i.username}`} />
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
+              <div>
+                <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{units}</div>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: cards != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>{cards != null ? cards.toLocaleString("en-US") : "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv != null && fmv > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>{fmv != null && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
+              </div>
+            </div>
+          </Link>
+        );
+      })}
+    </>
   );
 }
 

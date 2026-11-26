@@ -35,10 +35,12 @@ interface Summary {
     profile_state: string | null
     last_complete_at: string | null
     cards_held: number | null
+    /** Newest recorded collection value (2026-11-25); null = none recorded yet or the read failed. */
+    value?: { day: string; cards: number; priced_cards: number; fmv_usd: number | null } | null
   }
 }
 
-interface Identity {
+export interface PaniniIdentity {
   collection: string
   username: string
   created_at: string
@@ -49,22 +51,30 @@ interface Identity {
 const monoFont = "var(--font-mono)"
 const condensedFont = "var(--font-display)"
 
-export default function PaniniUsernamesPanel() {
-  const [identities, setIdentities] = useState<Identity[]>([])
+export default function PaniniUsernamesPanel({
+  onIdentities,
+}: {
+  /** The dashboard's Saved Wallets Panini tile reads the same list (2026-11-25): null = failed. */
+  onIdentities?: (ids: PaniniIdentity[] | null) => void
+} = {}) {
+  const [identities, setIdentities] = useState<PaniniIdentity[]>([])
   const [loadState, setLoadState] = useState<"loading" | "failed" | "ok">("loading")
   const [input, setInput] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const r = await fetchJson<{ identities?: Identity[] }>("/api/profile/collector-identities", { cache: "no-store" })
+    const r = await fetchJson<{ identities?: PaniniIdentity[] }>("/api/profile/collector-identities", { cache: "no-store" })
     if (!r.ok || !Array.isArray(r.json?.identities)) {
       setLoadState("failed")
+      onIdentities?.(null)
       return
     }
-    setIdentities(r.json!.identities!.filter((i) => i.collection === "panini-blockchain"))
+    const mine = r.json!.identities!.filter((i) => i.collection === "panini-blockchain")
+    setIdentities(mine)
     setLoadState("ok")
-  }, [])
+    onIdentities?.(mine)
+  }, [onIdentities])
 
   useEffect(() => {
     void load()

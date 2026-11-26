@@ -932,7 +932,8 @@ const PINS = [
     test: "supabase/tests/get_wallet_pack_history.sql",
     // v2 (2026-11-13): one read of the history's held tab_totals, not a loop of 200-row pages.
     // v3 (2026-11-21): passes the capped-ask keys through.
-    migration: "supabase/migrations/20261122025253_audit_20261122_pack_ask_capped_by_references.sql",
+    // v4 (2026-11-25): passes held_by_collection through as by_collection (Saved Wallets tiles).
+    migration: "supabase/migrations/20261126033201_audit_20261125_held_packs_by_collection.sql",
   },
   {
     // Added 2026-09-26. Pins the lane that records every All Day drop's sale
@@ -1063,7 +1064,8 @@ const PINS = [
     // Golazos and Pinnacle reward packs $0; box packs $0 'box' (P/L on the box); last-resort sealed bases atlas_last_sale / opened_few.
     // v35 (same night): a box pack's $0 is not a cost basis -- held_unrealized skips it.
     // v36 (2026-11-25): Pinnacle (no secondary pack market) and Golazos (from 2022-10-26) packs inside their drop window priced at retail.
-    migration: "supabase/migrations/20261125151148_audit_20261125_pack_history_v36_pinnacle_golazos_retail_inferred.sql",
+    // v37 (2026-11-25): held tab_totals gain held_by_collection (per collection_id held packs + capped asks).
+    migration: "supabase/migrations/20261126033201_audit_20261125_held_packs_by_collection.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

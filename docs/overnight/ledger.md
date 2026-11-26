@@ -13,6 +13,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:40 PM PT · ✅ SHIPPED (code) — Panini cards inside the one Portfolio FMV: dashboard, public profile, Value / 30D, weekly email (Cowork cloud; Trevor: "Yes it should be. Connect to the repo and get all of this done")
+
+- Linked Panini usernames' newest `panini_portfolio_daily` value joins Total Assets / Portfolio FMV / Collections (dashboard + public profile via new `/api/public/profile/<u>/panini`), a third stacked band on Value / 30D, and the weekly email's Estimated value (like-for-like week rule). Shared reader `lib/panini/linked-value.ts`. A failed read adds nothing and is said. Share card unchanged (wallet-scoped).
+- Revert: `git revert` the commit titled "Saved Wallets tiles + Panini cards inside the one Portfolio FMV" (also reverts the tiles; the DB half stays harmless).
+
+### 2026-11-25 ~7:32 PM PT · 🗄 APPLIED (`20261126033201`) — held sealed packs split per collection for the Saved Wallets tiles (Cowork cloud; Trevor: "show "Unopened Packs" totals here, with it counting into that collection's total fmv")
+
+- `get_wallet_pack_history` v37: held tab_totals gain `held_by_collection` (per collection_id: packs, capped_ask_n, capped_ask_usd — same rows and rounding as held_capped_ask_*). `wallet_held_pack_value` v4 passes it as `by_collection`. Nothing else in either body changed (one-edit splice, md5 asserted before/after).
+- Verified live: 0xbd94cade097e50ac → TS 430 / $15,887.71 + AD 59 / $554.37 = $16,442.08 total. Pin V37-1..3 green, V37-1 red on v36. anon EXECUTE false.
+- Revert: re-apply `get_wallet_pack_history` from `20261125151148` and `wallet_held_pack_value` from `20261122025253` (the dashboard then simply shows no pack column).
+
 ### 2026-11-25 ~8:20 PM PT · 🔧 SHIPPED (code) — Moment slab back: an NFL season shows the player's own side of the ball (Claude Code cloud; Trevor's 3-hour "keep going")
 
 - First All Day game lines landed 8:05 PM PT (52 players, 138 lines): 318 / 318 covered All Day editions resolve, each on the same US date and against one of the edition's two recorded teams. Live QA (Davante Adams, /moment/10613719?collection=nfl_all_day&slab=1): "@ CHI · W 20-17 OT · Playoffs" with 2 REC / 24 YDS — and a season line ending "1 TKL".

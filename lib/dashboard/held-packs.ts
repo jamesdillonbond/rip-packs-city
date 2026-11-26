@@ -21,6 +21,16 @@ export interface HeldPackValueRow {
   capped_ask_count?: number | null
   capped_ask_usd?: number | string | null
   unreferenced_ask_count?: number | null
+  // v4 (2026-11-25, Trevor: "show Unopened Packs totals here, with it counting into that
+  // collection's total fmv"): the same held packs and capped asks, keyed by collection_id.
+  by_collection?: Record<string, { packs?: number | null; capped_ask_n?: number | null; capped_ask_usd?: number | string | null }> | null
+}
+
+/** One collection's sealed packs in one wallet: how many, how many priced, their capped low ask. */
+export interface CollectionPacks {
+  packs: number
+  listed: number
+  usd: number
 }
 
 export interface HeldPacksTotal {
@@ -34,6 +44,26 @@ export interface HeldPacksTotal {
   unpriced?: number
   /** Wallets whose read failed — when > 0 the total is PARTIAL. */
   walletsFailed: number
+  /**
+   * Per wallet address → per collection_id sealed packs (2026-11-25). A wallet whose read failed
+   * is `null`; a wallet whose answer predates the per-collection split (an old cache row) is
+   * absent — the tile then shows no pack line rather than a manufactured 0.
+   */
+  byWallet?: Record<string, Record<string, CollectionPacks> | null>
+}
+
+/** Pure: a wallet answer's per-collection split, or null when the answer carries none. */
+export function packsByCollection(r: HeldPackValueRow | null | undefined): Record<string, CollectionPacks> | null {
+  const bc = r?.by_collection
+  if (!bc || typeof bc !== "object") return null
+  const out: Record<string, CollectionPacks> = {}
+  for (const [id, v] of Object.entries(bc)) {
+    if (!v || typeof v !== "object") continue
+    const packs = num(v.packs)
+    if (packs <= 0) continue
+    out[id] = { packs, listed: num(v.capped_ask_n), usd: Math.round(num(v.capped_ask_usd) * 100) / 100 }
+  }
+  return out
 }
 
 function num(v: unknown): number {

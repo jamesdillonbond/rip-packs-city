@@ -4,22 +4,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // the dashboard Value / 30D card (2026-11-22). Pins: auth required; oldest-first; a NULL
 // pack value stays null (not measured), never 0.
 
-const state: { authed: boolean; rows: { data: any; error: any }; eqs: Array<[string, unknown]> } = {
-  authed: true, rows: { data: [], error: null }, eqs: [],
+const state: { authed: boolean; rows: { data: any; error: any }; eqs: Array<[string, unknown]>; other: Record<string, { data: any; error: any }> } = {
+  authed: true, rows: { data: [], error: null }, eqs: [], other: {},
 }
 
-function chain(): any {
+// 2026-11-25: the route also reads the linked Panini usernames and their recorded days.
+function chain(table: string): any {
   const b: any = new Proxy({}, {
     get(_t, prop) {
-      if (prop === "then") return (res: any, rej: any) => Promise.resolve(state.rows).then(res, rej)
-      if (prop === "eq") return (k: string, v: unknown) => { state.eqs.push([k, v]); return b }
+      if (prop === "then") {
+        const out = table === "portfolio_snapshots" ? state.rows : (state.other[table] ?? { data: [], error: null })
+        return (res: any, rej: any) => Promise.resolve(out).then(res, rej)
+      }
+      if (prop === "eq") return (k: string, v: unknown) => { if (table === "portfolio_snapshots") state.eqs.push([k, v]); return b }
       return () => b
     },
   })
   return b
 }
 
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => chain() } }))
+vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: (t: string) => chain(t) } }))
 vi.mock("@/lib/auth/supabase-server", () => ({
   requireUser: async () => {
     if (!state.authed) throw new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })
@@ -29,7 +33,7 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 
 import { GET } from "@/app/api/profile/value-history/route"
 
-beforeEach(() => { state.authed = true; state.rows = { data: [], error: null }; state.eqs = [] })
+beforeEach(() => { state.authed = true; state.rows = { data: [], error: null }; state.eqs = []; state.other = {} })
 
 describe("GET /api/profile/value-history", () => {
   it("requires a signed-in user", async () => {
@@ -44,9 +48,27 @@ describe("GET /api/profile/value-history", () => {
     const body = await (await GET()).json()
     expect(state.eqs).toEqual([["owner_key", "user-1"]])
     expect(body.history).toEqual([
-      { date: "2026-11-21", moments_usd: 40100, packs_usd: null, packs_held: null, packs_estimated: false },
-      { date: "2026-11-22", moments_usd: 40547.1, packs_usd: 25533.7, packs_held: 327, packs_estimated: false },
+      { date: "2026-11-21", moments_usd: 40100, packs_usd: null, packs_held: null, packs_estimated: false, cards_usd: null },
+      { date: "2026-11-22", moments_usd: 40547.1, packs_usd: 25533.7, packs_held: 327, packs_estimated: false, cards_usd: null },
     ])
+  })
+  it("adds linked Panini cards per night (2026-11-25); a night with no recorded day stays null", async () => {
+    state.rows = { data: [
+      { snapshot_date: "2026-11-25", total_fmv: 100, moment_count: 1, pack_low_ask_usd: null, pack_held_count: null },
+      { snapshot_date: "2026-11-24", total_fmv: 100, moment_count: 1, pack_low_ask_usd: null, pack_held_count: null },
+    ], error: null }
+    state.other.saved_collector_identities = { data: [{ identity_value: "trevp" }], error: null }
+    state.other.panini_portfolio_daily = { data: [{ username: "trevp", day: "2026-11-25", cards: 148, fmv_usd: "812.40" }], error: null }
+    const body = await (await GET()).json()
+    expect(body.history.map((p: any) => p.cards_usd)).toEqual([null, 812.4])
+    expect(body.cards_failed).toBe(false)
+  })
+  it("a failed Panini read is said, never drawn as $0", async () => {
+    state.rows = { data: [{ snapshot_date: "2026-11-25", total_fmv: 100, moment_count: 1, pack_low_ask_usd: null, pack_held_count: null }], error: null }
+    state.other.saved_collector_identities = { data: null, error: { message: "timeout" } }
+    const body = await (await GET()).json()
+    expect(body.history[0].cards_usd).toBeNull()
+    expect(body.cards_failed).toBe(true)
   })
   it("a backfilled night (pack_value_basis set) is marked as an estimate; a live-measured one is not", async () => {
     state.rows = { data: [

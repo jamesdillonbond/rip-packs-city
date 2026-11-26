@@ -99,7 +99,7 @@ describe("POST /api/profile/collector-identities", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.error).toBeUndefined()
-    expect(body.identity.summary.profile).toEqual({ walked: false, profile_state: null, last_complete_at: null, cards_held: null })
+    expect(body.identity.summary.profile).toEqual({ walked: false, profile_state: null, last_complete_at: null, cards_held: null, value: null })
     expect(state.inserts).toEqual([
       {
         table: "saved_collector_identities",
@@ -114,8 +114,25 @@ describe("POST /api/profile/collector-identities", () => {
     state.tables.panini_user_holdings = { data: null, error: null, count: 146 }
     const body = await (await POST(req({ username: "jamesdillonbond" }))).json()
     expect(body.identity.summary.profile).toEqual({
-      walked: true, profile_state: "public", last_complete_at: "2026-09-28T12:00:53Z", cards_held: 146,
+      walked: true, profile_state: "public", last_complete_at: "2026-09-28T12:00:53Z", cards_held: 146, value: null,
     })
+  })
+
+  it("carries the newest recorded collection value (2026-11-25 Saved Wallets tile); NULL FMV stays null", async () => {
+    state.rpc = seen(0)
+    state.tables["panini_collector_walks:single"] = { data: { profile_state: "public", last_complete_at: "2026-09-28T12:00:53Z" }, error: null }
+    state.tables.panini_user_holdings = { data: null, error: null, count: 146 }
+    state.tables["panini_portfolio_daily:single"] = { data: { day: "2026-11-25", cards: 140, priced_cards: 120, fmv_usd: "812.40" }, error: null }
+    let body = await (await POST(req({ username: "jamesdillonbond" }))).json()
+    expect(body.identity.summary.profile.value).toEqual({ day: "2026-11-25", cards: 140, priced_cards: 120, fmv_usd: 812.4 })
+    state.tables["panini_portfolio_daily:single"] = { data: { day: "2026-11-25", cards: 3, priced_cards: 0, fmv_usd: null }, error: null }
+    body = await (await POST(req({ username: "jamesdillonbond" }))).json()
+    expect(body.identity.summary.profile.value).toEqual({ day: "2026-11-25", cards: 3, priced_cards: 0, fmv_usd: null })
+    // a failed value read is no value -- never a failed link, never $0
+    state.tables["panini_portfolio_daily:single"] = { data: null, error: { message: "timeout" } }
+    body = await (await POST(req({ username: "jamesdillonbond" }))).json()
+    expect(body.identity.summary.profile.value).toBeNull()
+    expect(body.identity.summary.profile.cards_held).toBe(146)
   })
 
   it("a FAILED profile read is an error, never '0 cards' and never a silent link", async () => {

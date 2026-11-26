@@ -330,6 +330,25 @@ export default function ProfileClient(props: {
       .catch(function() { setHeldPacks(null); setHeldPacksFailed(true); });
   }, [username]);
 
+  // Linked Panini cards at their recorded value — inside Total Assets and Portfolio FMV
+  // (Trevor, 2026-11-25: Panini "should be" in Portfolio FMV; same as the dashboard).
+  // null = not answered yet; failed = the read failed (said under the figure, adds nothing).
+  const [panini, setPanini] = useState<{ cards: number; fmvUsd: number } | null>(null);
+  const [paniniFailed, setPaniniFailed] = useState(false);
+  useEffect(function() {
+    if (!username) return;
+    fetch("/api/public/profile/" + encodeURIComponent(username) + "/panini")
+      .then(function(r) {
+        if (!r.ok) throw new Error("panini " + r.status);
+        return r.json();
+      })
+      .then(function(d) {
+        setPanini({ cards: Number(d?.cards) || 0, fmvUsd: Number(d?.fmv_usd) || 0 });
+        setPaniniFailed(false);
+      })
+      .catch(function() { setPanini(null); setPaniniFailed(true); });
+  }, [username]);
+
   // Who's viewing — to show the share block only on the viewer's own profile.
   useEffect(function() {
     fetch("/api/profile/me")
@@ -358,13 +377,17 @@ export default function ProfileClient(props: {
   // cards (stale-priced included) plus sealed packs at capped low ask. Same as the dashboard.
   // Every collection, UFC included (Trevor 2026-11-22: "We should have ufc") — same as the dashboard + share card.
   const momentsFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
-  const portfolioTotal = walletTotalUsd(momentsFmv, 0, heldPacks, heldPacksFailed);
-  const totalAssets = totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0);
+  const portfolioTotal = walletTotalUsd(momentsFmv + (panini?.fmvUsd ?? 0), 0, heldPacks, heldPacksFailed);
+  const totalAssets = totalMoments + (!heldPacksFailed && heldPacks ? heldPacks.held : 0) + (panini?.cards ?? 0);
   // 2026-11-22: both figures above leave sealed packs out while their read is in flight or failed. The page
   // says so (walletTotalCaption); a tweet has no room for that note, so it carries the totals only once the
   // pack read has landed — never a Moments-only number presented as the whole portfolio.
-  const packsSettledOk = !heldPacksFailed && heldPacks != null;
-  const assetsNote = walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0);
+  // 2026-11-25: and the Panini read — a tweet never carries a total missing a part.
+  const packsSettledOk = !heldPacksFailed && heldPacks != null && panini != null;
+  const assetsNote = [
+    walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0),
+    paniniFailed ? "Panini cards couldn't load — not included" : null,
+  ].filter(Boolean).join(" · ") || null;
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isOwnProfile =
     !!myUsername && !!username && myUsername.toLowerCase() === username.toLowerCase();
@@ -607,7 +630,7 @@ export default function ProfileClient(props: {
               {portfolioTotal > 0 ? fmtDollars(portfolioTotal) : "—"}
             </div>
             {(function() {
-              const note = walletTotalCaption(heldPacks, heldPacksFailed, wallets.length > 0);
+              const note = assetsNote;
               return note ? (
                 <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
                   {note}

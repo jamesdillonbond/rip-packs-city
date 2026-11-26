@@ -52,13 +52,24 @@ describe("readHeldPackTotal with the cache", () => {
     const t = await readHeldPackTotal(sb, ["0xfresh", "0xstale", "0xwhale", "0xnone", "0xjunk"], "test", NOW)
     expect(rpcs.sort()).toEqual(["0xjunk", "0xnone", "0xstale", "0xwhale"])
     expect(upserts).toEqual([{ wallet_addr: "0xstale", value: V(60), computed_at: new Date(NOW).toISOString() }])
-    expect(t).toEqual({ held: 6, listed: 6, lowAskUsd: 20160, unpriced: 0, walletsFailed: 2 })
+    expect(t).toEqual({ held: 6, listed: 6, lowAskUsd: 20160, unpriced: 0, walletsFailed: 2, byWallet: { "0xnone": null, "0xjunk": null } })
   })
   it("a failed cache read is an empty cache, not an error", async () => {
     const sb = {
       from: () => ({ select: () => ({ in: () => Promise.reject(new Error("cache down")) }), upsert: () => Promise.reject(new Error("x")) }),
       rpc: () => Promise.resolve({ data: V(5), error: null }),
     }
-    expect(await readHeldPackTotal(sb, ["0xa"], "test", NOW)).toEqual({ held: 2, listed: 2, lowAskUsd: 5, unpriced: 0, walletsFailed: 0 })
+    expect(await readHeldPackTotal(sb, ["0xa"], "test", NOW)).toEqual({ held: 2, listed: 2, lowAskUsd: 5, unpriced: 0, walletsFailed: 0, byWallet: {} })
+  })
+})
+
+describe("readHeldPackTotal per-collection split (2026-11-25)", () => {
+  it("keys each wallet's split by address; a failed wallet is null, a pre-split answer is absent", async () => {
+    const split = { ...V(30), by_collection: { "ts-uuid": { packs: 2, capped_ask_n: 2, capped_ask_usd: 30 } } }
+    const { sb } = fakeSb([
+      { wallet_addr: "0xold", value: V(5), computed_at: new Date(NOW - 60 * 1000).toISOString() },
+    ], { "0xnew": split })
+    const t = await readHeldPackTotal(sb, ["0xnew", "0xold", "0xdead"], "test", NOW)
+    expect(t.byWallet).toEqual({ "0xnew": { "ts-uuid": { packs: 2, listed: 2, usd: 30 } }, "0xdead": null })
   })
 })

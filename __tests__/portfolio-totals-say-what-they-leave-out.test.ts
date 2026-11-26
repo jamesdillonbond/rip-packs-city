@@ -17,7 +17,13 @@ function tile(src: string, label: string): string {
 
 describe("portfolio totals say what they leave out", () => {
   it("dashboard Total Assets carries the sealed-pack note", () => {
-    expect(tile(dash, "Total Assets")).toMatch(/caption=\{walletTotalCaption\(heldPacks, heldPacksFailed/)
+    expect(tile(dash, "Total Assets")).toMatch(/caption=\{\[\s*walletTotalCaption\(heldPacks, heldPacksFailed/)
+  })
+
+  it("dashboard Total Assets and Portfolio FMV say when the Panini read failed (2026-11-25, Panini in the one number)", () => {
+    expect(tile(dash, "Total Assets")).toMatch(/paniniCaption\(paniniIds\)/)
+    expect(tile(dash, "Portfolio FMV")).toMatch(/paniniCaption\(paniniIds\)/)
+    expect(profile).toMatch(/paniniFailed \? "Panini cards couldn't load — not included"/)
   })
 
   it("dashboard Portfolio FMV carries the pack note AND the cache age", () => {

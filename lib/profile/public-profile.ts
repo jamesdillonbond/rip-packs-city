@@ -456,6 +456,8 @@ async function getPublicProfileUncached(
   // The OWNED addresses, kept off the payload (privacy) and reachable only from
   // server code through publicProfileOwnedAddresses() — the sealed-pack total
   // (2026-11-21) must sum exactly the wallets this profile's FMV sums.
+  // 2026-11-25: the owner's user id, same side channel — the linked Panini value (Portfolio FMV).
+  OWNER_USER_ID.set(payload, userId)
   OWNED_ADDRESSES.set(payload, Array.from(new Set(
     (ownedRows as Array<{ wallet_addr?: unknown }>)
       .map((w) => (typeof w.wallet_addr === "string" ? normalizeAddress(w.wallet_addr) : ""))
@@ -467,6 +469,12 @@ async function getPublicProfileUncached(
 // ⚠ SERVER-ONLY side channel. A WeakMap, not a payload field, so the addresses
 // can never be serialized into a response by a caller that returns `data`.
 const OWNED_ADDRESSES = new WeakMap<PublicProfilePayload, string[]>()
+const OWNER_USER_ID = new WeakMap<PublicProfilePayload, string>()
+
+/** The profile owner's auth user id. SERVER-ONLY — never publish it. */
+export function publicProfileOwnerId(payload: PublicProfilePayload): string | null {
+  return OWNER_USER_ID.get(payload) ?? null
+}
 
 /** Distinct wallet addresses this profile OWNS (the ones its Portfolio FMV sums). Never publish these. */
 export function publicProfileOwnedAddresses(payload: PublicProfilePayload): string[] {

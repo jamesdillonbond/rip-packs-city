@@ -16,6 +16,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
+import { dayBefore, linkedPaniniUsernames, paniniValueByDay, readPaniniDays } from "@/lib/panini/linked-value"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
@@ -40,6 +41,12 @@ export async function GET() {
       pack_low_ask_usd: number | string | null; pack_held_count: number | null
       pack_value_basis?: string | null
     }>
+    // 2026-11-25 (Trevor: Panini "should be" in Portfolio FMV): linked Panini usernames' recorded
+    // value per day (panini_portfolio_daily) as a third stacked part. A failed read leaves the part
+    // out (null on every night, and `cards_failed` says so) — never $0.
+    const usernames = await linkedPaniniUsernames(sb, user.id, "api/profile/value-history")
+    const paniniRows = usernames === null ? null : await readPaniniDays(sb, usernames, dayBefore(new Date(), 31), "api/profile/value-history")
+    const cardsByDay = paniniRows === null ? null : paniniValueByDay(paniniRows)
     const n = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v))
     const history = rows.reverse().map((r) => ({
       date: r.snapshot_date,
@@ -49,8 +56,9 @@ export async function GET() {
       // 2026-11-22: nights before packs were recorded live are RECONSTRUCTED from ask history
       // (backfill_portfolio_snapshot_pack_values) — an estimate, and the chart says so.
       packs_estimated: r.pack_value_basis != null,
+      cards_usd: cardsByDay?.get(r.snapshot_date) ?? null,
     }))
-    return NextResponse.json({ history }, { headers: { "Cache-Control": "private, no-store" } })
+    return NextResponse.json({ history, cards_failed: cardsByDay === null }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (err) {
     return apiErrorResponse(err, "api/profile/value-history")
   }

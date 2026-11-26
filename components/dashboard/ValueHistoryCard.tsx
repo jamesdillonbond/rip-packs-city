@@ -23,7 +23,8 @@
 import { useEffect, useState } from "react"
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
-type Point = { date: string; moments_usd: number | null; packs_usd: number | null; packs_held: number | null; packs_estimated?: boolean }
+// 2026-11-25: cards_usd — linked Panini usernames' recorded value that night (null = not recorded).
+type Point = { date: string; moments_usd: number | null; packs_usd: number | null; packs_held: number | null; packs_estimated?: boolean; cards_usd?: number | null }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 export function fmtDay(iso: string): string {
@@ -44,10 +45,10 @@ export function packSeriesStart(points: Point[]): string | null {
   return i > 0 ? points[i].date : null
 }
 
-/** A night's total: the sum of the parts it HAS. Null when neither part was recorded. */
-export function nightTotal(p: Pick<Point, "moments_usd" | "packs_usd">): number | null {
-  if (p.moments_usd == null && p.packs_usd == null) return null
-  return (p.moments_usd ?? 0) + (p.packs_usd ?? 0)
+/** A night's total: the sum of the parts it HAS. Null when no part was recorded. */
+export function nightTotal(p: Pick<Point, "moments_usd" | "packs_usd" | "cards_usd">): number | null {
+  if (p.moments_usd == null && p.packs_usd == null && p.cards_usd == null) return null
+  return (p.moments_usd ?? 0) + (p.packs_usd ?? 0) + (p.cards_usd ?? 0)
 }
 
 /** The tooltip's label for nightTotal: a night missing one part says which part the figure is (2026-11-24). */
@@ -59,6 +60,7 @@ export function totalLabel(p: Pick<Point, "moments_usd" | "packs_usd">): string 
 
 const mono = "var(--font-mono, monospace)"
 const PACK_COLOR = "#F59E0B"
+const CARD_COLOR = "#60A5FA"
 
 type TipEntry = { dataKey?: unknown; value?: unknown; payload?: Point }
 function StackTooltip({ active, payload, label }: { active?: boolean; payload?: TipEntry[]; label?: unknown }) {
@@ -78,6 +80,7 @@ function StackTooltip({ active, payload, label }: { active?: boolean; payload?: 
       {row(totalLabel(p), total, true)}
       {row("Moments", p.moments_usd)}
       {row(p.packs_estimated ? "Sealed packs (est.)" : "Sealed packs", p.packs_usd)}
+      {p.cards_usd != null ? row("Panini cards", p.cards_usd) : null}
     </div>
   )
 }
@@ -109,6 +112,8 @@ export default function ValueHistoryCard() {
   // A member who holds no sealed packs has a true $0 every night; that is not a band worth drawing.
   const hasPacks = (points ?? []).some((p) => p.packs_usd != null && p.packs_usd > 0)
   const packsFrom = hasPacks && points ? packSeriesStart(points) : null
+  // Panini cards (2026-11-25): drawn only when some night carries a value.
+  const hasCards = (points ?? []).some((p) => p.cards_usd != null && p.cards_usd > 0)
   const box = { background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" } as const
   const msg = (t: string) => (
     <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: mono, fontSize: 11, textAlign: "center" }}>{t}</div>
@@ -133,7 +138,7 @@ export default function ValueHistoryCard() {
                   <YAxis tickFormatter={fmtAxisUsd} tick={{ fill: "var(--rpc-text-muted)", fontSize: 9, fontFamily: mono }}
                     axisLine={{ stroke: "var(--rpc-border)" }} tickLine={false} width={50} />
                   <Tooltip content={<StackTooltip />} />
-                  {hasPacks ? <Legend wrapperStyle={{ fontSize: 10, fontFamily: mono }} /> : null}
+                  {hasPacks || hasCards ? <Legend wrapperStyle={{ fontSize: 10, fontFamily: mono }} /> : null}
                   <Area type="monotone" stackId="value" dataKey="moments_usd" name="Moments"
                     stroke="var(--rpc-red, #E03A2F)" fill="var(--rpc-red, #E03A2F)" fillOpacity={0.35} strokeWidth={2}
                     dot={false} connectNulls={false} isAnimationActive={false} />
@@ -141,6 +146,11 @@ export default function ValueHistoryCard() {
                     <Area type="monotone" stackId="value" dataKey="packs_usd" name="Sealed packs"
                       stroke={PACK_COLOR} fill={PACK_COLOR} fillOpacity={0.35} strokeWidth={2}
                       dot={{ r: 2 }} connectNulls={false} isAnimationActive={false} />
+                  ) : null}
+                  {hasCards ? (
+                    <Area type="monotone" stackId="value" dataKey="cards_usd" name="Panini cards"
+                      stroke={CARD_COLOR} fill={CARD_COLOR} fillOpacity={0.35} strokeWidth={2}
+                      dot={false} connectNulls={false} isAnimationActive={false} />
                   ) : null}
                 </AreaChart>
               </ResponsiveContainer>

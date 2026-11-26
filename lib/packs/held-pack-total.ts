@@ -9,7 +9,7 @@
 
 import { boundedRead } from "@/lib/api/bounded-read"
 import { isCadenceAddress, normalizeAddress } from "@/lib/address"
-import { sumHeldPacks, type HeldPackValueRow, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
+import { packsByCollection, sumHeldPacks, type CollectionPacks, type HeldPackValueRow, type HeldPacksTotal } from "@/lib/dashboard/held-packs"
 
 // wallet_held_pack_value carries its own 20 s statement_timeout; wait just past it.
 const READ_BUDGET_MS = 21_000
@@ -93,5 +93,12 @@ export async function readHeldPackTotal(sb: any, addrs: string[], label: string,
     }
     return pickHeldValue(cached, live, now)
   }))
-  return sumHeldPacks(answers)
+  const byWallet: Record<string, Record<string, CollectionPacks> | null> = {}
+  addrs.forEach((addr, i) => {
+    const a = answers[i]
+    if (a === null) { byWallet[addr] = null; return }
+    const split = packsByCollection(a)
+    if (split) byWallet[addr] = split
+  })
+  return { ...sumHeldPacks(answers), byWallet }
 }

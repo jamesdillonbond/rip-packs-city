@@ -97,7 +97,8 @@ const usd = (n: number): string =>
  * is the MOMENTS' change and says so (`scope: "moments"`) — never a moments-only move printed under
  * a total as if it were the total's.
  */
-export type WeeklyHeadline = { valueUsd: number; deltaUsd: number; deltaPct: number | null; scope: "all" | "moments" }
+// "no_cards" (2026-11-25): moments + packs change; linked Panini cards are in the value but had no like-for-like prior.
+export type WeeklyHeadline = { valueUsd: number; deltaUsd: number; deltaPct: number | null; scope: "all" | "moments" | "no_cards" }
 
 export function weeklyHeadline(
   m: { latest_fmv: number; prior_fmv?: number | null; delta_usd: number; delta_pct: number },

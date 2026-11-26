@@ -102,6 +102,8 @@ export function getEntityLabels(collectionUrlSlug: string, labelSet?: PaniniLabe
     if (labelSet === "entertainment") return PANINI_ENTERTAINMENT
     return PANINI_SPORTS
   }
+  // Candy MLB sells cards too (Trevor, 2026-11-25: "use "cards" for panini and candy").
+  if (collectionUrlSlug === "candy-mlb") return PANINI_SPORTS
   return SPORTS
 }
 

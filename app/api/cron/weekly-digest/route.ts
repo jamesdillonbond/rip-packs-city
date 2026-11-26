@@ -37,6 +37,7 @@ import { emailLink } from "@/lib/emails/email-link";
 import { buildNewItemsBlock } from "@/lib/emails/weekly-digest-news";
 import { buildWeeklyAlertBlock, loadAlertSuggestion, type AlertSuggestion } from "@/lib/emails/alert-suggestion";
 import { buildWeeklyPacksBlock, loadPackWeek, weeklyHeadline, type PackWeek } from "@/lib/emails/weekly-packs";
+import { buildWeeklyPaniniBlock, loadPaniniWeek, withPanini, type PaniniWeek } from "@/lib/emails/weekly-panini";
 import { loadRepricing, repricingDominates, repricingLine, type Repricing } from "@/lib/emails/weekly-repricing";
 
 export const dynamic = "force-dynamic";
@@ -117,12 +118,14 @@ async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | 
 // 2026-11-22: an optional "Sealed packs" block (lib/emails/weekly-packs.ts); null = no block.
 // 2026-11-22: `repricing` = how much of the week's change is OUR price corrections (lib/emails/weekly-repricing.ts).
 // The route only builds an email once that read succeeded; null here = nothing to disclose.
-function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date(), alertSuggestion: AlertSuggestion | null = null, packWeek: PackWeek | null = null, repricing: Repricing | null = null): { subject: string; html: string; text: string } {
+function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Date(), alertSuggestion: AlertSuggestion | null = null, packWeek: PackWeek | null = null, repricing: Repricing | null = null, paniniWeek: PaniniWeek | null = null): { subject: string; html: string; text: string } {
   const { html: newsHtml, text: newsText } = buildNewItemsBlock(ORIGIN, now);
   const { html: packsHtml, text: packsText } = buildWeeklyPacksBlock(packWeek);
+  const { html: paniniHtml, text: paniniText } = buildWeeklyPaniniBlock(paniniWeek);
   const { html: alertHtml, text: alertText } = buildWeeklyAlertBlock(ORIGIN, alertSuggestion);
   // 2026-11-22: ONE Estimated value — moments + sealed packs (lib/emails/weekly-packs.ts weeklyHeadline).
-  const h = weeklyHeadline(m, packWeek);
+  // 2026-11-25: plus linked Panini cards (Trevor: Panini "should be" in Portfolio FMV).
+  const h = withPanini(weeklyHeadline(m, packWeek), paniniWeek);
   const up = h.deltaUsd >= 0;
   const momentsLine = finite(m.moment_count) ? `${m.moment_count.toLocaleString("en-US")} moments tracked` : null;
   const arrow = up ? "▲" : "▼";
@@ -130,10 +133,10 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
   const repriced = repricingLine(repricing);
   // The change line names its scope when it covers the moments only (no like-for-like pack prior).
   const pctPart = h.deltaPct != null ? ` (${pctLabel(h.deltaPct)})` : "";
-  const changeLabel = `${usd(Math.abs(h.deltaUsd))}${pctPart} this week${h.scope === "moments" ? " on your moments" : ""}`;
+  const changeLabel = `${usd(Math.abs(h.deltaUsd))}${pctPart} this week${h.scope === "moments" ? " on your moments" : h.scope === "no_cards" ? " on your moments and packs" : ""}`;
   // When our own repricing is at least half of the move, the subject must not headline it as a market %;
   // nor when the % covers only part of the headline total.
-  const subject = repricingDominates(repricing, m.delta_usd) || h.scope === "moments" || h.deltaPct == null
+  const subject = repricingDominates(repricing, m.delta_usd) || h.scope !== "all" || h.deltaPct == null
     ? "Your Rip Packs City portfolio this week"
     : `Your Rip Packs City portfolio: ${pctLabel(h.deltaPct)} this week`;
   const dashUrl = emailLink(`${ORIGIN}/dashboard`, "weekly_digest", "dashboard");
@@ -155,6 +158,7 @@ function buildEmail(m: CompleteMover, unsubscribeUrl: string, now: Date = new Da
       ${momentsLine ? `<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px">${momentsLine}</div>` : ""}
     </div>
 ${packsHtml}
+${paniniHtml}
 ${alertHtml}
 ${newsHtml}
     <a href="${dashUrl}" style="display:inline-block;background:linear-gradient(135deg,#E55A4C,#B91C1C);color:#fff;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:13px;padding:12px 22px;border-radius:6px">
@@ -178,6 +182,7 @@ ${newsHtml}
     HOLDINGS_NOTE,
     ...(momentsLine ? [momentsLine] : []),
     ...packsText,
+    ...paniniText,
     ...alertText,
     ...newsText,
     "",
@@ -267,7 +272,7 @@ async function run(req: NextRequest) {
     try {
       const movers = await loadMovers(minAbsPct, days);
       const seen = new Set<string>();
-      const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null; alert_player: string | null; sealed_packs_usd: number | null; repricing_usd: number | null }> = [];
+      const would: Array<{ email: string; delta_pct: number | null; latest_fmv: number | null; alert_player: string | null; sealed_packs_usd: number | null; panini_usd: number | null; repricing_usd: number | null }> = [];
       let unsub = 0;
       let dedup = 0;
       let unverified = 0; // dedup read failed: the live run would skip these too
@@ -288,7 +293,8 @@ async function run(req: NextRequest) {
         if (!rp.ok) { incomplete++; continue; }
         const alertSuggestion = await loadAlertSuggestion(m.user_id);
         const packWeek = await loadPackWeek(m.user_id);
-        would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv, alert_player: alertSuggestion?.player ?? null, sealed_packs_usd: packWeek?.lowAskUsd ?? null, repricing_usd: rp.repricing.deltaUsd });
+        const paniniWeek = await loadPaniniWeek(m.user_id);
+        would.push({ email, delta_pct: m.delta_pct, latest_fmv: m.latest_fmv, alert_player: alertSuggestion?.player ?? null, sealed_packs_usd: packWeek?.lowAskUsd ?? null, panini_usd: paniniWeek?.usd ?? null, repricing_usd: rp.repricing.deltaUsd });
       }
       return NextResponse.json({
         ok: true,
@@ -390,7 +396,8 @@ async function run(req: NextRequest) {
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
         const alertSuggestion = await loadAlertSuggestion(m.user_id);
         const packWeek = await loadPackWeek(m.user_id);
-        const { subject, html, text } = buildEmail(m, unsubscribeUrl, new Date(), alertSuggestion, packWeek, rp.repricing);
+        const paniniWeek = await loadPaniniWeek(m.user_id);
+        const { subject, html, text } = buildEmail(m, unsubscribeUrl, new Date(), alertSuggestion, packWeek, rp.repricing, paniniWeek);
 
         // ⛔ CLAIM BEFORE SEND (2026-11-02): the delivery row used to be written AFTER
         // the send with a failed insert only logged, so overlapping runs — or any run

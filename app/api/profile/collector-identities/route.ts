@@ -58,6 +58,9 @@ interface PaniniProfileRead {
   profile_state: string | null;
   last_complete_at: string | null;
   cards_held: number | null;
+  /** Newest recorded day of collection value (panini_portfolio_daily, 2026-11-25 for the dashboard's
+   *  Saved Wallets tile). null = no day recorded yet, or the read failed — never a $0 collection. */
+  value: { day: string; cards: number; priced_cards: number; fmv_usd: number | null } | null;
 }
 
 type SummaryRead =
@@ -73,8 +76,9 @@ async function readPaniniSummary(username: string): Promise<SummaryRead> {
   let error: unknown;
   let walk: { data: any; error: unknown };
   let held: { count: number | null; error: unknown };
+  let value: { data: any; error: unknown } = { data: null, error: null };
   try {
-    [{ data, error }, walk, held] = await Promise.all([
+    [{ data, error }, walk, held, value] = await Promise.all([
       withBoardBudget(
         (supabase as any).rpc("panini_owner_summary", { p_username: username }) as Promise<{ data: unknown; error: unknown }>,
         "panini_owner_summary",
@@ -100,6 +104,19 @@ async function readPaniniSummary(username: string): Promise<SummaryRead> {
         SUMMARY_BUDGET_MS,
         "api/profile/collector-identities/",
       ),
+      // Its own failure is `value: null`, never a failed summary (it is a tile figure, not the list).
+      withBoardBudget(
+        (supabase as any)
+          .from("panini_portfolio_daily")
+          .select("day, cards, priced_cards, fmv_usd")
+          .eq("username", username)
+          .order("day", { ascending: false })
+          .limit(1)
+          .maybeSingle() as Promise<{ data: any; error: unknown }>,
+        "panini_portfolio_daily",
+        SUMMARY_BUDGET_MS,
+        "api/profile/collector-identities/",
+      ).catch((e: unknown) => ({ data: null, error: e })),
     ]);
   } catch (err) {
     return { ok: false, error: err };
@@ -124,6 +141,15 @@ async function readPaniniSummary(username: string): Promise<SummaryRead> {
         profile_state: walked ? (walk.data.profile_state ?? null) : null,
         last_complete_at: walked ? (walk.data.last_complete_at ?? null) : null,
         cards_held: walked ? held.count : null,
+        value:
+          !value.error && value.data && typeof value.data.day === "string"
+            ? {
+                day: value.data.day,
+                cards: Number(value.data.cards) || 0,
+                priced_cards: Number(value.data.priced_cards) || 0,
+                fmv_usd: value.data.fmv_usd == null ? null : Number(value.data.fmv_usd),
+              }
+            : null,
       },
     },
   };

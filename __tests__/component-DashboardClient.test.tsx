@@ -499,6 +499,88 @@ describe("DashboardClient — per-wallet collection stats", () => {
   })
 })
 
+// ─── Saved Wallets tiles: units, unopened packs, Panini / Candy (2026-11-25) ──
+// Trevor on the Saved Wallets card: "use "Pins" instead of moments ... "cards" for panini and
+// candy", "show "Unopened Packs" totals here, with it counting into that collection's total
+// fmv", and "add ways for panini and candy to be added to these graphics".
+describe("DashboardClient — Saved Wallets tiles (2026-11-25)", () => {
+  const ADDR = "0xbd94cade097e50ac"
+  const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  function withTiles(packs: unknown) {
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ wallet_addr: ADDR })] })
+    routes["/api/profile/collection-stats"] = () =>
+      json(200, { stats: [{ collection_id: TS, moment_count: 15880, fmv_total: 40893, locked_count: 0, fmv_max: 0, stale_fmv_total: 0, stale_count: 0 }] })
+    routes["/api/profile/held-pack-value"] = () =>
+      json(200, { held: 430, listed: 430, low_ask_usd: 15887.71, unpriced: 0, wallets: 1, wallets_failed: 0, by_wallet: packs })
+    routes["/api/profile/collector-identities"] = () => json(200, { identities: [] })
+  }
+
+  it("labels Pinnacle in Pins, adds the Unopened Packs count, and folds the packs into that collection's FMV", async () => {
+    withTiles({ [ADDR]: { [TS]: { packs: 430, listed: 430, usd: 15887.71 } } })
+    render(<DashboardClient />)
+    expect(await screen.findByText("Pins")).toBeTruthy()
+    expect(await screen.findByText("430")).toBeTruthy()
+    // $40,893 of Moments + $15,887.71 of sealed packs
+    // the tile AND the Portfolio FMV hero read the same one number
+    expect((await screen.findAllByText("$56,781")).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText("Unopened Packs").length).toBeGreaterThan(0)
+  })
+
+  it("an answer with no per-collection split shows no pack figure and leaves FMV at the Moments figure", async () => {
+    withTiles({})
+    render(<DashboardClient />)
+    expect(await screen.findByText("$40,893")).toBeTruthy()
+    expect(screen.queryByText("Unopened Packs")).toBeNull()
+  })
+
+  it("offers a Panini tile that links to the Panini username panel when none is linked", async () => {
+    withTiles({})
+    render(<DashboardClient />)
+    const link = await screen.findByText(/Link your Panini username/i)
+    expect(link.closest("a")?.getAttribute("href")).toBe("#panini-username")
+  })
+
+  it("a linked Panini username gets its own tile in Cards with its recorded FMV", async () => {
+    withTiles({})
+    routes["/api/profile/collector-identities"] = () => json(200, { identities: [{
+      collection: "panini-blockchain", username: "trevp", created_at: "2026-09-25",
+      summary: { username: "trevp", cards_seen: 0, listed_now: 0, special_serials: 0, editions: 0, last_seen_at: null,
+        profile: { walked: true, profile_state: "public", last_complete_at: "2026-11-25", cards_held: 150,
+          value: { day: "2026-11-25", cards: 148, priced_cards: 140, fmv_usd: 812.4 } } },
+      summary_failed: false,
+    }] })
+    render(<DashboardClient />)
+    expect(await screen.findByText("@trevp")).toBeTruthy()
+    expect(await screen.findByText("148")).toBeTruthy()
+    expect(await screen.findByText("$812.40")).toBeTruthy()
+    expect(screen.getAllByText("Cards").length).toBeGreaterThan(0)
+  })
+
+  it("linked Panini cards join Total Assets and Portfolio FMV (Trevor 2026-11-25: \"Yes it should be\")", async () => {
+    withTiles({})
+    routes["/api/profile/collector-identities"] = () => json(200, { identities: [{
+      collection: "panini-blockchain", username: "trevp", created_at: "2026-09-25",
+      summary: { username: "trevp", cards_seen: 0, listed_now: 0, special_serials: 0, editions: 0, last_seen_at: null,
+        profile: { walked: true, profile_state: "public", last_complete_at: "2026-11-25", cards_held: 150,
+          value: { day: "2026-11-25", cards: 148, priced_cards: 140, fmv_usd: 812.4 } } },
+      summary_failed: false,
+    }] })
+    render(<DashboardClient />)
+    // $40,893 Moments + $15,887.71 packs + $812.40 Panini
+    expect(await screen.findByText("$57,593")).toBeTruthy()
+    // 15,880 Moments + 430 packs + 148 Panini cards
+    expect(await screen.findByText("16,458")).toBeTruthy()
+  })
+
+  it("a failed Panini read adds nothing and says so under the figures", async () => {
+    withTiles({})
+    routes["/api/profile/collector-identities"] = () => json(503, {})
+    render(<DashboardClient />)
+    expect((await screen.findAllByText(/Panini cards couldn't load/)).length).toBeGreaterThan(0)
+    expect(await screen.findByText("$56,781")).toBeTruthy()
+  })
+})
+
 // ─── Wallets ─────────────────────────────────────────────────────────────────
 
 describe("DashboardClient — wallets", () => {
