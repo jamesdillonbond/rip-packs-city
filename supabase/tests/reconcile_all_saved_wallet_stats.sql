@@ -96,6 +96,14 @@ LANGUAGE sql AS $$
           p_rows_skipped, p_error)
 $$;
 
+-- 2026-11-26: stub for the Aptos-holdings test (production: UFC Strike Moments on Aptos accounts
+-- linked to the saved Flow address — ufc_aptos_wallet_links JOIN ufc_aptos_holdings).
+CREATE TABLE public._aptos_held (wallet_addr text, collection_id uuid);
+CREATE FUNCTION public.ufc_aptos_holds_any(p_flow_address text, p_collection_id uuid) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (SELECT 1 FROM public._aptos_held a WHERE a.wallet_addr = p_flow_address AND a.collection_id = p_collection_id)
+$$;
+
 -- >>> BEGIN verbatim reconcile_all_saved_wallet_stats (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE PROCEDURE public.reconcile_all_saved_wallet_stats(IN p_max_seconds integer DEFAULT 50, IN p_max_wallets integer DEFAULT 500, IN p_min_age_minutes integer DEFAULT 360, IN p_max_moments integer DEFAULT 20000)
  LANGUAGE plpgsql
@@ -128,7 +136,10 @@ BEGIN
          FROM public.wallet_moments_cache w
         WHERE w.wallet_address = sw.wallet_addr
           AND w.collection_id  = sw.collection_id
-     );
+     )
+     -- 2026-11-26: a UFC Strike row whose Moments are all on linked Aptos accounts holds
+     -- something too (aggregate_saved_wallet_stats counts them); never zero it.
+     AND NOT public.ufc_aptos_holds_any(sw.wallet_addr, sw.collection_id);
   GET DIAGNOSTICS v_zeroed = ROW_COUNT;
   COMMIT;
 
@@ -147,12 +158,12 @@ BEGIN
         FROM public.saved_wallets sw
        WHERE sw.wallet_addr IS NOT NULL
          AND sw.user_id IS NOT NULL
-         AND EXISTS (
+         AND (EXISTS (
            SELECT 1
              FROM public.wallet_moments_cache w
             WHERE w.wallet_address = sw.wallet_addr
               AND w.collection_id  = sw.collection_id
-         )
+         ) OR public.ufc_aptos_holds_any(sw.wallet_addr, sw.collection_id))
        GROUP BY sw.user_id, sw.wallet_addr
       HAVING (MIN(sw.cache_updated_at) IS NULL
               OR MIN(sw.cache_updated_at) < now() - make_interval(mins => GREATEST(p_min_age_minutes, 0)))
@@ -168,12 +179,12 @@ BEGIN
         FROM public.saved_wallets sw
        WHERE sw.wallet_addr IS NOT NULL
          AND sw.user_id IS NOT NULL
-         AND EXISTS (
+         AND (EXISTS (
            SELECT 1
              FROM public.wallet_moments_cache w
             WHERE w.wallet_address = sw.wallet_addr
               AND w.collection_id  = sw.collection_id
-         )
+         ) OR public.ufc_aptos_holds_any(sw.wallet_addr, sw.collection_id))
        GROUP BY sw.user_id, sw.wallet_addr
       HAVING (MIN(sw.cache_updated_at) IS NULL
               OR MIN(sw.cache_updated_at) < now() - make_interval(mins => GREATEST(p_min_age_minutes, 0)))
@@ -247,12 +258,12 @@ BEGIN
         GROUP BY b.user_id, b.wallet_addr
        HAVING COALESCE(SUM(b.cached_moment_count), 0) > GREATEST(p_max_moments, 0)
      )
-     AND EXISTS (
+     AND (EXISTS (
        SELECT 1
          FROM public.wallet_moments_cache w
         WHERE w.wallet_address = sw.wallet_addr
           AND w.collection_id  = sw.collection_id
-     );
+     ) OR public.ufc_aptos_holds_any(sw.wallet_addr, sw.collection_id));
 
   SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(sw.cache_updated_at))) / 3600.0, 1)
     INTO v_oldest_big_h
@@ -266,12 +277,12 @@ BEGIN
         GROUP BY b.user_id, b.wallet_addr
        HAVING COALESCE(SUM(b.cached_moment_count), 0) > GREATEST(p_max_moments, 0)
      )
-     AND EXISTS (
+     AND (EXISTS (
        SELECT 1
          FROM public.wallet_moments_cache w
         WHERE w.wallet_address = sw.wallet_addr
           AND w.collection_id  = sw.collection_id
-     );
+     ) OR public.ufc_aptos_holds_any(sw.wallet_addr, sw.collection_id));
 
   -- ⚠ The 3-arg log_pipeline_run(text, boolean, jsonb) overload passes
   -- `p_started_at := now()`. now() is TRANSACTION START, and this procedure COMMITs
@@ -551,6 +562,34 @@ SELECT _assert_eq((SELECT count(*)::text FROM public._refreshed WHERE wallet_add
   'CONTROL: with p_max_moments above its count the whale is attempted like any other wallet');
 SELECT _assert_eq((SELECT extra->>'wallets_skipped_big' FROM public._runs ORDER BY started_at DESC LIMIT 1), '0',
   'CONTROL: and nothing is reported skipped');
+
+-- ── ⚠ A UFC ROW HELD ONLY ON APTOS (2026-11-26) ─────────────────────────────
+-- A collector who migrated every UFC Moment to Aptos has NO wallet_moments_cache rows for
+-- UFC, so before this the zero pass set their UFC row to 0 Moments every hour and the queue
+-- never re-aggregated it — while aggregate_saved_wallet_stats now counts their Aptos Moments.
+INSERT INTO public.saved_wallets VALUES
+  ('66666666-6666-6666-6666-666666666666','0xaptosonly','aaaaaaaa-0000-0000-0000-00000000000a',
+   5, 50.00, 'FANDOM', now() - interval '10 hours'),
+  -- control: same shape, nothing on Aptos either -> still zeroed
+  ('77777777-7777-7777-7777-777777777777','0xnothing','aaaaaaaa-0000-0000-0000-00000000000a',
+   5, 50.00, 'FANDOM', now() - interval '10 hours');
+INSERT INTO public._aptos_held VALUES ('0xaptosonly','aaaaaaaa-0000-0000-0000-00000000000a');
+
+DELETE FROM public._refreshed;
+DELETE FROM public._runs;
+CALL public.reconcile_all_saved_wallet_stats(p_max_moments => 60000);
+-- ⚠ AT THE DEFAULT 360-minute GATE, which is what makes the zero pass matter: a zeroed row is
+-- stamped NOW, so the gate then skips it and it stays at 0 Moments until the next day. With
+-- p_min_age_minutes => 0 the queue would re-fill it straight after and hide the defect (the
+-- first draft of this case did exactly that and passed with the exemption deleted).
+SELECT _assert_eq((SELECT count(*)::text FROM public._refreshed WHERE wallet_addr='0xaptosonly'), '1',
+  'a row holding only on Aptos is QUEUED for re-aggregation');
+SELECT _assert_eq((SELECT cached_moment_count::text FROM public.saved_wallets WHERE wallet_addr='0xaptosonly'), '7',
+  'and keeps the re-aggregated figures (the stub writes 7), never the zero pass''s 0');
+SELECT _assert_eq((SELECT cached_moment_count::text FROM public.saved_wallets WHERE wallet_addr='0xnothing'), '0',
+  'CONTROL: the same row with nothing on Aptos is still zeroed — the exemption is the holding, not the collection');
+SELECT _assert_eq((SELECT count(*)::text FROM public._refreshed WHERE wallet_addr='0xnothing'), '0',
+  'CONTROL: and is not queued');
 
 SELECT '✓ reconcile_all_saved_wallet_stats invariants pass' AS result;
 

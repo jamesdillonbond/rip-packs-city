@@ -2833,8 +2833,20 @@ const PINS = [
     // now split on the PAIR's summed count (the queue's own test) instead of the
     // row's — the whale's own 4,580-row All Day row had pinned oldest_cache_h at
     // 17 h while every queued wallet was fresh. Same signature, no DROP.
+    // ⚠ Repointed 2026-11-26: a UFC Strike row held only on linked Aptos accounts
+    // (no wmc rows) is no longer zeroed and is queued (ufc_aptos_holds_any), since
+    // aggregate_saved_wallet_stats now counts those Moments. Same signature.
     migration:
-      "supabase/migrations/20260913233500_audit_20260913_oldest_cache_h_excludes_the_whole_pair_the_size_gate_skips.sql",
+      "supabase/migrations/20261126194428_audit_20261126_saved_wallet_stats_count_ufc_on_aptos.sql",
+  },
+  {
+    // Pinned 2026-11-26 after 20261126194428 broke it for EVERY wallet for ~3 min (42804: a UNION of
+    // wmc.tier text with editions.tier tier_type). The reconcile pin stubs this function, so nothing
+    // ran the real body; this pin does, over the real enum column types.
+    fn: "aggregate_saved_wallet_stats",
+    test: "supabase/tests/aggregate_saved_wallet_stats.sql",
+    migration:
+      "supabase/migrations/20261126194735_audit_20261126_saved_wallet_stats_ufc_aptos_tier_cast.sql",
   },
   {
     // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the
