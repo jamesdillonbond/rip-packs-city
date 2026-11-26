@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:47 AM PT · 🔧 SHIPPED (UI) — UFC edition pages drop the dead Flow "UFC ask" tile (Claude Code cloud; Trevor: "Keep going")
+
+- **Found in a rendered-DOM check** of /ufc/edition/GEOFF-NEAL-…-750 after the 7:20 AM ship. That ship is verified live: the banner reads "UFC Strike now trades on Aptos", sale rows show "Aptos · Rarible/Tradeport", the seller shows "UFC Strike store", there are 6 Aptos explorer links and 0 Aptos addresses linked into the Flow analyzer.
+- **The leftover:** a "UFC ask —" tile. It reads a FLOW ask, which cannot exist since the Flow marketplace closed (05-13), so it showed a permanent dash beside the real "Lowest ask · Aptos $1.49" tile. It is now hidden on UFC (`{!isUfc && …}`), pinned in `__tests__/lib-ufc-aptos-floor.test.ts`.
+- Proof: related suites 44/44, `tsc` clean, `npm run preflight` green.
+- Revert: `git revert` the code commit (UI only).
+
 ### 2026-11-26 ~7:25 AM PT · 🔧 SHIPPED (code) — /insights/squeeze reads through the board-cache ladder (Claude Code cloud, autonomous pass)
 - **Found:** `[insights/squeeze] initial fetch … read exceeded 8000ms` 7× in 7 days (Vercel runtime errors). The page ran the full `topshot_squeeze_board` default view (0.2 s / ~72k buffers warm) on every 5-minute ISR regeneration; under IO pressure that crossed the 8 s board budget and each failure was served as an honest "couldn't load" page for the whole revalidate window.
 - **Fix:** new board key `squeeze` in `WARM_BOARDS` (every 15-min cron tick) with builder `fetchSqueezeDefault()` in `lib/insights/squeeze-board.ts` (same shared query, page default limit 200 / ≥50 %); the page reads `readBoardOrLive("squeeze", …)`: fresh snapshot → live → last complete snapshot (with its own `fetched_at`) → only then degraded (no rows, no stamp). A failed read is `ok:false` (never cached), `fetched_at` NULL. Also cuts the view's reads from 12/h (ISR) to 4/h (cron).
