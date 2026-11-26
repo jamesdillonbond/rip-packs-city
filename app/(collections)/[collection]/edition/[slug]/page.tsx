@@ -79,6 +79,8 @@ import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEdition
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
+import { isUfcAptosBinder } from "@/lib/ufc-aptos"
+import { fetchUfcAptosEditionFloor, type UfcAptosFloor } from "@/lib/ufc-aptos-floor"
 import { fmvBasis, isAskDerivedFmv } from "@/lib/fmv-basis"
 import { readCappedByExternalId } from "@/lib/fmv-capped"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -634,8 +636,12 @@ export default async function EditionPage(
   // Panini (2026-10-25): the franchise(s) panini_edition_team_keys places this card on. A failed read
   // or an unplaced card renders no team chip — never "no team".
   let paniniTeams: { ok: boolean; teams: PaniniEditionTeam[] } = { ok: !isPanini, teams: [] }
+  // UFC Strike (2026-11-25): the cheapest live Rarible ask on Aptos, UFC's only venue since the Flow
+  // marketplace closed. Defaults to a FAILED read on UFC, so a throw below can never read as "no ask".
+  const isUfc = isUfcAptosBinder(collection)
+  let ufcFloorRes: { floor: UfcAptosFloor | null; ok: boolean } = { floor: null, ok: !isUfc }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes, ufcFloorRes] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -671,6 +677,9 @@ export default async function EditionPage(
     wantsComparable
       ? fetchEditionComparableEstimate(detail.id)
       : Promise.resolve({ estimate: null, ok: true }),
+    isUfc
+      ? fetchUfcAptosEditionFloor(detail.id)
+      : Promise.resolve({ floor: null, ok: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -1207,6 +1216,30 @@ export default async function EditionPage(
                   : relTime(askAt)
           }
         />
+        {/* UFC Strike on Aptos (2026-11-25): Rarible is UFC's only venue and almost nothing sells there
+            (one UFC sale 09-13..11-25), so the cheapest live ask is the only current price evidence. Shown
+            even while UFC's FMV reads as closed: it is a fact about a live listing, not an FMV. Rendered only
+            when a listing exists — an absent floor may mean the listings lane has not reached this edition,
+            so "none listed" would be a claim we cannot back. */}
+        {isUfc && ufcFloorRes.floor && (
+          <StatCell
+            label="Lowest ask · Aptos"
+            value={fmtUsd(ufcFloorRes.floor.floorUsd)}
+            sub={
+              <span>
+                {ufcFloorRes.floor.raribleUrl ? (
+                  <a href={ufcFloorRes.floor.raribleUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--rpc-text-secondary)" }}>
+                    {ufcFloorRes.floor.singleListings} listed on Rarible
+                  </a>
+                ) : (
+                  <>{ufcFloorRes.floor.singleListings} listed on Rarible</>
+                )}
+                {ufcFloorRes.floor.floorApt != null ? <span title="Ask in APT, converted at the latest daily APT/USD close"> · {ufcFloorRes.floor.floorApt} APT</span> : null}
+                {ufcFloorRes.floor.checkedAt ? <> · checked {relTime(ufcFloorRes.floor.checkedAt)}</> : null}
+              </span>
+            }
+          />
+        )}
         <StatCell
           label="% Listed"
           // em-dash (not "0%") when the collection has no fresh listing source, or (Top Shot)

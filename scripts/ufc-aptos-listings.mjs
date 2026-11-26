@@ -32,7 +32,12 @@ const INDEXER = "https://api.mainnet.aptoslabs.com/v1/graphql"
 const APT = ["https://api.mainnet.aptoslabs.com/v1", "https://archive.mainnet.aptoslabs.com/v1"]
 const RARIBLE = "0xe7201624dc99aee9a6d5f6e9bb3cf2061c4facc92e2aa0c05bf9057508deee77"
 const LIST_FNS = [`${RARIBLE}::marketplace::list`, `${RARIBLE}::bundles::list_bundle`]
-const START_VERSION = 3180000000 // UFC Strike's first Aptos mints (Aug 2025)
+// Rarible's Aptos marketplace package was published at v7,142,111,534 (2026-09-09 PT; first tx on the account
+// v7,142,108,457). No Rarible listing can predate it. The 11-16 draft started at UFC's first mint (v3.18B) and the
+// first run (2026-11-25 7:59 PM PT) 408'd at offset 0: a filter matching nothing makes the indexer scan the whole
+// 40M-version window and time out.
+const START_VERSION = 7142100000
+const MIN_WINDOW = 1_000_000
 
 const args = process.argv.slice(2)
 const APPLY = args.includes("--apply")
@@ -57,6 +62,21 @@ async function getJson(u, init) {
     await sleep(3000 * (i + 1))
   }
   throw new Error(`gave up ${u.slice(0, 100)}`)
+}
+class IndexerTimeout extends Error {}
+// One window query WITHOUT the retry loop on a 408: the caller halves the window instead of re-sending a
+// query the indexer has already said is too heavy. Other failures (429, 5xx) still go through getJson's backoff.
+async function gqlWindow(query, variables) {
+  const r = await fetch(INDEXER, { method: "POST", headers, body: JSON.stringify({ query, variables }) }).catch(() => null)
+  if (r?.ok) {
+    const j = await r.json()
+    await sleep(PACE)
+    if (j?.errors?.some((e) => String(e?.extensions?.code) === "408")) throw new IndexerTimeout("408")
+    if (!j || j.errors) throw new Error("indexer: " + JSON.stringify(j?.errors ?? j).slice(0, 200))
+    return j.data
+  }
+  if (r?.status === 408) throw new IndexerTimeout("408")
+  return gql(query, variables)
 }
 async function gql(query, variables) {
   const j = await getJson(INDEXER, { method: "POST", headers, body: JSON.stringify({ query, variables }) })
@@ -92,15 +112,36 @@ const cursorBefore = cursor
 console.log(`mode ${APPLY ? "APPLY" : "dry-run"} · cursor v${cursor} · head v${head} · key ${process.env.APTOS_API_KEY ? "yes" : "no"}`)
 
 // ── 1. new listings ──
-const Q = `query($lo:bigint,$hi:bigint,$o:Int,$f:[String!]){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"},entry_function_id_str:{_in:$f}},limit:100,offset:$o,order_by:{transaction_version:asc}){transaction_version transaction_timestamp entry_function_id_str token_data_id to_address current_token_data{collection_id token_properties}}}`
-const stats = { windows: 0, new_listings: 0, closed: 0, still_live: 0, owner_unknown: 0, unpriced: 0 }
+const Q = `query($lo:bigint,$hi:bigint,$o:Int,$f:[String!]){token_activities_v2(where:{transaction_version:{_gte:$lo,_lt:$hi},type:{_eq:"0x1::object::Transfer"},entry_function_id_str:{_in:$f}},limit:100,offset:$o,order_by:[{transaction_version:asc},{event_index:asc}]){transaction_version event_index transaction_timestamp entry_function_id_str token_data_id to_address current_token_data{collection_id token_properties}}}`
+const stats = { windows: 0, new_listings: 0, closed: 0, still_live: 0, owner_unknown: 0, unpriced: 0, timeouts: 0 }
+if (cursor < START_VERSION) cursor = START_VERSION
+let win = WINDOW
 while (cursor < head && Date.now() - t0 < BUDGET_MS * 0.6) {
-  const hi = Math.min(cursor + WINDOW, head)
+  const hi = Math.min(cursor + win, head)
   const found = []
-  for (let off = 0; ; off += 100) {
-    const rows = (await gql(Q, { lo: cursor, hi, o: off, f: LIST_FNS })).token_activities_v2
+  try {
+  // KEYSET paging, as in scripts/ufc-aptos-sales-ingest.mjs (2026-11-15): a deep OFFSET in a busy window
+  // makes the indexer 408 ("Upstream took longer than 10000ms"). The first run of this lane (2026-11-25
+  // 7:59 PM PT) died exactly so in its first windows. Each page restarts at the last version seen and skips
+  // only the rows already read AT that version; (transaction_version, event_index) is a total order.
+  let pageLo = cursor
+  let skipAtLo = 0
+  for (;;) {
+    const rows = (await gqlWindow(Q, { lo: pageLo, hi, o: skipAtLo, f: LIST_FNS })).token_activities_v2
     for (const r of rows) if (editionOf.has(r.current_token_data?.collection_id)) found.push(r)
     if (rows.length < 100) break
+    const last = Number(rows[rows.length - 1].transaction_version)
+    const atLast = rows.filter((r) => Number(r.transaction_version) === last).length
+    skipAtLo = last === pageLo ? skipAtLo + atLast : atLast
+    pageLo = last
+  }
+  } catch (e) {
+    if (!(e instanceof IndexerTimeout)) throw e
+    // Too heavy: retry the SAME start with half the window. The cursor has not moved, so nothing is skipped.
+    stats.timeouts++
+    if (win <= MIN_WINDOW) throw new Error(`indexer 408 even at a ${MIN_WINDOW}-version window from v${cursor}`)
+    win = Math.max(MIN_WINDOW, Math.floor(win / 2))
+    continue
   }
   const txCache = new Map()
   const out = []
@@ -129,6 +170,7 @@ while (cursor < head && Date.now() - t0 < BUDGET_MS * 0.6) {
   stats.new_listings += out.length
   cursor = hi
   stats.windows++
+  win = Math.min(WINDOW, win * 2) // grow back after a successful window
   if (APPLY) {
     const { error } = await db.from("ufc_aptos_ingest_state").update({ listings_scanned_through_version: cursor }).eq("id", 1)
     if (error) throw error
