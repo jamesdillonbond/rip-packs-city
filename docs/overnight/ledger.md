@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~10:45 AM PT · 🗄 APPLIED (`20261126174004`) — the conflated-editions parallel remap only sweeps chain answers from the last 7 days (Claude Code cloud; Trevor: "Keep going and address all that needs it")
+- **Why:** `refresh-conflated-editions` (daily 7:17 AM PT) failed today. Its `remap_base_to_parallel` lane (`remap_topshot_base_keyed_parallel_sales`) hit its 120 s timeout, after the route's run time climbed 108 → 154 → 196 s over three days while moving 0 sales. The function joins every mapped Top Shot parallel (~359K of 2.35M `topshot_moment_subeditions` rows, growing ~20K a day) to all of `sales`. Since #251 the same work is done at write time, and by `topshot_parallel_sales_followup()` every 2 h for mappings resolved in the last 3 days.
+- **What:** same predicate plus `ms.resolved_at > now() - interval '7 days'`, kept as a backstop with a wider window than the 2-hourly lane. Before apply: 16K parallels in the window, 0 sales to move, 8.9 s cold. After apply, the real function ran in 0.9 s and moved 0. The pin now asserts that a mapping resolved 8 days ago is not swept; dropping the window fails it (3 moved, not 2). Preflight, including the DB tests, is green.
+- **Watch:** tomorrow's 7:17 AM PT `refresh-conflated-editions` row should be `ok=true` with `lanes_failed` empty.
+- **Revert:** re-apply the `CREATE OR REPLACE` from `20260802205000_audit_20260802_snapshot_remap_topshot_base_keyed_parallel_sales.sql`, and repoint the pin and the drift-guard entry at it.
+
 ### 2026-11-26 ~9:15 AM PT · 🔧 SHIPPED (UI copy) — UFC binder: the Flow table no longer says "No moments found for this wallet on this collection" under a collector's Aptos holdings; banner drops "RPC prices are paused" (Claude Code cloud; Trevor: "Keep going")
 
 - **Found by a rendered-DOM check** of /ufc/collection?wallet=0xaf78…fe85 (RRX69, linked by Moment identity this morning). The "On Aptos · Current FMV $6,936.71 · 1,855 moments" panel renders, with no page errors.
