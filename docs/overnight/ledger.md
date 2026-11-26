@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:35 PM PT · 🗄 APPLIED (`20261126032613`) + 📝 pin — Moment game line: a description naming the opponent's CITY now counts as evidence on a back-to-back (Claude Code cloud; Trevor's 3-hour "keep going")
+
+- `get_moment_game_context`: the description scores 1 point when it names the opponent's nickname OR city ("against Detroit"). Measured before: 58 covered editions sat on an ambiguous back-to-back; the city settles 38. On the 20 back-to-backs the recorded teams already settle, the city agreed 16 / 16. Recorded teams still score 2 and still veto.
+- After: 3,109 / 3,186 covered editions get a game line (the lane keeps adding players). anon EXECUTE false (has_function_privilege); live prosrc md5 = file body.
+- Pin `supabase/tests/get_moment_game_context.sql` adds a city-only back-to-back case (fails on the old body); PIN repointed.
+- Revert: re-apply `get_moment_game_context` from `20261126031648_audit_20261125_moment_game_context_team_placeholders.sql`, repoint the PIN, drop the new pin case.
+
 ### 2026-11-25 ~7:25 PM PT · 🗄 APPLIED (`20261126031512`, `20261126031648`) — Moment game line: back-to-backs settled by the edition's own record, not by a date rule (Claude Code cloud; Trevor's 3-hour "keep going")
 
 - Found: the "US date first" rule (`20261126020836`) was measured on 147 editions; at 288 player-seasons the back-to-backs showed Top Shot dates Moments BOTH ways — Brunson 2025-12-19 (recorded Pacers vs Knicks), Harden 2026-03-25 (Cavaliers vs Magic), Josh Hart, Wembanyama, Veronica Burton name the UTC-date game; Giannis and Melton the US-date one. Those slabs were showing the wrong night.
