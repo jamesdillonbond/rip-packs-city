@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:00 AM PT · 📝 docs — pricing accuracy pass recorded; dated checks handed to Cowork in focus.md (Claude Code cloud; Trevor: "update any relevant documentation before I archive this thread")
+- Session log entry for 11-26 in `docs/sessions/2026-11.md`. New focus.md steer (11-26 ~11:00 AM PT) hands Cowork the 11-27 check (conflated-editions remap `20261126174004`, hot-lane drift arm `20261126162440`, pg_cron 932/933) and the 12-02 close-out (pull backlog, Top Shot recent-rips EV re-run, drift-arm read). Creating those as scheduled tasks from this session was refused twice, so the full task prompts are in the Project doc `claude/handoff-2026-11-26-pricing-accuracy-pass.md`.
+- Revert: docs only.
+
 ### 2026-11-26 ~10:00 AM PT · 🔧 SHIPPED — the interactive slab on every collection: shared edition pages (all seven collections, incl. Panini's only detail page) and Disney Pinnacle pin pages (Claude Code cloud; Trevor: "Keep going and see how we can enable this for all collections")
 
 - **Before:** only `/moment/[id]` had the slab (Top Shot, All Day, Golazos, UFC, Candy). Edition pages (`/[collection]/edition/[slug]`) and `/pinnacle/moment/[id]` showed a flat image.

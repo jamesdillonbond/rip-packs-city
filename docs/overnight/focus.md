@@ -4,6 +4,21 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-26 ~11:00 AM PT (Claude Code cloud, end of the pricing deep-pass thread; Trevor: "Make sure any scheduled tasks live outside this thread") — two dated checks OWNED BY COWORK
+
+Creating these as scheduled tasks from the Claude Code session was refused twice (the same Claude Code limit noted in the 11-26 ~8:30 AM steer below), so Cowork owns them. Schedule each with the Supabase + Vercel connectors, or do it on the matching nightly or daytime pass. The full task prompts are in the Project doc `claude/handoff-2026-11-26-pricing-accuracy-pass.md`.
+
+- 🔎 **Fri 11-27 after 7:17 AM PT — confirm three 11-26 changes held.**
+  - (1) `refresh-conflated-editions` today is `ok=true` with `lanes_failed` empty. It failed 11-26 on `remap_base_to_parallel` (120 s timeout); fixed by `20261126174004`, which scopes `remap_topshot_base_keyed_parallel_sales` to mappings resolved in the last 7 days.
+  - (2) `fmv-recalc` since 11-26 8:24 AM PT: no `hot_lane_error`, and `hot_lane_editions` far below 150. This is the drift arm from `20261126162440`.
+  - (3) pg_cron 932/933: requests at height nearly all `written`, no 429s; note the `topshot-moments-hydrate-at-rip` cursor date (it was 11-10 at 11-26 8:55 AM PT).
+  - Failed again on (1) → narrow the window to 3 days with a new migration that repoints the pin.
+- 📏 **Wed 12-02 — close out the pull backlog and two reads.**
+  - (a) Is the 932 backlog drained? The cursor should have wrapped. Report the Top Shot unpriced-rip share by week since April 2026; it was 0.1 % for 11-16 and 5.8 % for 11-09 on 11-26.
+  - (b) Re-run the Top Shot "recent rips vs `calibrated_ev`" walk-forward from `docs/reference/packs.md` (the 11-25 board-EV bullet). The 12.5 % unpriced confound is gone; on 11-26 the unlocked rips read 0.90× the priced ones by mean and 1.04× by median.
+  - (c) Hot-lane drift arm: on Top Shot busy HIGH / MEDIUM edition-days since 11-26 where the first 3 sales sat more than 30 % from the price, score the rest of the day's sales against the price in force at each sale. The baseline is 28.7 % before the change; the engine-rerun estimate was 61.3 %.
+  - Write the result to the open-items page `claude/fmv-engine-open-items-2026-11-12.md` (Dated reads) and to packs.md.
+
 ## STEER — added 2026-11-26 ~8:30 AM PT (Claude Code cloud, end of the overnight autonomous thread) — two items OWNED BY COWORK (Trevor 11-26: "Save that to memory so cowork does it")
 
 - 🔎 **VERIFY ON THE 11-27 PASSES — the 11-26 overnight fixes held over 24 h.** Scheduled task `trig_01LPQL6QwYdKwBz5m15MR7oj` runs it 11-27 1:41 PM PT in a fresh session, but it was created with NO connectors (the org refuses them from this surface), so if the night pass has Supabase/Vercel, do it there and the task will stop on seeing your ledger line. (1) Postgres `deadlock detected` since 11-26 3:00 AM PT: 0 `populate_wmc_image` vs `backfill_wmc_metadata_from_editions` (`20261126105906`, SKIP LOCKED) and 0 `close_sold_topshot_listings_and_floors` vs `atlas_market_drain` (`20261126150605`, jobid 825 on even minutes). Baseline 11 in the 24 h before; 0 from 3:00 to 8:20 AM PT. (2) `ts-sold-floor-clear` failures since 7:05 AM PT, and any failed run logs `rows_written = 0` (`20261126091058`). (3) `public_board_snapshots` `squeeze` refreshed every ~15 min (first 7:52 AM PT, 200 rows) and 0 `[insights/squeeze] initial fetch` errors (`663768bc3`). (4) `golazos_offers` suppression `expires_at` NULL (`20261126162522`), no alert. All held → one ledger line and close this bullet; regressed → each change's ledger revert line.
