@@ -441,8 +441,11 @@ function MarketInner() {
 
   // 2026-11-26: Panini's league / brand scope (shared with its other tabs). Called BEFORE the URL-writing
   // effect below so the `?property=` a visitor arrived with is read before that effect rewrites the query.
-  const paniniScope = usePaniniScope(collectionId === "panini-blockchain")
-  const paniniProperty = collectionId === "panini-blockchain" && paniniScope.index ? paniniScope.slug : ""
+  // 2026-11-26: Candy has the same bar (its own index and remembered choice; the API filters on the server).
+  const scopeSource = collectionId === "candy-mlb" ? "candy" : "panini"
+  const hasScope = collectionId === "panini-blockchain" || collectionId === "candy-mlb"
+  const paniniScope = usePaniniScope(hasScope, scopeSource)
+  const paniniProperty = hasScope && paniniScope.index ? paniniScope.slug : ""
   // A changed scope is a new list: back to page 1. Not on mount, and not when the index merely finishes
   // loading for a scope the visitor arrived with (that would discard a deep-linked ?page=).
   const lastPaniniScope = useRef<string | null>(null)
@@ -633,7 +636,7 @@ function MarketInner() {
       {collectionId === "panini-blockchain" && (
         <PaniniCoverageNote coverage={data?.coverage} failed={data?.coverage_failed === true || error != null} />
       )}
-      {collectionId === "panini-blockchain" && <PaniniScopeBar scope={paniniScope} />}
+      {hasScope && <PaniniScopeBar scope={paniniScope} />}
 
       {/* ── Alerts front door ── turn a below-FMV listing you're watching into a
           standing alert. Auth-gated (/alerts); anon bounces to login.

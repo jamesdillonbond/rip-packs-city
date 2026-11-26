@@ -14,22 +14,24 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import {
-  PANINI_SCOPE_EVENT,
   PANINI_SCOPE_PARAM,
-  PANINI_SCOPE_STORAGE_KEY,
+  SCOPE_SOURCES,
   cleanScopeSlug,
   toScopeIndex,
   type PaniniScopeIndex,
+  type ScopeSource,
 } from "@/lib/panini/scope"
 
-function subscribeAsk(onChange: () => void): () => void {
-  window.addEventListener(PANINI_SCOPE_EVENT, onChange)
+const subscribers = (source: ScopeSource) => (onChange: () => void): (() => void) => {
+  const event = SCOPE_SOURCES[source].event
+  window.addEventListener(event, onChange)
   window.addEventListener("popstate", onChange)
   return () => {
-    window.removeEventListener(PANINI_SCOPE_EVENT, onChange)
+    window.removeEventListener(event, onChange)
     window.removeEventListener("popstate", onChange)
   }
 }
+const SUBSCRIBE: Record<ScopeSource, (onChange: () => void) => () => void> = { panini: subscribers("panini"), candy: subscribers("candy") }
 const subscribeNothing = () => () => {}
 const readNothing = () => ""
 
@@ -46,29 +48,33 @@ export interface PaniniScope {
   setSlug: (slug: string) => void
 }
 
-function readAsk(): string {
+const readAskOf = (source: ScopeSource) => (): string => {
   if (typeof window === "undefined") return ""
   try {
     const fromUrl = cleanScopeSlug(new URLSearchParams(window.location.search).get(PANINI_SCOPE_PARAM))
     if (fromUrl) return fromUrl
-    return cleanScopeSlug(window.localStorage.getItem(PANINI_SCOPE_STORAGE_KEY))
+    return cleanScopeSlug(window.localStorage.getItem(SCOPE_SOURCES[source].storageKey))
   } catch {
     return ""
   }
 }
+const READ_ASK: Record<ScopeSource, () => string> = { panini: readAskOf("panini"), candy: readAskOf("candy") }
 
-/** `enabled: false` (a shared client on another collection) reads nothing and never scopes. */
-export function usePaniniScope(enabled: boolean = true): PaniniScope {
+/**
+ * `enabled: false` (a shared client on another collection) reads nothing and never scopes. `source` picks the
+ * publisher (default Panini; "candy" since 2026-11-26) — its own index and its own remembered choice.
+ */
+export function usePaniniScope(enabled: boolean = true, source: ScopeSource = "panini"): PaniniScope {
   const [index, setIndex] = useState<PaniniScopeIndex | null>(null)
   const [failed, setFailed] = useState(false)
   // The ask lives in the URL and localStorage (external stores), so every Panini tab on the page agrees and
   // the server render ("" = no scope) hydrates cleanly.
-  const ask = useSyncExternalStore(enabled ? subscribeAsk : subscribeNothing, enabled ? readAsk : readNothing, readNothing)
+  const ask = useSyncExternalStore(enabled ? SUBSCRIBE[source] : subscribeNothing, enabled ? READ_ASK[source] : readNothing, readNothing)
 
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
-    fetchJson<unknown>("/api/panini-properties").then((r) => {
+    fetchJson<unknown>(SCOPE_SOURCES[source].endpoint).then((r) => {
       if (cancelled) return
       const parsed = r.ok ? toScopeIndex(r.json) : null
       if (parsed) setIndex(parsed)
@@ -77,13 +83,13 @@ export function usePaniniScope(enabled: boolean = true): PaniniScope {
     return () => {
       cancelled = true
     }
-  }, [enabled])
+  }, [enabled, source])
 
   const setSlug = useCallback((next: string) => {
     const slug = cleanScopeSlug(next)
     try {
-      if (slug) window.localStorage.setItem(PANINI_SCOPE_STORAGE_KEY, slug)
-      else window.localStorage.removeItem(PANINI_SCOPE_STORAGE_KEY)
+      if (slug) window.localStorage.setItem(SCOPE_SOURCES[source].storageKey, slug)
+      else window.localStorage.removeItem(SCOPE_SOURCES[source].storageKey)
       const url = new URL(window.location.href)
       if (slug) url.searchParams.set(PANINI_SCOPE_PARAM, slug)
       else url.searchParams.delete(PANINI_SCOPE_PARAM)
@@ -91,8 +97,8 @@ export function usePaniniScope(enabled: boolean = true): PaniniScope {
     } catch {
       // Storage or history unavailable: the choice is not kept.
     }
-    window.dispatchEvent(new Event(PANINI_SCOPE_EVENT))
-  }, [])
+    window.dispatchEvent(new Event(SCOPE_SOURCES[source].event))
+  }, [source])
 
   return useMemo(() => {
     const known = index && ask ? index.properties.find((p) => p.slug === ask) ?? null : null

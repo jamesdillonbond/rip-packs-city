@@ -1285,6 +1285,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // 2026-11-26: the league / brand scope index the Panini tabs filter by (catalogue data
     // only: publisher_properties + panini_products.property_slug). GET-only, no session.
     "/api/panini-properties",
+    // 2026-11-26: the same index for Candy's tabs (catalogue data only: get_candy_property_board).
+    "/api/candy-properties",
     // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
     // the same public listing data Panini's marketplace shows) — same commit.
     "/api/panini-collection",

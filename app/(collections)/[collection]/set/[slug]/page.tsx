@@ -19,6 +19,7 @@ import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotal
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import { candyPropertyHref, fetchCandySetProperty } from "@/lib/candy/properties"
 import HeroMontage from "@/components/entity/HeroMontage"
 import { fetchPaniniSetSales, fetchPaniniProductSetSales, type PaniniSetSales } from "@/lib/panini/set-sales"
 import PaniniSetSalesBody from "@/components/entity/PaniniSetSales"
@@ -253,6 +254,9 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // market_cap_current groups by set NAME, so on a product page whose name other products share
   // its figure is all of them — withheld rather than shown as this product's.
   const showMarketCap = !(productSetId && related.length > 0)
+  // Candy (2026-11-26): the league / brand this collection belongs to, for the breadcrumb. A failed read or a
+  // name two brands share leaves the crumb out — never a guessed brand.
+  const candyProperty = collection === "candy-mlb" && detail.set_name ? (await fetchCandySetProperty(detail.set_name)).property : null
   // Panini (2026-10-25): this set's product page — one page per product NAME, slugified by the rollup's own rule.
   const productSlug = productSetId && detail.product_name ? paniniProductSlug(detail.product_name) : null
 
@@ -276,6 +280,8 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         items={[
           { name: "Home", href: "/" },
           { name: collectionDisplayName(collection), href: `/${collection}/overview` },
+          // 2026-11-26: a Candy collection sits under its league / brand (MLB, DC, NASCAR …).
+          ...(candyProperty ? [{ name: candyProperty.name, href: candyPropertyHref(collection, candyProperty.slug) }] : []),
           { name: titleName },
         ]}
       />

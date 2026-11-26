@@ -262,9 +262,47 @@ describe("GET /api/market — Panini league / brand scope", () => {
     expect(res.status).toBe(503)
     expect(await res.json()).not.toHaveProperty("listings")
   })
-  it("another collection ignores the parameter (it has no such scope)", async () => {
-    install({ ...rows(), candy_market_board: { data: [], error: null } })
-    const res = await GET(req(`https://t/api/market?collectionId=209ade70-32c5-4470-bc7c-4793d660f713&property=nba`))
+})
+
+// 2026-11-26: Candy has the same scope. The slug must be one of Candy's publisher_properties rows; the board
+// is then read through candy_market_board_for_property (the view's own rows for that brand).
+describe("GET /api/market — Candy league / brand scope", () => {
+  const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+  const now = new Date().toISOString()
+  const row = (name: string, ext: string) => ({ token_mint: `mint-${ext}`, edition_id: `ed-${ext}`, external_id: ext, player_name: null, edition_name: name, set_name: name, team_name: null, tier: "RARE", circulation_count: 50, thumbnail_url: null, serial_number: 3, ask_usd: 20, fmv_usd: 25, confidence: "MEDIUM", discount_pct: 20, seller: "S", first_seen_at: now, last_seen_at: now, venue: "magic_eden", venue_url: null })
+  const base = () => ({
+    candy_listings: { data: [{ last_seen_at: now }], error: null },
+    candy_market_board: { data: [row("Aaron Judge", "aaron-judge")], error: null },
+    candy_listing_floor: { data: [], error: null },
+    editions: { data: [], error: null },
+  })
+  it("reads the brand's own rows, not the whole board", async () => {
+    install({ ...base(), publisher_properties: { data: [{ slug: "dc" }], error: null }, candy_scoped: { data: [row("Batman (1940-2011) #1", "batman-1")], error: null } })
+    // PostgREST filters an RPC's rows like a table's; the harness's rpc() is a bare promise, so the scoped
+    // read is served by a chainable table fixture and the call (name + slug) is recorded here.
+    const sb = state.sb as { from: (t: string) => unknown; rpc: (n: string, a?: Record<string, unknown>) => unknown }
+    const calls: Array<[string, unknown]> = []
+    const rpc = sb.rpc.bind(sb)
+    sb.rpc = (n, a) => { calls.push([n, a]); return n === "candy_market_board_for_property" ? sb.from("candy_scoped") : rpc(n, a) }
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}&property=dc`))
     expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.listings.map((l: { editionKey: string }) => l.editionKey)).toEqual(["batman-1"])
+    expect(calls).toContainEqual(["candy_market_board_for_property", { p_slug: "dc" }])
+  })
+  it("without the parameter it is the whole board", async () => {
+    install(base())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(body.listings.map((l: { editionKey: string }) => l.editionKey)).toEqual(["aaron-judge"])
+  })
+  it("an unknown brand is a 400 and a failed lookup a 503 — never the whole board under its name", async () => {
+    install({ ...base(), publisher_properties: { data: [], error: null } })
+    const unknown = await GET(req(`https://t/api/market?collectionId=${CANDY}&property=nba`))
+    expect(unknown.status).toBe(400)
+    expect(await unknown.json()).not.toHaveProperty("listings")
+    install({ ...base(), publisher_properties: { data: null, error: { message: "boom", code: "57014" } } })
+    const failed = await GET(req(`https://t/api/market?collectionId=${CANDY}&property=dc`))
+    expect(failed.status).toBe(503)
+    expect(await failed.json()).not.toHaveProperty("listings")
   })
 })

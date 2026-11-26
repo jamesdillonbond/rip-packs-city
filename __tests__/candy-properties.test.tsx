@@ -13,7 +13,8 @@ import type React from "react"
 vi.mock("next/link", () => ({ default: ({ children, href, ...rest }: { children: React.ReactNode; href: string; "data-testid"?: string }) => <a href={href} data-testid={rest["data-testid"]}>{children}</a> }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 
-import { toCandyPropertyBoard, readCandyPropertyBoard, toCandyPropertyPage, readCandyPropertyPage, candyPropertyHref, candySeasonSpan, groupCandyCollections } from "@/lib/candy/properties"
+import { toCandyPropertyBoard, readCandyPropertyBoard, toCandyPropertyPage, readCandyPropertyPage, candyPropertyHref, candySeasonSpan, groupCandyCollections, readCandySetProperty } from "@/lib/candy/properties"
+import { SCOPE_SOURCES } from "@/lib/panini/scope"
 import { CandyPropertyGridView } from "@/components/collection/CandyPropertyGrid"
 import CandyPropertyBody from "@/components/entity/CandyPropertyBody"
 import { getCollection } from "@/lib/collections"
@@ -115,5 +116,28 @@ describe("Candy property page", () => {
     expect(container.querySelector('[data-testid="candy-property-subjects"]')).toBeNull()
     expect(container.textContent?.toLowerCase()).not.toContain("property")
     expect(container.textContent).not.toContain("$0")
+  })
+})
+
+describe("a Candy set page's brand", () => {
+  const db = (cols: unknown, prop: unknown = { data: [{ slug: "dc", name: "DC" }], error: null }) => ({
+    from: (t: string) => {
+      const b: Record<string, unknown> = {}
+      for (const m of ["select", "eq", "neq"]) b[m] = () => b
+      b.limit = async () => (t === "candy_collections" ? cols : prop)
+      return b
+    },
+  })
+  it("resolves one brand; a name two brands share, or none, is null; a failed read is ok:false", async () => {
+    expect(await readCandySetProperty("Batman (1940-2011) #1", db({ data: [{ property_slug: "dc" }], error: null }))).toEqual({ ok: true, property: { slug: "dc", name: "DC" } })
+    expect(await readCandySetProperty("2023 Tickets", db({ data: [{ property_slug: "mlb" }, { property_slug: "nascar" }], error: null }))).toEqual({ ok: true, property: null })
+    expect(await readCandySetProperty("Bank of America", db({ data: [{ property_slug: null }], error: null }))).toEqual({ ok: true, property: null })
+    expect(await readCandySetProperty("x", db({ data: null, error: { message: "boom" } }))).toEqual({ ok: false, property: null })
+    expect(await readCandySetProperty("x", db({ data: [{ property_slug: "dc" }], error: null }, { data: null, error: { message: "boom" } }))).toEqual({ ok: false, property: null })
+  })
+  it("each publisher keeps its own remembered scope", () => {
+    expect(SCOPE_SOURCES.candy.endpoint).toBe("/api/candy-properties")
+    expect(SCOPE_SOURCES.candy.storageKey).not.toBe(SCOPE_SOURCES.panini.storageKey)
+    expect(SCOPE_SOURCES.candy.event).not.toBe(SCOPE_SOURCES.panini.event)
   })
 })

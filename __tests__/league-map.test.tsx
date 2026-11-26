@@ -37,7 +37,7 @@ describe("buildLeagueMap", () => {
     const nba = m.leagues.find((e) => e.key === "nba")!
     expect(nba.sources.map((s) => s.label)).toEqual(["NBA Top Shot", "Panini"])
     expect(nba.sources[1]).toEqual({ label: "Panini", href: "/panini-blockchain/property/nba", detail: "12 products · 9,010 cards" })
-    expect(m.leagues.find((e) => e.key === "wwe")!.sources.map((s) => s.label)).toEqual(["Panini", "Candy"])
+    expect(m.leagues.find((e) => e.key === "wwe")!.sources.map((s) => s.label)).toEqual(["Candy", "Panini"])
     expect(m.leagues.find((e) => e.key === "mlb")!.sources[0].href).toBe("/candy-mlb/property/mlb")
     expect(m.leagues.find((e) => e.key === "mlb")!.teamHubs).toBe(true)
     expect(m.failed).toEqual([])
@@ -46,6 +46,14 @@ describe("buildLeagueMap", () => {
     const m = buildLeagueMap({ panini, candy })
     expect(m.leagues.map((e) => e.key)).toEqual(["nba", "wnba", "nfl", "mlb", "fifa-world-cup", "laliga", "ufc", "wwe"])
     expect(m.entertainment.map((e) => e.key)).toEqual(["disney", "dc", "bad-eggs"])
+  })
+  it("Panini's Baseball row joins the MLB tile when Candy's is there, and stands alone when it is not", () => {
+    const baseball: PaniniTile = { slug: "baseball", name: "Baseball", heading: "leagues", category: "Baseball", team_league: "mlb", sort_order: 50, products: 4, editions: 2156 }
+    const joined = buildLeagueMap({ panini: [baseball], candy })
+    expect(joined.leagues.find((e) => e.key === "mlb")!.sources.map((s) => `${s.label}: ${s.detail}`)).toEqual(["Candy: 88 collections · 926,176 cards", "Panini: Baseball · 4 products · 2,156 cards"])
+    expect(joined.leagues.some((e) => e.key === "baseball")).toBe(false)
+    const alone = buildLeagueMap({ panini: [baseball], candy: null })
+    expect(alone.leagues.find((e) => e.key === "baseball")!.sources[0].detail).toBe("4 products · 2,156 cards")
   })
   it("a failed publisher read is named; the dedicated collections still render", () => {
     const m = buildLeagueMap({ panini: null, candy })

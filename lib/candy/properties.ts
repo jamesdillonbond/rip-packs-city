@@ -303,3 +303,40 @@ export function groupCandyCollections(collections: CandyPropertyCollection[]): {
     // Natural order inside a line, so "#2" sits before "#10" and a title's issues read in sequence.
     .map(([k, rows]) => ({ program: k || null, rows: [...rows].sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true })) }))
 }
+
+// ── A set page's way back to its league / brand ─────────────────────────────────────────────────────────
+
+export type CandySetPropertyRead = { ok: true; property: { slug: string; name: string } | null } | { ok: false; property: null }
+
+/**
+ * The league / brand a Candy collection (= a set page) belongs to, for its breadcrumb. Two small reads, not
+ * the whole board. A name two brands share ("2023 Tickets": MLB and NASCAR) resolves to null — the crumb is
+ * left out rather than guessed; so is a failed read (ok:false), which the caller treats the same way.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readCandySetProperty(setName: string, db: any = supabaseAdmin): Promise<CandySetPropertyRead> {
+  try {
+    const cols = await withQueryDeadline<unknown>(
+      db.from("candy_collections").select("property_slug").eq("name", setName).neq("kind", "test").limit(10),
+      "candy/set-property",
+      apiReadTimeoutMs(),
+    )
+    if (cols.error || !Array.isArray(cols.data)) return { ok: false, property: null }
+    const slugs = new Set<string>()
+    for (const r of cols.data as Array<{ property_slug?: unknown }>) if (typeof r?.property_slug === "string" && r.property_slug) slugs.add(r.property_slug)
+    if (slugs.size !== 1) return { ok: true, property: null }
+    const slug = [...slugs][0]
+    const prop = await withQueryDeadline<unknown>(
+      db.from("publisher_properties").select("slug,name").eq("publisher", "candy").eq("slug", slug).limit(1),
+      "candy/set-property-name",
+      apiReadTimeoutMs(),
+    )
+    if (prop.error || !Array.isArray(prop.data)) return { ok: false, property: null }
+    const row = prop.data[0] as { slug?: unknown; name?: unknown } | undefined
+    return typeof row?.slug === "string" && typeof row?.name === "string" ? { ok: true, property: { slug: row.slug, name: row.name } } : { ok: true, property: null }
+  } catch {
+    return { ok: false, property: null }
+  }
+}
+
+export const fetchCandySetProperty = cache((setName: string) => readCandySetProperty(setName))

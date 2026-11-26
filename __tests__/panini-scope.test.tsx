@@ -113,6 +113,22 @@ describe("usePaniniScope + PaniniScopeBar", () => {
     expect(window.location.search).toBe("")
     expect(window.localStorage.getItem(PANINI_SCOPE_STORAGE_KEY)).toBeNull()
   })
+  it("Candy's bar keeps its own remembered pick — a Panini pick never scopes a Candy tab", async () => {
+    function CandyHarness() {
+      const scope = usePaniniScope(true, "candy")
+      return <div><PaniniScopeBar scope={scope} /><output data-testid="slug">{scope.slug}</output></div>
+    }
+    window.localStorage.setItem(PANINI_SCOPE_STORAGE_KEY, "nba")
+    const c = render(<CandyHarness />).container
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-scope-bar"]')).not.toBeNull())
+    expect(c.querySelector('[data-testid="slug"]')!.textContent).toBe("")
+    fireEvent.click([...c.querySelectorAll("button")].find((b) => b.textContent === "NBA")!)
+    expect(window.localStorage.getItem("rpc:candy-scope")).toBe("nba")
+    fireEvent.click([...c.querySelectorAll("button")].find((b) => b.textContent === "All")!)
+    expect(window.localStorage.getItem("rpc:candy-scope")).toBeNull()
+    expect(window.localStorage.getItem(PANINI_SCOPE_STORAGE_KEY)).toBe("nba")
+    window.localStorage.removeItem(PANINI_SCOPE_STORAGE_KEY)
+  })
   it("arrives scoped from the URL, else from what was remembered", async () => {
     window.history.replaceState(null, "", "/panini-blockchain/packs?property=bad-eggs")
     window.localStorage.setItem(PANINI_SCOPE_STORAGE_KEY, "nba")

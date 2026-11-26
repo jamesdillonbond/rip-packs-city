@@ -640,6 +640,8 @@ async function fetchCandyMarketListings(
     // filter is offered — the chip has no options to build from, which is the
     // honest outcome rather than a silent no-op.
     sets: string[]; seriesList: string[]; player: string; minPrice: number
+    /** 2026-11-26: the league / brand scope (?property=) — a publisher_properties slug the caller VERIFIED; null = every brand. */
+    candyProperty?: string | null
   }
 ): Promise<any[] | null> {
   // ⚠ 2026-10-26: candy_market_board keeps every `is_active` row, and the 3-hourly
@@ -668,8 +670,12 @@ async function fetchCandyMarketListings(
     ? new Date(Date.parse(bookNewest) - CANDY_MARKET_RESEEN_HOURS * 3600_000).toISOString()
     : null
 
-  let q = (supabaseAdmin as any)
-    .from("candy_market_board")
+  // Scoped: candy_market_board_for_property(slug) returns the view's own rows for that brand (migration
+  // 20261126211340), so every filter, sort and limit below applies unchanged.
+  const candyDb = supabaseAdmin as any
+  let q = (filters.candyProperty
+    ? candyDb.rpc("candy_market_board_for_property", { p_slug: filters.candyProperty })
+    : candyDb.from("candy_market_board"))
     .select(
       "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at, venue, venue_url"
     )
@@ -954,6 +960,7 @@ async function fetchModernListings(
     sets: string[]; seriesList: string[]; player: string; minPrice: number
     // Panini only (2026-11-26): the league / brand scope as set ids; null = every product.
     paniniSetIds?: number[] | null
+    candyProperty?: string | null
   }
 ): Promise<any[] | null> {
   // The three TABLE arms fetch a window and page in code, so an empty player
@@ -971,6 +978,7 @@ async function fetchModernListings(
     return withAccentFallback(filters.player, (player) => fetchCandyMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
       sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
+      candyProperty: filters.candyProperty ?? null,
     }), nameOf, Math.max(filters.limit, 500)) // the arm's window (see withAccentFallback)
   }
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
@@ -1130,6 +1138,23 @@ export async function GET(req: NextRequest) {
     if (list.length === 0) return NextResponse.json({ error: "unknown league or brand", code: "bad_request", retryable: false }, { status: 400 })
     paniniSetIds = list
   }
+  // Candy's scope (2026-11-26): the same contract — the slug must be one of Candy's publisher_properties
+  // rows (an unknown one is a 400; a failed lookup a 503), then the board is read through
+  // candy_market_board_for_property.
+  let candyProperty: string | null = null
+  if (propertyRaw && collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
+    const slug = cleanScopeSlug(propertyRaw)
+    if (!slug) return NextResponse.json({ error: "unknown league or brand", code: "bad_request", retryable: false }, { status: 400 })
+    const known = await boundedRead(
+      (supabaseAdmin as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: string) => { eq: (c: string, v: string) => { limit: (n: number) => PromiseLike<unknown> } } } } })
+        .from("publisher_properties").select("slug").eq("publisher", "candy").eq("slug", slug).limit(1),
+      "api/market/candy_property",
+    )
+    if (known.error) return apiErrorResponse(known.error, "api/market", "The market is unavailable right now.")
+    if (!Array.isArray(known.data)) return apiErrorResponse(new Error("candy property lookup returned no list"), "api/market", "The market is unavailable right now.")
+    if (known.data.length === 0) return NextResponse.json({ error: "unknown league or brand", code: "bad_request", retryable: false }, { status: 400 })
+    candyProperty = slug
+  }
 
   // ── Filters ─────────────────────────────────────────────────────────────
   const tierRaw = sp.get("tier") || ""
@@ -1234,6 +1259,7 @@ export async function GET(req: NextRequest) {
       const runArms = (playerQuery: string) => Promise.all(tierList.map((tier) => fetchModernListings(collectionId, {
         tier,
         paniniSetIds,
+        candyProperty,
         teams: franchise.labels,
         badges,
         hasBadges,

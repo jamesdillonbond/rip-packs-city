@@ -51,6 +51,11 @@ const DEDICATED: { key: string; name: string; heading: LeagueMapHeading; categor
   { key: "disney", name: "Disney, Pixar and Star Wars", heading: "entertainment", category: "Film and TV", teamHubs: false, order: 200, label: "Disney Pinnacle", href: "/disney-pinnacle/overview", detail: "Pins" },
 ]
 
+/**
+ * A publisher's row that belongs on another tile: Panini files its baseball products under "Baseball", and
+ * a collector looks for them under MLB (the team hubs already treat them as MLB's).
+ */
+const JOINS: Record<string, { key: string; note: string }> = { baseball: { key: "mlb", note: "Baseball" } }
 /** Publisher-only leagues that belong among the big leagues rather than after them. */
 const ORDER_HINT: Record<string, number> = { mlb: 40, "fifa-world-cup": 45 }
 
@@ -64,8 +69,8 @@ export function buildLeagueMap(input: { panini: PaniniTile[] | null; candy: Cand
   for (const d of DEDICATED) {
     by.set(d.key, { key: d.key, name: d.name, heading: d.heading, category: d.category, teamHubs: d.teamHubs, order: d.order, sources: [{ label: d.label, href: d.href, detail: d.detail }] })
   }
-  const add = (t: PublisherTile, base: number, source: LeagueMapSource) => {
-    const hit = by.get(t.slug)
+  const add = (t: PublisherTile, base: number, source: LeagueMapSource, joinKey?: string) => {
+    const hit = by.get(joinKey ?? t.slug)
     if (hit) {
       hit.sources.push(source)
       if (t.team_league) hit.teamHubs = true
@@ -81,13 +86,17 @@ export function buildLeagueMap(input: { panini: PaniniTile[] | null; candy: Cand
       sources: [source],
     })
   }
-  for (const t of input.panini ?? []) {
-    if (t.products <= 0) continue
-    add(t, 100, { label: "Panini", href: `/panini-blockchain/property/${encodeURIComponent(t.slug)}`, detail: `${plural(t.products, "product", "products")} · ${plural(t.editions, "card", "cards")}` })
-  }
+  // Candy first, so a joined Panini row (Baseball → MLB) finds its tile already there.
   for (const t of input.candy ?? []) {
     if (t.collections <= 0) continue
     add(t, 100, { label: "Candy", href: `/candy-mlb/property/${encodeURIComponent(t.slug)}`, detail: `${plural(t.collections, "collection", "collections")} · ${plural(t.cards, "card", "cards")}` })
+  }
+  for (const t of input.panini ?? []) {
+    if (t.products <= 0) continue
+    const join = JOINS[t.slug]
+    const joined = join && by.has(join.key) ? join : undefined
+    const counts = `${plural(t.products, "product", "products")} · ${plural(t.editions, "card", "cards")}`
+    add(t, 100, { label: "Panini", href: `/panini-blockchain/property/${encodeURIComponent(t.slug)}`, detail: joined ? `${joined.note} · ${counts}` : counts }, joined?.key)
   }
   const all = [...by.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
   const failed: string[] = []

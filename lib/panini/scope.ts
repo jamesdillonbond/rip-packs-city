@@ -9,6 +9,16 @@ export const PANINI_SCOPE_PARAM = "property"
 export const PANINI_SCOPE_STORAGE_KEY = "rpc:panini-scope"
 export const PANINI_SCOPE_EVENT = "rpc:panini-scope"
 
+/**
+ * Which publisher's scope a tab reads (2026-11-26: Candy got the same bar). Each has its own index endpoint
+ * and its own remembered choice — a Panini pick must never scope a Candy tab.
+ */
+export type ScopeSource = "panini" | "candy"
+export const SCOPE_SOURCES: Record<ScopeSource, { endpoint: string; storageKey: string; event: string }> = {
+  panini: { endpoint: "/api/panini-properties", storageKey: PANINI_SCOPE_STORAGE_KEY, event: PANINI_SCOPE_EVENT },
+  candy: { endpoint: "/api/candy-properties", storageKey: "rpc:candy-scope", event: "rpc:candy-scope" },
+}
+
 export interface PaniniScopeOption {
   slug: string
   name: string
