@@ -13,6 +13,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:41 AM PT · 🗄 APPLIED (`20261126191332`, `20261126191951`) + pg_cron + 🔧 code — UFC Strike slab backs show the FIGHT (Claude Code cloud; Trevor: "Keep going")
+
+- **The back:** "This fight":
+  - Result · Method (from the Moment's set name, wins only) · Round · Time
+  - "vs Ricky Simon · Bantamweight · UFC 303 · Jun 29, 2024"
+  - an "ESPN fight card ↗" link
+- **Lane:** pg_net → `site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard?dates=YYYY`, which returns every UFC event of a year with every bout (back to UFC 8, 1996).
+  - `espn_mma_fight_sides` stores one row per fighter per bout.
+  - Dispatch `:13`, drain `:16` hourly; the current year is re-read daily. Pipeline `ufc-fight-results` (watchlist, info).
+  - Backfilled by hand at ~11:25 (3 rounds): 34 years, 19,098 rows, 0 errors.
+- **Reader** `get_ufc_moment_fight`:
+  - First the event from the set name, exactly one: numbered (UFC 30 is never UFC 303), dated (full month names too), or named by its main event.
+  - Then the fighter's one bout on it, by name key, else by the card's only fighter with that surname ("Shogun Rua" = "Mauricio Rua").
+- **Measured:** 562 / 625 UFC Strike Moments resolve, **every one a win** (0 losses), which is the correctness check. The rest are catchphrase Moments, tournament nights, or dates ESPN files differently: no claim.
+  - ⚠ The `…191951` header says "563 / 587", which was estimated before the named Fight Night arm was added. Measured after apply: 562. The file stays byte-identical to what prod applied.
+- **Verified:**
+  - Pin `supabase/tests/espn_mma_scoreboard_drain.sql`; two planted defects (UFC 30 ≈ 303; a shared surname) → red.
+  - All 4 new function bodies md5-equal to the files. Also re-checked the soccer migration's 5 bodies: equal. anon EXECUTE false.
+  - Preflight green.
+- **Soccer lane (10:55 AM):** first ticks still healthy.
+- **Revert:**
+  - `select cron.unschedule('rpc-ufc-scoreboard-dispatch'); select cron.unschedule('rpc-ufc-scoreboard-drain');`
+  - Drop `get_ufc_moment_fight`, `espn_mma_scoreboard_drain`, `espn_mma_scoreboard_dispatch`, `ufc_name_key`, `espn_mma_fight_sides`, `espn_mma_year_fetches`.
+  - Delete the watchlist row.
+  - `git revert` the code commit (message "ufc fight slab backs"). The site treats a missing reader as no fight.
+
 ### 2026-11-26 ~11:40 AM PT · 🔧 SHIPPED (a11y copy) — the UFC binder's screen-reader result line counted Flow rows only and read "no moments to show" over a wallet's Aptos Moments (Claude Code cloud; found verifying the ~11:30 AM ship)
 - The sr-only `binder-result-status` line now counts the one table (Flow + Aptos rows). Live check before the fix: an Aptos wallet with 24 UFC Moments rendered them, with "Search finished — no moments to show" beside them.
 - **Revert:** `git revert <this commit>`.
