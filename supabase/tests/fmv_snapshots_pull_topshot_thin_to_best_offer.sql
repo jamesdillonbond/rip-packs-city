@@ -15,8 +15,11 @@
 --      ($125 with a $40 offer stays $125, untagged -- holders accepted 0.7 % of such offers); every other tier is
 --      pulled no lower than half ($125 with $40 -> $62.50, was $53.18). From half up nothing changed, any tier
 --      ($60 with $40 -> $44.27), and a Legendary ASK_ONLY price is still pulled ($125 with $40 -> $53.18).
+--   8. (2026-11-26) every price the pull step acted on or skipped leaves one public.fmv_offer_pull_log row with
+--      the PRE-pull price, the offer and the outcome ('pulled' | 'floored' | 'skipped'); a price the step never
+--      considered leaves none; and a log write that fails does not fail the price.
 -- The function DDL is VERBATIM from
--- supabase/migrations/20261126195919_audit_20261126_topshot_offer_pull_low_offer_floor_and_legendary_skip.sql;
+-- supabase/migrations/20261126212338_audit_20261126_topshot_offer_pull_log.sql;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
@@ -30,7 +33,13 @@ CREATE TABLE public.fmv_comparable_estimates (
   edition_id uuid, baseline_kind text, n_set integer, est_usd numeric, computed_at timestamptz
 );
 CREATE TABLE public.fmv_snapshots (
-  id serial PRIMARY KEY, edition_id uuid, collection_id uuid, confidence text, fmv_usd numeric, algo_version text
+  id serial PRIMARY KEY, edition_id uuid, collection_id uuid, confidence text, fmv_usd numeric, algo_version text,
+  computed_at timestamptz DEFAULT now()
+);
+CREATE TABLE public.fmv_offer_pull_log (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, edition_id uuid NOT NULL, snapshot_computed_at timestamptz,
+  confidence text NOT NULL, tier text, pre_fmv_usd numeric NOT NULL, bid_usd numeric NOT NULL, fmv_usd numeric NOT NULL,
+  outcome text NOT NULL CHECK (outcome IN ('pulled', 'floored', 'skipped')), logged_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- >>> BEGIN verbatim fmv_snapshots_pull_topshot_thin_to_best_offer >>>
@@ -42,6 +51,8 @@ declare
   v_new numeric;
   v_est numeric;
   v_tier text;
+  v_pre numeric;
+  v_outcome text;
 begin
   if new.collection_id = c_topshot
      and new.confidence in ('ASK_ONLY', 'LOW')
@@ -65,20 +76,35 @@ begin
     -- (median sale with a 25-40 % bid = 0.51 of the price). ASK_ONLY unchanged.
     if v_bid is not null and v_bid > 0 and v_bid < new.fmv_usd
        and v_bid >= (case when new.confidence = 'LOW' then 0.25 else 0.10 end) * new.fmv_usd then
+      v_pre := new.fmv_usd;
       if new.confidence = 'LOW' then
         select e.tier::text into v_tier from public.editions e where e.id = new.edition_id;
       end if;
       if new.confidence = 'LOW' and v_tier in ('LEGENDARY', 'ULTIMATE') and v_bid < 0.5 * new.fmv_usd then
-        null;
+        v_outcome := 'skipped';
       else
         v_new := greatest(round(power(new.fmv_usd, 0.25) * power(v_bid, 0.75), 2), round(v_bid, 2), 0.01);
-        if new.confidence = 'LOW' then
-          v_new := greatest(v_new, round(0.5 * new.fmv_usd, 2));
+        v_outcome := 'pulled';
+        if new.confidence = 'LOW' and v_new < round(0.5 * new.fmv_usd, 2) then
+          v_new := round(0.5 * new.fmv_usd, 2);
+          v_outcome := 'floored';
         end if;
         if v_new < new.fmv_usd then
           new.fmv_usd := v_new;
           new.algo_version := coalesce(new.algo_version, '') || '_bidpull';
+        else
+          v_outcome := null;
         end if;
+      end if;
+      -- 2026-11-26: record the step (see public.fmv_offer_pull_log). A failed log write must never fail the price.
+      if v_outcome is not null then
+        begin
+          insert into public.fmv_offer_pull_log (edition_id, snapshot_computed_at, confidence, tier, pre_fmv_usd, bid_usd, fmv_usd, outcome)
+          values (new.edition_id, new.computed_at, new.confidence::text, v_tier, v_pre, v_bid, new.fmv_usd, v_outcome);
+        -- when-others-timeout-blind: intentional — a per-row trigger must not swallow a statement_timeout and run on unbounded.
+        exception when others then
+          null;
+        end;
       end if;
     end if;
     -- (2) an ask-only price on an edition that has NEVER sold is held to its comparable estimate, never below the bid
@@ -229,7 +255,29 @@ BEGIN
   PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price is still pulled by an offer under half of it');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
 
-  RAISE NOTICE '✓ fmv_snapshots_pull_topshot_thin_to_best_offer: a hold the offer stopped says so; a low offer does not sink a sold price';
+  -- case 8: the log. b2 b5 ba bc bd be pulled, b9 floored, bb bf skipped; b1 (offer under the gate) and b8 leave none.
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.fmv_offer_pull_log), '9', 'one log row per price the step acted on or skipped');
+  PERFORM _assert_eq((SELECT string_agg(outcome || ':' || n, ' ' ORDER BY outcome) FROM (SELECT outcome, count(*) n FROM public.fmv_offer_pull_log GROUP BY 1) z),
+    'floored:1 pulled:6 skipped:2', 'outcomes');
+  PERFORM _assert_eq((SELECT pre_fmv_usd || '|' || bid_usd || '|' || fmv_usd || '|' || tier FROM public.fmv_offer_pull_log WHERE edition_id = 'b0000000-0000-0000-0000-000000000009'),
+    '125|40.00|62.50|RARE', 'a floored row keeps the PRE-pull price (it cannot be rebuilt from the published one)');
+  PERFORM _assert_eq((SELECT outcome || '|' || pre_fmv_usd || '|' || fmv_usd FROM public.fmv_offer_pull_log WHERE edition_id = 'b0000000-0000-0000-0000-00000000000b'),
+    'skipped|125|125', 'a skipped Legendary row is recorded (it carries no suffix to find it by)');
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.fmv_offer_pull_log WHERE edition_id IN ('b0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000008')),
+    '0', 'a price the step never considered leaves no row');
+  PERFORM _assert_eq((SELECT pre_fmv_usd || '|' || fmv_usd FROM public.fmv_offer_pull_log WHERE edition_id = 'b0000000-0000-0000-0000-000000000002'),
+    '90|39.48', 'the log holds the pull step''s own result, before the comparables hold');
+
+  -- a log write that fails must not fail the price: break the log table, price one more row.
+  ALTER TABLE public.fmv_offer_pull_log DROP COLUMN outcome;
+  INSERT INTO public.offers VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-000000000010', 40.00, 'open', 'edition', NULL);
+  INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-000000000010');
+  INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, fmv_usd, algo_version)
+    VALUES ('b0000000-0000-0000-0000-000000000010', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 60, 'x');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-000000000010';
+  PERFORM _assert_eq(r.fmv_usd::text, '44.27', 'the price is still written and pulled when the log write fails');
+
+  RAISE NOTICE '✓ fmv_snapshots_pull_topshot_thin_to_best_offer: a hold the offer stopped says so; a low offer does not sink a sold price; every step is logged';
 END $$;
 
 ROLLBACK;
