@@ -617,6 +617,9 @@ describe("binder Packs filters", () => {
     expect(packTierOptions(null)).toEqual([])
     expect(packTierLabel("PREMIUM")).toBe("Premium")
     expect(packTierLabel("rare")).toBe("Rare")
+    // All Day's Dapper tiers come snake_cased (seen live 11-26 on /dashboard/packs)
+    expect(packTierLabel("in_season_premium")).toBe("In season premium")
+    expect(packTierLabel("Historic_STANDARD")).toBe("Historic standard")
   })
 
   it("labels winners / losers and says what each tab measures them against", () => {

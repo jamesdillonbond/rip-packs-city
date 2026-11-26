@@ -755,9 +755,9 @@ export function packFilterForStatus(status: string): PackFilter | "all" {
   return "all"
 }
 
-/** "rare" -> "Rare", "premium" -> "Premium". */
+/** "rare" -> "Rare", "PREMIUM" -> "Premium", "in_season_premium" -> "In season premium". */
 export function packTierLabel(tier: string): string {
-  const t = tier.trim()
+  const t = tier.trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ")
   return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t
 }
 
