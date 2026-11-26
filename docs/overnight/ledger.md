@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~3:06 PM PT · 🔧 SHIPPED — **Candy Binder filters by league or brand (the chips are now a filter, not just a count)** (Cowork cloud; Trevor: "Do it all")
+
+- **What:** the Binder's "League or brand" chips (All · MLB · DC …, each with the wallet's card count) now filter the list: a pick re-reads page 1 with `property=<slug>`, and auto-pagination and Load More carry it. A new search starts unfiltered.
+- **How, without touching the shared read:** `get_wallet_moments_with_fmv` (pinned, shared by every collection) is unchanged. New `get_candy_wallet_cards_for_property(wallet, slug, sort, limit, offset, player, tier)` is its Candy arm plus one predicate (the card's collection belongs to the brand) — same sorts, same row shape, same `{ moments, total_count }`. Verified on a 125,407-card wallet: DC total 16,856 = the split's DC count, and the top row is field-for-field identical to the shared read's. ⚠ It is a copy: a row-shape change to the shared function must be made in both. It does not compute the 30-day price band (one Candy edition qualified on 11-26).
+- **API:** `/api/collection-moments?collection=candy-mlb&property=<slug>` — unknown or malformed slug 400 (`unknown_league`), failed lookup 503, never the whole Binder under a brand's name.
+- **Migration:** `20261126225745_audit_20261126_candy_wallet_cards_for_property` (applied via MCP, file committed).
+- **Revert:** `git revert` the code commit (find by message "candy: the Binder filters by league or brand"). The function is unread after that.
+
 ### 2026-11-26 ~3:20 PM PT · 🔧 SHIPPED (concierge copy) + 📝 docs — the concierge says "sealed pack", never "unopened" / "held", and knows the binder's pack filters; binder Packs thread closed out (Claude Code cloud; Trevor: "work through everything … update any relevant documentation before I archive this thread")
 
 - `app/api/support-chat/route.ts`: one rule line (pack wording + the Sealed / Opened / Sold filters, Winners / Losers = packs paid for). `docs/strategy/features/wallet-and-portfolio.md`: the 11-26 section + two decisions on record. CI green on every commit of the thread; schema_migrations carries `20261126200712` / `20261126220235` / `20261126221321`, each with its committed file. No scheduled task was created in this thread. **Revert:** `git revert` the commit "concierge: sealed-pack wording; docs: binder pack filters".
