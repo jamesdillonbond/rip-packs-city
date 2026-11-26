@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:40 AM PT · 🔧 SHIPPED (code) — ESPN id matcher checks the athlete is the person before taking an id (Claude Code cloud; Trevor: "Keep going")
+
+- Found from the Moment game-lines lane: Candace Parker's id 404'd. Probing every `espn-search:stats-probe` match and every basketball id ESPN's stored names did not cover (56, via pg_net) found **3 ids that are someone else** — Michael Cage → nba/31 Dalibor Bagaric, Michael Cooper → nba/142 John Celestand, Tim Thomas → wnba/22 Sue Wicks (their pages and slabs showed that person's stats) — and **13 that do not exist** under the league's athlete path (college ids from ESPN search). The other 40 are right.
+- `scripts/lib/espn-player-stats.mjs`: `espnAthleteUrl` + `athleteCheck` (ok / mismatch / missing / failed); `pickProbedCandidate` counts only a probe whose athlete page names the person. `scripts/sync-player-stats.mjs`: every pick — name hit or probe — is checked against the league's athlete page; a 5xx leaves the target for the next run. Tests incl. the Tim Thomas case (reds without the check).
+- Data repair (clearing + re-queueing the 16) follows as a migration once this is on `main`; resolver next runs 10:23 AM PT.
+- Revert: `git revert` the code commit (find by message "ESPN id matcher checks the athlete").
+
 ### 2026-11-26 ~7:20 AM PT · ✅ SHIPPED — Saved Wallets tile FMV counts stale-priced Moments, so the tiles add up to Portfolio FMV (Cowork cloud; Trevor: "Keep going")
 
 - Live QA on Trevor's signed-in dashboard: tiles summed $60,587 against a $66,593 Portfolio FMV — the gap was exactly the stale-priced Moments the headline counts under the 11-22 one-number rule (TS $5,224.50 + AD $417.70 + UFC $364.11), and UFC Strike's tile read "—". Tile FMV is now fmv_total + fmv_stale_total + that collection's sealed packs. Test pins tiles = headline.
