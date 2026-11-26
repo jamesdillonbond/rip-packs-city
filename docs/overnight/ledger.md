@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:50 PM PT · 🗄 APPLIED (`20261126033647`), NOT YET SCHEDULED — Top Shot rip pricing for rips the at-rip hydrator makes priceable (Claude Code cloud; Trevor's "keep going")
+- **What:** `price_topshot_rips_backlog(p_limit)` uses the same whole-pack, all-or-nothing rule as `price_recent_topshot_rips`, but takes its candidates from the hydrator's output: the rips of Moments that an at-height request (pg_cron 932) wrote in the last day. It logs `topshot-rip-pricing-backlog` and is on the cadence watchlist.
+- **Why:** older unpriced rips (34.4K in April–May, 12.5K in September–November) would otherwise get priced only by the hourly backfill leg, at about 75 an hour. Scanning `pack_rips` for candidates instead measured 370K buffers / 10.6 s cold; the request-driven read measured 62 ms / 2.3K buffers.
+- **Not before April 2026:** 95 % of those rips have fewer linked pulls than `moments_pulled`, so no lane can price them.
+- **Pending:** the pg_cron schedule (`'4-54/10 * * * *'`, `SELECT public.price_topshot_rips_backlog(1500)`) was refused by the session's permission check and needs Trevor's go-ahead. Until it is scheduled, the function does nothing.
+- **Revert:** `DROP FUNCTION public.price_topshot_rips_backlog(integer)`; delete its watchlist row.
+
 ### 2026-11-25 ~7:45 PM PT · 🗄 APPLIED (`20261126033441`) — refresh_wmc_fmv_changed keeps a fixed 20 s of headroom, so the route's 30 s tick stops dying mid-chunk (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Found: a NEW failure class beside the declined 11-25 deadlock item. 5 route runs (`/api/wmc-fmv-populate`, PostgREST service_role 30 s) between 8:53 AM and 7:08 PM PT died at exactly 30 s with `statement timeout`; ok runs reach 20–28 s every hour. The loop deadline is 60 % of the timeout (18 s) checked only between chunks, and one chunk can wait 8 s on wmc row locks (authenticator `lock_timeout`) before working. A kill rolls back the tick's writes and cursor.
