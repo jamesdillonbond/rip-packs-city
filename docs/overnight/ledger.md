@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:57 AM PT · 🔧 SHIPPED (fix) — a pin with none listed read "Listed <0.1%" on its slab back; now "0%" (Claude Code cloud; Trevor: "Keep going")
+
+- Found on the live check of the 11:52 AM ship: Qui-Gon Jinn vs. Darth Maul (a 1-of-1, none listed) read "<0.1%". The `< 0.1` branch also caught exactly zero. The page's own listed line only renders when something is listed, so it was not affected.
+- Test pin added in `__tests__/slab-on-every-collection.test.ts`. **Revert:** `git revert` the code commit (message "pin slab 0% listed").
+
 ### 2026-11-26 ~11:55 AM PT · 🔧 FIX — **Panini league and brand pages were behind the sign-in wall for signed-out visitors (307 → /login); opened** (Cowork cloud; found reading the live page signed out, minutes after the ship)
 
 - `proxy.ts`: `property` joins the public entity-page pattern, the rate-limited page set and the case-fold tabs. The 11:50 AM ship added `/panini-blockchain/property/<slug>` to the overview, the products index and the sitemap without opening it — the same miss as the product pages on 10-25. Test: `__tests__/proxy-panini-product-pages-are-public.test.ts` (GET/HEAD public, POST closed, look-alike closed).
