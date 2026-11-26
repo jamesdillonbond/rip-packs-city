@@ -491,6 +491,58 @@ describe("/api/trade-room — the routes", () => {
     expect(mem.current.tables.trade_rooms[0].status).toBe("cancelled")
   })
 
+  it("a SUBMITTED swap is recorded while signing, and `verify` seals from it only when the chain lands it AND it is this room's trade (2026-11-25)", async () => {
+    const code = await twoSided()
+    await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", ids: ["1"] }), ctx(code)))
+    const version = ((await (await as(BOB, () => room.GET(get(`/api/trade-room/${code}`), ctx(code)))).json()) as { room: { version: number } }).room.version
+    for (const who of [ALICE, BOB]) await as(who, () => room.POST(post(`/api/trade-room/${code}`, { action: "accept", version, notice_read: true }), ctx(code)))
+    const sub = "c".repeat(64)
+    // (a) not signing yet → refused, nothing recorded
+    const early = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "submitted", tx_id: sub }), ctx(code)))
+    expect(early.status).toBe(409)
+    expect(mem.current.tables.trade_rooms[0].submitted_tx_id ?? null).toBeNull()
+    // reach signing through the real relay_post
+    const voucher = {
+      cadence: SWAP_CADENCE, authorizers: [WA.signer, WB.signer], payer: WA.signer,
+      proposalKey: { address: WA.signer, keyId: 0, sequenceNum: 1 }, refBlock: "ab", computeLimit: 9999,
+      arguments: [
+        { type: "Address", value: WA.source }, { type: "UInt64", value: "0" }, { type: "Array", value: [{ type: "UInt64", value: "1" }] },
+        { type: "Address", value: WB.source }, { type: "UInt64", value: "0" }, { type: "Array", value: [] },
+      ],
+      payloadSigs: [],
+    }
+    const signable: Record<string, unknown> = { cadence: SWAP_CADENCE, addr: WB.signer, args: voucher.arguments, voucher, roles: { authorizer: true } }
+    signable.message = encodeMessageFromSignable(signable as never, WB.signer)
+    vi.stubEnv("RPC_TRADE_ROOM_EXECUTE", "1")
+    expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: WB.signer, signable }), ctx(code)))).status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0].status).toBe("signing")
+    // (b) a malformed id is refused; a real one is recorded and shown, and the room stays SIGNING (a pointer, not a seal)
+    expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "submitted", tx_id: "xyz" }), ctx(code)))).status).toBe(400)
+    expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "submitted", tx_id: `0x${sub.toUpperCase()}` }), ctx(code)))).status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "signing", submitted_tx_id: sub, tx_id: null })
+    const shown = (await (await as(BOB, () => room.GET(get(`/api/trade-room/${code}`), ctx(code)))).json()) as { room: { submitted_tx_id: string | null } }
+    expect(shown.room.submitted_tx_id).toBe(sub)
+    // (c) the chain does not show it landed → verify reports, seals nothing, never asks the tx check
+    chain.sealTx.mockClear()
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: false }])
+    expect((await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "verify" }), ctx(code)))).status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "signing", tx_id: null })
+    expect(chain.sealTx).not.toHaveBeenCalled()
+    // (d) landed, but the submitted id is NOT this room's trade → still signing, verify still answers 200
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: true }])
+    chain.sealTx.mockRejectedValueOnce(new TradeRoomError("That transaction isn't this trade.", 409, "bad_tx"))
+    expect((await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "verify" }), ctx(code)))).status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "signing", tx_id: null })
+    // (e) landed AND proven this room's trade → sealed with the submitted id, after the tab that sent it is gone
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: true }])
+    expect((await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "verify" }), ctx(code)))).status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "sealed", tx_id: sub })
+    expect(chain.sealTx).toHaveBeenLastCalledWith(sub, expect.objectContaining({ sides: expect.any(Array) }))
+    // (f) once sealed, the view no longer offers a pending submission
+    const after = (await (await as(BOB, () => room.GET(get(`/api/trade-room/${code}`), ctx(code)))).json()) as { room: { submitted_tx_id: string | null } }
+    expect(after.room.submitted_tx_id).toBeNull()
+  })
+
   it("a stranger cannot read a finished room; a cancelled room reads as cancelled", async () => {
     const code = await twoSided()
     const stranger = { id: "cccccccc-0000-4000-8000-000000000003" }

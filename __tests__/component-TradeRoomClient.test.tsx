@@ -330,6 +330,20 @@ describe("TradeRoomClient — accept, simulate, the gated sign step", () => {
     await waitFor(() => expect(screen.getByText(/1 landed in/)).toBeTruthy())
   })
 
+  it("⚠ a SIGNING room with a submitted swap never offers to send again; it links the tx and checks the chain (2026-11-25)", async () => {
+    const tx = "d".repeat(64)
+    const signing = view({ state: "signing", submitted_tx_id: tx, a: { ...view().a, accepted: true }, b: { ...view().b!, accepted: true }, execution: { open: true, message: null } })
+    await mount(signing)
+    const panel = await screen.findByTestId("trade-submitted")
+    expect(panel.textContent).toContain(tx)
+    expect((panel.querySelector("a") as HTMLAnchorElement).href).toBe(`https://www.flowscan.io/tx/${tx}`)
+    expect(screen.queryByText("Sign and send")).toBeNull()
+    expect(screen.queryByText("Simulate on mainnet")).toBeNull()
+    posts.verify = { status: 200, body: { landed: [{ id: "1", to: WB.source, held: true }], room: view({ state: "sealed", tx_id: tx, sealed_at: "x", landed: [{ id: "1", to: WB.source, held: true }] }) } }
+    fireEvent.click(screen.getByText("Check the chain"))
+    await waitFor(() => expect(screen.getByText(/1 landed in/)).toBeTruthy())
+  })
+
   it("the co-signer sees the pending relay, must connect the wallet it proved, and signs", async () => {
     const signable = { cadence: SWAP_CADENCE, args: [{ type: "Address", value: WA.source }, { type: "UInt64", value: "87" }, { type: "Array", value: [{ type: "UInt64", value: "1" }] }, { type: "Address", value: WB.source }, { type: "UInt64", value: "4" }, { type: "Array", value: [] }], message: "ab", addr: WB.signer }
     const signing = view({

@@ -57,6 +57,8 @@ export interface RoomView {
   updated_at: string
   expires_at: string
   tx_id: string | null
+  /** 2026-11-25: a swap submitted from this room whose seal is not yet recorded (null once sealed). */
+  submitted_tx_id: string | null
   sealed_at: string | null
   landed: unknown
   cancel_reason: string | null
@@ -183,6 +185,7 @@ export function buildRoomView(loaded: LoadedRoom, viewerId: string, names: Map<s
     updated_at: room.updated_at,
     expires_at: room.expires_at,
     tx_id: room.tx_id,
+    submitted_tx_id: room.status === "sealed" ? null : (room.submitted_tx_id ?? null),
     sealed_at: room.sealed_at,
     landed: room.landed ?? null,
     cancel_reason: room.cancel_reason,

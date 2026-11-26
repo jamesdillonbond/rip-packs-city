@@ -51,6 +51,7 @@ import {
   joinRoom,
   loadRoom,
   markSealed,
+  markSubmitted,
   markSigning,
   markSigningEnded,
   postRoomSignature,
@@ -458,8 +459,29 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         notifyLater(loaded, u.id, "sealed")
         return json({ room: await view(loaded, u.id), verified: true })
       }
+      case "submitted": {
+        // 2026-11-25: the initiator's wallet just submitted the swap — remember its id so `verify` can seal the
+        // room even if this tab closes before the seal is read. A pointer, never a seal (see markSubmitted).
+        mySide(loaded, u.id)
+        const txId = typeof body.tx_id === "string" ? body.tx_id.trim().toLowerCase().replace(/^0x/, "") : ""
+        await markSubmitted(supabaseAdmin, loaded, txId)
+        return json({ ok: true })
+      }
       case "verify": {
         const landed = await verifyRoom(loaded)
+        // 2026-11-25: a room left SIGNING (or cancelled by a racing cancel) with a submitted swap is sealed here once
+        // the chain shows every Moment landed AND assertSealTx proves the submitted id is THIS room's trade. A check
+        // that refuses or cannot read leaves the room as it is — `verify` reports, it never fails on this path.
+        const sub = loaded.room.submitted_tx_id
+        if ((loaded.room.status === "signing" || loaded.room.status === "cancelled") && sub && Array.isArray(landed) && landed.length > 0 && (landed as Array<{ held: boolean }>).every((m) => m.held === true)) {
+          try {
+            await assertSealTx(sub, loaded)
+            loaded = await markSealed(supabaseAdmin, loaded, sub, landed)
+            notifyLater(loaded, u.id, "sealed")
+          } catch (e) {
+            if (!(e instanceof TradeRoomError)) throw e
+          }
+        }
         // 2026-11-24 (review finding 3): a seal's landing record is a fact about the SEAL. It used to be rewritten from
         // current holdings on every re-check, so a Moment the recipient later sold read "is NOT in …" and sealed_at moved.
         // Only a seal with no landing record yet is completed here; the fresh read is returned, never stored over it.

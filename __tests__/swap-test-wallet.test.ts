@@ -101,6 +101,31 @@ describe("swap-test/swap-wallet — initiator", () => {
     expect(fcl.onceSealed).toHaveBeenCalledTimes(3)
   })
 
+  it("reports the tx id the moment it is SUBMITTED — before the seal read — and a throwing recorder cannot touch the swap (2026-11-25)", async () => {
+    fcl.currentUser.snapshot.mockResolvedValue({ addr: "0x3d0b274c80263484" })
+    fcl.mutate.mockResolvedValue("tx5")
+    const order: string[] = []
+    fcl.onceSealed.mockImplementation(async () => {
+      order.push("seal-read")
+      return { statusCode: 0 }
+    })
+    const seen: string[] = []
+    expect(await sendSwap(plan, io(), { onSubmitted: (id) => (seen.push(id), order.push("submitted")) })).toEqual({ txId: "tx5" })
+    expect(seen).toEqual(["tx5"])
+    expect(order[0]).toBe("submitted")
+    // the seal can't be read (tab backgrounded): the id was still reported, and the error is still UNCONFIRMED
+    fcl.mutate.mockResolvedValue("tx6")
+    fcl.onceSealed.mockRejectedValue(new TypeError("Load failed"))
+    const late: string[] = []
+    const e = await sendSwap(plan, io(), { onSubmitted: (id) => late.push(id) }).catch((x) => x)
+    expect(late).toEqual(["tx6"])
+    expect(e).toBeInstanceOf(SealUnconfirmedError)
+    // a recorder that throws is swallowed
+    fcl.onceSealed.mockResolvedValue({ statusCode: 0 })
+    fcl.mutate.mockResolvedValue("tx7")
+    expect(await sendSwap(plan, io(), { onSubmitted: () => { throw new Error("record failed") } })).toEqual({ txId: "tx7" })
+  })
+
   it("an execution error from the seal read IS a failure", async () => {
     fcl.currentUser.snapshot.mockResolvedValue({ addr: "0x3d0b274c80263484" })
     fcl.mutate.mockResolvedValue("tx4")

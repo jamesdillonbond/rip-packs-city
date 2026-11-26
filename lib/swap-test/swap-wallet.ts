@@ -99,6 +99,12 @@ export interface SendSwapOpts {
   /** Called once wallet A has sat silent for `slowMs`, with where to look. Never while waiting on the co-signer. */
   onSlow?: (hint: string) => void
   slowMs?: number
+  /**
+   * 2026-11-25: called once with the tx id the moment the wallet SUBMITS it — before its seal is read — so the
+   * caller can record it (the trade room's `submitted`). Never awaited and never allowed to throw: a failed
+   * record must not touch a transaction that is already on its way.
+   */
+  onSubmitted?: (txId: string) => void
 }
 
 const SEAL_READ_ATTEMPTS = 3
@@ -225,6 +231,11 @@ async function submitTwoSigner(tx: TwoSignerTx, io: RelayIO, opts: SendSwapOpts)
   } finally {
     if (timer) clearTimeout(timer)
     trace.stop()
+  }
+  try {
+    opts.onSubmitted?.(txId)
+  } catch {
+    /* recording the id is best-effort; the transaction is already submitted */
   }
   let lastReadError = ""
   for (let attempt = 1; attempt <= SEAL_READ_ATTEMPTS; attempt++) {

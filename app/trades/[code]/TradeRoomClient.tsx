@@ -739,7 +739,13 @@ function Execute({
           onRelay: () => setMsg("Waiting for the other side to sign on their device (about 9 minutes at most)…"),
       }
       // an all-Top-Shot room signs the original swap; any All Day / Golazos / UFC signs the multi-collection one
-      const { txId } = "kind" in plan && plan.kind === "multi" ? await w.sendMultiSwap(plan, io, { onSlow: setHint }) : await w.sendSwap(plan as SwapPlan, io, { onSlow: setHint })
+      // 2026-11-25: record the tx id the moment the wallet submits it, so a tab closed before the seal is read
+      // leaves a room the "Check the chain" button can still seal. Fire-and-forget: it must never block the swap.
+      const onSubmitted = (txId: string) => {
+        void call(api, { method: "POST", body: JSON.stringify({ action: "submitted", tx_id: txId }) }).catch(() => {})
+      }
+      const sendOpts = { onSlow: setHint, onSubmitted }
+      const { txId } = "kind" in plan && plan.kind === "multi" ? await w.sendMultiSwap(plan, io, sendOpts) : await w.sendSwap(plan as SwapPlan, io, sendOpts)
       setMsg("Sealed on chain. Recording it…")
       await act("sealed", { tx_id: txId })
     } catch (e) {
@@ -747,8 +753,10 @@ function Execute({
       if (w && e instanceof w.SealUnconfirmedError) {
         // submitted: it may well have executed. Never "failed", never resend — record it and read the chain.
         // (act() clears the message/error lines, so the note is set AFTER the record lands.)
-        await act("sealed", { tx_id: e.txId })
-        setErr(`Submitted as ${e.txId}, but its result couldn't be read yet. Don't send again; use "Check the chain again" below.`)
+        const r = await act("sealed", { tx_id: e.txId })
+        // not sealed yet (409 not_landed / 503): reload so the room shows its submitted swap and "Check the chain"
+        if (!r.ok) await reload()
+        setErr(`Submitted as ${e.txId}, but its result couldn't be read yet. Don't send again; use "Check the chain" below.`)
       } else {
         setErr(errorText(e))
         setMsg(null)
@@ -808,6 +816,21 @@ function Execute({
             </button>
             {wallet && wallet !== side.signer ? <span style={{ color: "var(--rpc-danger-text)", fontSize: 12 }}>Connect {shortAddr(side.signer)}, the wallet you proved.</span> : null}
           </div>
+        </div>
+      ) : room.submitted_tx_id ? (
+        <div data-testid="trade-submitted">
+          {/* 2026-11-25: a swap from this room was already submitted. Never offer to send again; let either side
+              check the chain, which seals the room once every Moment landed and the transaction is proven this trade. */}
+          <p style={{ fontSize: 13, margin: "0 0 8px", wordBreak: "break-all" }}>
+            A swap from this room was submitted:{" "}
+            <a href={`https://www.flowscan.io/tx/${room.submitted_tx_id}`} target="_blank" rel="noreferrer">
+              {room.submitted_tx_id}
+            </a>
+            . Don&apos;t send again.
+          </p>
+          <button type="button" style={btn} disabled={busy !== null} onClick={() => act("verify", {})}>
+            Check the chain
+          </button>
         </div>
       ) : (
         <div>

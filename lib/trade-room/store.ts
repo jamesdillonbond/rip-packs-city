@@ -58,6 +58,8 @@ export interface RoomRow {
   status: RoomStatus
   version: number
   tx_id: string | null
+  /** 2026-11-25: the swap the initiator's wallet SUBMITTED (written before its seal is read); a pointer for `verify`, never a seal. */
+  submitted_tx_id?: string | null
   landed: unknown
   sealed_at: string | null
   cancelled_by: string | null
@@ -110,7 +112,7 @@ export const ROOM_CODE = /^[a-z0-9]{10}$/
 export const FLOW_ADDRESS = /^0x[0-9a-f]{16}$/
 export const MOMENT_ID = /^[0-9]{1,20}$/
 export { MAX_ITEMS_PER_SIDE }
-const ROOM_COLS = "id, code, created_by, collection, status, version, tx_id, landed, sealed_at, cancelled_by, cancel_reason, expires_at, created_at, updated_at"
+const ROOM_COLS = "id, code, created_by, collection, status, version, tx_id, submitted_tx_id, landed, sealed_at, cancelled_by, cancel_reason, expires_at, created_at, updated_at"
 const SIDE_COLS = "room_id, side, user_id, signer, source, proven_at, accepted_version, notice_read_at, updated_at"
 const ITEM_COLS = "room_id, side, collection, moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, added_at"
 
@@ -489,6 +491,22 @@ export async function markSigningEnded(db: SupabaseClient, loaded: LoadedRoom, n
   void now
   const v = await lockedVerdict(db, "trade_room_signing_ended_locked", { p_room_id: loaded.room.id, p_relay_ttl_seconds: RELAY_TTL_SECONDS })
   if (v === "cosigned") throw new TradeRoomError("The other wallet already signed — this trade may be sealing on chain now, so it can't be reopened. Check it in a moment.", 409, "cosigned")
+}
+
+/**
+ * 2026-11-25: record the swap the initiator's wallet just submitted, so a room whose tab closed before the seal was
+ * read can still be sealed by `verify`. Only while the room is SIGNING; a later submission (after a failed attempt
+ * reopened the room) replaces it. A pointer only: nothing is sealed from it without the chain + assertSealTx.
+ */
+export async function markSubmitted(db: SupabaseClient, loaded: LoadedRoom, txId: string, now: number = Date.now()): Promise<void> {
+  if (!/^[0-9a-f]{64}$/.test(txId)) throw new TradeRoomError("Not a Flow transaction id.", 400, "bad_tx")
+  if (loaded.room.status !== "signing") throw new TradeRoomError("This trade is not signing.", 409, "not_signing")
+  const { error } = await db
+    .from("trade_rooms")
+    .update({ submitted_tx_id: txId, updated_at: new Date(now).toISOString() })
+    .eq("id", loaded.room.id)
+    .eq("status", "signing")
+  if (error) fail(error, "trade_rooms submitted")
 }
 
 export async function markSealed(db: SupabaseClient, loaded: LoadedRoom, txId: string, landed: unknown, now: number = Date.now()): Promise<LoadedRoom> {
