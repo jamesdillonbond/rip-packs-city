@@ -13,6 +13,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 1:41 PM PT · UFC Set Tracker counts Aptos holdings; accepts an Aptos address; ticker copy reworded
+- Before: `get_ufc_set_progress` read Flow `wallet_moments_cache` only. All four saved UFC collectors whose Moments are on Aptos showed 0 owned. After: rrx69 owns 530 editions with 386 sets complete, edogg1976 owns 126 with 80 complete, pashock8 owns 14 and awesemo owns 13.
+- How: `owned_editions` now also UNIONs `ufc_aptos_holdings`, reached through the linked Aptos wallets or directly for an Aptos address.
+- Migration `20261126214122_audit_20261126_ufc_set_tracker_counts_aptos_holdings` was md5-guarded on the live body before replace, and the ACL check is asserted (service_role only).
+- Follow-up migration `20261126215716_audit_20261126_ufc_set_tracker_hex_guarded_wallet_match` keeps the same body, but its three wallet matches lowercase only a 0x address. The `new-migrations-do-not-lowercase-a-solana-wallet` guard reds a bare `lower(p_wallet)`. Counts were re-checked and are unchanged.
+- The first file now carries `solana-lower` marker comments that its applied text lacks. The difference is comments only; parity matches by name.
+- Route `/api/ufc-set-progress` takes a 64-hex Aptos address as itself; before, the Flow username gate answered "couldn't find a Flow wallet". An Aptos address with nothing indexed returns 409 not-indexed, never 0%. A planted defect reds the test.
+- UFC ticker: "SNIPER — fight moments below market" was false by construction (FMV is capped at the Aptos ask). It is replaced with two-chain lines.
+- Revert:
+  - DB: re-apply the CREATE OR REPLACE from `20261110184532_audit_20261110_ufc_set_tracker_reads_current_fmv_cache.sql`.
+  - Code: `git revert <this commit>`.
+
 ### 2026-11-26 ~2:21 PM PT · 🔧 SHIPPED — **Below-FMV board: a League row for Panini and Candy (`?property=`); Candy Binder shows the wallet's cards by league or brand** (Cowork cloud; Trevor: "Keep going and do it all")
 
 - **Below FMV (`/insights/deals`):** picking Panini or Candy shows a second pill row (All · FIFA World Cup · NBA … / MLB · DC …). The API takes `property=<slug>` with `collection=panini_blockchain|candy_mlb`: Panini is narrowed at the source by product-id prefix and re-checked exactly; Candy's leg is read whole (clamp-checked) and narrowed by the brand's collection names. Unknown or misplaced slug → 400; failed lookup or a filled Candy window → the board's unavailable response. A failed chip read leaves the row out and the board unfiltered.
