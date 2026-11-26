@@ -151,6 +151,40 @@ describe("PackHistoryClient", () => {
     expect(cellOf("Old Payload")).toBe("—")
   })
 
+  // 2026-11-26: the binder's Packs filters, here too -- sent with the read, tier chips from tab_totals,
+  // a narrowed empty read says so and clears; a still-sealed pack's chip reads "sealed".
+  it("filters: sort / winners / tier go with the read, a narrowed empty read offers Clear, held reads sealed", async () => {
+    const urls: string[] = []
+    mount().mockImplementation(async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("saved-wallets")) return json(200, WALLETS)
+      if (url.includes("pack-summary")) return json(200, SUMMARY)
+      if (url.includes("pack-history")) {
+        urls.push(url)
+        const narrowed = url.includes("outcome=down")
+        return json(200, {
+          packs: narrowed ? [] : [ROW({ pack_nft_id: "h9", pack_name: "Sealed Nine", status: "held", has_rip: false, pull_value_usd: null })],
+          total_count: narrowed ? 0 : 1,
+          tab_totals: { packs: narrowed ? 0 : 1, tab_packs: 9, tiers: { common: 6, rare: 3 } },
+        })
+      }
+      return json(200, {})
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Sealed Nine/))
+    expect(Array.from(document.querySelectorAll(".rpc-pack-chip")).some((e) => e.textContent === "sealed")).toBe(true)
+    expect(urls.at(-1)).not.toMatch(/[?&](q|tier|outcome|sort)=/)
+
+    fireEvent.change(screen.getByLabelText("Sort packs"), { target: { value: "pl_desc" } })
+    await waitFor(() => expect(urls.at(-1)).toContain("sort=pl_desc"))
+    fireEvent.click(await screen.findByRole("button", { name: /^Rare/ }))
+    await waitFor(() => expect(urls.at(-1)).toContain("tier=rare"))
+    fireEvent.click(screen.getByText("Losers"))
+    await waitFor(() => expect(urls.at(-1)).toContain("outcome=down"))
+    await screen.findByText("No packs match these filters.")
+    fireEvent.click(screen.getByText("Clear filters"))
+    await waitFor(() => expect(urls.at(-1)).not.toMatch(/[?&](q|tier|outcome|sort)=/))
+  })
+
   it("renders the summary and the pack table for the active wallet", async () => {
     mount()
     await waitFor(() => expect(document.body.textContent).toMatch(/Series 5 Base/))

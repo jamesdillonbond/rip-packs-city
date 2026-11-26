@@ -714,8 +714,9 @@ export type PackOutcome = "all" | "up" | "down"
 export const PACK_OUTCOMES: readonly PackOutcome[] = ["all", "up", "down"]
 
 /** The sort menu's label in this tab -- "value" and "gain" mean what that tab's columns show. */
-export function packSortLabel(filter: PackFilter, sort: PackSort): string {
-  const value = filter === "unopened" ? "Value" : filter === "opened" ? "Pull value" : "Sold for"
+export function packSortLabel(filter: PackFilter | "all", sort: PackSort): string {
+  // "all" (the dashboard's mixed list): each row's own value -- sealed value, pull value or sale price.
+  const value = filter === "unopened" ? "Value" : filter === "opened" ? "Pull value" : filter === "sold" ? "Sold for" : "Value"
   const gain = filter === "unopened" ? "Unrealized" : "P&L"
   switch (sort) {
     case "recent": return "Newest"
@@ -735,12 +736,23 @@ export function packOutcomeLabel(outcome: PackOutcome): string {
 }
 
 /** What winners / losers is measured against in this tab (the chip's hover text). */
-export function packOutcomeHint(filter: PackFilter): string {
+export function packOutcomeHint(filter: PackFilter | "all"): string {
+  if (filter === "all") {
+    return "Packs worth more (winners) or less (losers) than you paid: a sealed pack's value, an opened pack's pulls, a sold pack's sale. Packs with no known cost or value are in neither."
+  }
   return filter === "unopened"
     ? "Sealed packs worth more (winners) or less (losers) than you paid. Packs with no known cost or value are in neither."
     : filter === "opened"
       ? "Opened packs whose pulls are worth more (winners) or less (losers) than you paid. Packs with no known cost or pull value are in neither."
       : "Packs you sold for more (winners) or less (losers) than you paid. Packs with no known cost are in neither."
+}
+
+/** The dashboard's status filter, as the binder tab whose labels fit it ("all" for a mixed list). */
+export function packFilterForStatus(status: string): PackFilter | "all" {
+  if (status === "held") return "unopened"
+  if (status === "ripped") return "opened"
+  if (status === "sold_any" || status === "sold" || status === "flipped") return "sold"
+  return "all"
 }
 
 /** "rare" -> "Rare", "premium" -> "Premium". */

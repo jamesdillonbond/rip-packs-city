@@ -14,7 +14,8 @@ import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import UnclaimedRewardCard from "@/components/profile/UnclaimedRewardCard"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
-import { packCoverage, collectionPlWithheld } from "@/lib/packs-wallet-view-format"
+import { packCoverage, collectionPlWithheld, PACK_FILTER_DEFAULTS, packFilterForStatus, packFilterParams, packFiltersNarrow, packTierOptions, type PackFilterState, type PackTabTotals } from "@/lib/packs-wallet-view-format"
+import PackFilterBar from "@/components/packs/PackFilterBar"
 import { heldPacksCaption, pullsHeldLine, packHeldFmvLabel, packHeldPullsLabel, packValueLabel, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
@@ -174,6 +175,8 @@ interface History {
   status_filter: string | null
   collection_slug: string | null
   computed_at?: string
+  /** v38: the filter's metrics; tab_packs = before the search / tier / outcome filters, tiers for the chips. */
+  tab_totals?: PackTabTotals | null
 }
 
 /** The RPC buckets buys/sells by sale_currency and labels a NULL currency
@@ -230,7 +233,8 @@ const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; swatch: string }
   { key: "ripped", label: "Ripped", swatch: "#3B82F6" },
   { key: "sold_any", label: "Sold", swatch: "#34D399" },
   { key: "flipped", label: "Flipped", swatch: "#A855F7" },
-  { key: "held", label: "Held", swatch: "#71717A" },
+  // 2026-11-26 (Trevor): a pack still in the wallet is "Sealed", never "Unopened" / "Held".
+  { key: "held", label: "Sealed", swatch: "#71717A" },
   { key: "transferred", label: "Transferred", swatch: "#F59E0B" },
   { key: "other", label: "Other", swatch: "#71717A" },
 ]
@@ -267,6 +271,21 @@ export default function PackHistoryClient() {
   const [status, setStatus] = useState<StatusFilter>("all")
   const [collection, setCollection] = useState<string | null>(null)
   const [page, setPage] = useState(0)
+  // 2026-11-26: search / sort / winners-losers / tier, the binder's Packs filters (get_wallet_pack_history v38).
+  const [filters, setFilters] = useState<PackFilterState>(PACK_FILTER_DEFAULTS)
+  const [searchInput, setSearchInput] = useState("")
+  const [filterTiers, setFilterTiers] = useState<{ key: string; tiers: Record<string, number> } | null>(null)
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setFilters((f) => (f.search === searchInput.trim() ? f : { ...f, search: searchInput.trim() }))
+    }, 300)
+    return () => clearTimeout(id)
+  }, [searchInput])
+  // A tier belongs to the list it was offered for; a new status, collection or wallet clears it.
+  useEffect(() => { setFilters((f) => (f.tier == null ? f : { ...f, tier: null })) }, [status, collection, activeWallet])
+  const narrowing = packFiltersNarrow(filters)
+  const clearFilters = useCallback(() => { setSearchInput(""); setFilters(PACK_FILTER_DEFAULTS) }, [])
+  const tierKey = `${activeWallet ?? ""}|${status}|${collection ?? ""}`
 
   const [expanded, setExpanded] = useState<string | null>(null)
   const [lifecycleCache, setLifecycleCache] = useState<Record<string, any>>({})
@@ -336,20 +355,23 @@ export default function PackHistoryClient() {
         offset: String(page * PAGE_SIZE),
       })
       if (collection) params.set("collection", collection)
+      for (const [k, v] of Object.entries(packFilterParams(filters))) params.set(k, v)
       const res = await fetch("/api/wallet/pack-history?" + params.toString(), { cache: "no-store" })
       const json = await res.json()
       if (!res.ok) {
         setHistoryError(json?.error ?? "Failed to load history")
         setHistory(null)
       } else {
-        setHistory(json as History)
+        const h = json as History
+        setHistory(h)
+        if (h.tab_totals?.tiers) setFilterTiers({ key: tierKey, tiers: h.tab_totals.tiers })
       }
     } catch (err) {
       setHistoryError(err instanceof Error ? err.message : String(err))
     } finally {
       setHistoryLoading(false)
     }
-  }, [activeWallet, status, collection, page])
+  }, [activeWallet, status, collection, page, filters, tierKey])
 
   useEffect(() => {
     loadHistory()
@@ -358,7 +380,7 @@ export default function PackHistoryClient() {
   // Reset page when filters change.
   useEffect(() => {
     setPage(0)
-  }, [status, collection, activeWallet])
+  }, [status, collection, activeWallet, filters])
 
   // 2026-09-26: keyed by collection too (a pack id is unique only within a
   // collection), and a failed read is CACHED AS AN ERROR — it used to be
@@ -617,6 +639,21 @@ export default function PackHistoryClient() {
           </div>
         )}
 
+        {activeWallet && (
+          <PackFilterBar
+            tab={packFilterForStatus(status)}
+            accent="var(--rpc-red)"
+            filters={filters}
+            searchInput={searchInput}
+            onSearchInput={setSearchInput}
+            onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+            tiers={filterTiers && filterTiers.key === tierKey ? packTierOptions(filterTiers.tiers) : []}
+            matched={history && !historyLoading && !historyError && narrowing ? history.total_count : null}
+            tabTotal={history?.tab_totals?.tab_packs ?? null}
+            onClear={clearFilters}
+          />
+        )}
+
         {/* History table */}
         {activeWallet && (
           <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8, overflow: "hidden" }}>
@@ -624,6 +661,11 @@ export default function PackHistoryClient() {
               <div style={{ padding: 18, fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", textAlign: "center" }}>Loading packs…</div>
             ) : historyError ? (
               <div style={{ padding: 14, fontFamily: monoFont, fontSize: 12, color: "var(--rpc-danger-text)" }}>{historyError}</div>
+            ) : (!history || history.packs.length === 0) && narrowing ? (
+              <div style={{ padding: 28, textAlign: "center", color: "var(--rpc-text-secondary)", fontFamily: monoFont, fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <span>No packs match these filters.</span>
+                <button type="button" className="rpc-chip" onClick={clearFilters}>Clear filters</button>
+              </div>
             ) : !history || history.packs.length === 0 ? (
               <div style={{ padding: 28, textAlign: "center", color: "var(--rpc-text-secondary)", fontFamily: monoFont, fontSize: 12 }}>No pack activity for this filter.</div>
             ) : (
@@ -828,7 +870,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
           </div>
         </td>
         <td style={{ padding: "10px 12px" }}>
-          <span className="rpc-pack-chip" style={{ background: sc + "22", color: accentText(sc), border: `1px solid ${sc}66` }}>{row.status}</span>
+          <span className="rpc-pack-chip" style={{ background: sc + "22", color: accentText(sc), border: `1px solid ${sc}66` }}>{row.status === "held" ? "sealed" : row.status}</span>
         </td>
         <td style={{ padding: "10px 12px", color: "var(--rpc-text-secondary)" }}>{relativeTime(row.latest_event_at)}</td>
         <td style={{ padding: "10px 12px", textAlign: "right" }}>{buyText}</td>
