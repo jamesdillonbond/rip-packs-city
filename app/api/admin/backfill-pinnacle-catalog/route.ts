@@ -32,7 +32,7 @@ import { NextRequest, NextResponse, after as scheduleAfter } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
-import { fetchChainCatalogRows } from "@/lib/pinnacle/chain-catalog";
+import { fetchChainCatalogRows, fetchChainMintedCounts } from "@/lib/pinnacle/chain-catalog";
 import {
   atlasEditionToCatalogRow,
   atlasLowAskCents,
@@ -159,30 +159,47 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Phase 1a (2026-11-25): keep total_minted current between full sweeps ──
-  // The 6-hourly floors_only run already holds every edition's live numMinted from the sweep above, but only the
-  // daily full run wrote it, so a live open edition's supply trailed the chain by up to a day of mints. Raise-only
-  // (mintedCountRaises): a lower live value is never written. Each failed read/write fails the run.
+  // ── Phase 1a (2026-11-25): keep total_minted at the chain's count ──
+  // The 6-hourly floors_only run holds every edition's live numMinted from the sweep above, but only the daily full
+  // run wrote it. And Atlas's numMinted itself runs BELOW the contract's own Edition.numberMinted (42 renders / 436
+  // pins on 11-25, 12 of them quiet 14+ days — not lag; the chain count equals RPC's pinnacle_mint_events count).
+  // So, in BOTH modes (after the full run's upsert has written Atlas's value): raise total_minted to the higher of
+  // Atlas's numMinted and the chain's numberMinted. Raise-only (mintedCountRaises): a lower value is never written,
+  // and a failed chain batch is simply absent. A failed catalog read/write fails the run.
   let mintedRaised = 0;
   let mintedRaiseCandidates = 0;
-  if (floorsOnly && sweep.editions.length > 0) {
+  let mintedChainEditions = 0;
+  const mintedChainErrors: string[] = [];
+  if (sweep.editions.length > 0) {
     const live = atlasMintedCounts(sweep.editions);
     const ids = [...live.keys()];
-    const current: Array<{ render_id: string; total_minted: number | null }> = [];
+    const current: Array<{ render_id: string; edition_id: string | null; total_minted: number | null }> = [];
     let readOk = true;
     for (let i = 0; i < ids.length; i += MINTED_READ_CHUNK) {
       const { data, error } = await supabase
         .from("pinnacle_catalog")
-        .select("render_id, total_minted")
+        .select("render_id, edition_id, total_minted")
         .in("render_id", ids.slice(i, i + MINTED_READ_CHUNK));
       if (error) {
         errors.push(`total_minted read: ${error.message}`);
         readOk = false;
         break;
       }
-      current.push(...((data ?? []) as Array<{ render_id: string; total_minted: number | null }>));
+      current.push(...((data ?? []) as Array<{ render_id: string; edition_id: string | null; total_minted: number | null }>));
     }
     if (readOk) {
+      const editionOf = new Map<string, number>();
+      for (const c of current) {
+        const e = Number(c.edition_id);
+        if (c.edition_id != null && Number.isInteger(e) && e > 0) editionOf.set(c.render_id, e);
+      }
+      const chain = await fetchChainMintedCounts([...editionOf.values()]);
+      mintedChainEditions = chain.counts.size;
+      mintedChainErrors.push(...chain.errors);
+      for (const [renderId, e] of editionOf) {
+        const n = chain.counts.get(e);
+        if (n != null && n > (live.get(renderId) ?? -1)) live.set(renderId, n);
+      }
       const raises = mintedCountRaises(live, current);
       mintedRaiseCandidates = raises.length;
       for (const r of raises.slice(0, MINTED_RAISE_MAX)) {
@@ -391,7 +408,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { source: "atlas", floors_only: floorsOnly, pages: sweep.pages, total_count: total, editions_seen: sweep.editions.length, editions_complete: sweep.complete, upserted, unkeyed, limited_error: limitedError, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, floor_agrees_with_listings: floorAgreesWithListings, live_listings_seen: liveListings.length, live_unmapped: liveUnmapped, live_duplicates: liveDuplicates, live_written: liveWritten, live_deleted: liveDeleted, minted_raised: mintedRaised, minted_raise_candidates: mintedRaiseCandidates, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_wmc_derived: chainDerived, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 5) },
+      p_extra: { source: "atlas", floors_only: floorsOnly, pages: sweep.pages, total_count: total, editions_seen: sweep.editions.length, editions_complete: sweep.complete, upserted, unkeyed, limited_error: limitedError, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, floor_agrees_with_listings: floorAgreesWithListings, live_listings_seen: liveListings.length, live_unmapped: liveUnmapped, live_duplicates: liveDuplicates, live_written: liveWritten, live_deleted: liveDeleted, minted_raised: mintedRaised, minted_raise_candidates: mintedRaiseCandidates, minted_chain_editions: mintedChainEditions, minted_chain_errors: mintedChainErrors.slice(0, 3), minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: Array.isArray(mintGap?.sample) ? mintGap!.sample.slice(0, 10) : null, mint_gap_error: mintGapError, chain_filled: chainFilled, chain_filled_recent: chainFilledRecent, chain_wmc_derived: chainDerived, chain_errors: chainErrors.slice(0, 3), duration_ms: durationMs, errors: errors.slice(0, 5) },
     });
   } catch {
     // best-effort observability

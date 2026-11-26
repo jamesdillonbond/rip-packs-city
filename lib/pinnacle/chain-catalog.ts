@@ -122,6 +122,62 @@ function b64(s: string): string {
   return Buffer.from(s, "utf8").toString("base64");
 }
 
+// 2026-11-25: the contract's own per-edition mint count. Atlas's numMinted ran BELOW it on 42 renders (436 pins;
+// 12 of them quiet for 14+ days, so not lag): e.g. edition 2932 (OEV1-WDMG-MICK-S2) chain 707, Atlas 699. The chain
+// count equals RPC's own pinnacle_mint_events count on every edition sampled, so it is the authority.
+export const CHAIN_MINTED_BATCH = 200;
+export const CHAIN_MINTED_SCRIPT = `import Pinnacle from 0xedf9df96c92f4595
+access(all) fun main(ids: [Int]): {Int: UInt64} {
+  let out: {Int: UInt64} = {}
+  for id in ids {
+    if let e = Pinnacle.getEdition(id: id) {
+      out[id] = e.numberMinted
+    }
+  }
+  return out
+}`;
+
+/**
+ * On-chain numberMinted per edition id. Never throws: a failed batch is reported in `errors` and is simply absent
+ * from `counts` (never 0), so a caller that raises toward these counts cannot lower or zero anything.
+ */
+export async function fetchChainMintedCounts(
+  editionIds: number[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ counts: Map<number, number>; errors: string[] }> {
+  const ids = [...new Set(editionIds.filter((n) => Number.isInteger(n) && n > 0))];
+  const counts = new Map<number, number>();
+  const errors: string[] = [];
+  for (let i = 0; i < ids.length; i += CHAIN_MINTED_BATCH) {
+    const batch = ids.slice(i, i + CHAIN_MINTED_BATCH);
+    const arg = { type: "Array", value: batch.map((n) => ({ type: "Int", value: String(n) })) };
+    try {
+      const res = await fetchImpl(FLOW_REST, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: b64(CHAIN_MINTED_SCRIPT), arguments: [b64(JSON.stringify(arg))] }),
+        signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        errors.push(`flow minted script HTTP ${res.status}: ${text.slice(0, 160)}`);
+        continue;
+      }
+      const decoded = decodeCdc(JSON.parse(Buffer.from(JSON.parse(text), "base64").toString("utf8")));
+      if (decoded && typeof decoded === "object") {
+        for (const [k, v] of Object.entries(decoded as Record<string, unknown>)) {
+          const id = Number(k);
+          const n = Number(v);
+          if (Number.isInteger(id) && Number.isFinite(n) && n >= 0) counts.set(id, n);
+        }
+      }
+    } catch (e) {
+      errors.push(`flow minted script: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { counts, errors };
+}
+
 /**
  * Read catalog rows for these on-chain edition ids. Never throws: a failed batch is reported in
  * `errors` and the rows from the batches that worked are still returned.
