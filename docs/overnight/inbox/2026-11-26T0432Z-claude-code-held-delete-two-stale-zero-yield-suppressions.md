@@ -28,3 +28,7 @@ DELETE FROM public.pipeline_zero_yield_suppressions
 **Verify:** `select count(*) from pipeline_zero_yield_suppressions where pipeline in ('ufc-enrichment-drain','pack-pull-source-rip-id-backfill')` = 0,
 and `check_zero_yield_lanes()->'offenders'` still `[]` (neither lane qualifies today). Commit the migration file
 under the version prod assigns, and add a ledger line.
+
+## Drained 2026-11-26 — applied as `20261126161804` (Trevor: "Apply it")
+
+Applied ~8:15 AM PT 11-26 (Claude Code cloud) after re-measuring each row's own re-check condition at apply time: `ufc-enrichment-drain` 4 runs / 114 written in 72 h; `pack-pull-source-rip-id-backfill` 144 runs, examined 12,976, written 12,976. Read back: 0 rows remain, `check_zero_yield_lanes()->'offenders'` = `[]`. The exact re-insert of both rows is in the migration header (`supabase/migrations/20261126161804_audit_20261125_retire_two_stale_zero_yield_suppressions.sql`). Retired in place (the inbox is append-only).
