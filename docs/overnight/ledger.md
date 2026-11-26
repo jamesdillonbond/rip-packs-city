@@ -13,6 +13,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 1:30 PM PT · UFC overview reads Aptos: "Flow + Aptos" chip, PER SALE pill, cheapest Aptos asks panel, no Flow insider detectors
+- `/ufc/overview` still showed the old closed market: a FLOW-only chip, an ARCHIVED pipeline pill, "No deals ≥15% off" from the closed Flow venue (next to a Sniper tab of ~465 live Aptos asks), and Flow insider detectors watching a venue with no trades.
+- What changed:
+  - New registry field `chainDisplay` ("Flow + Aptos") feeds the banner chip and the OG card.
+  - UFC FMV cadence is "sale-driven" (PER SALE), and `frozenMarket` is gone.
+  - Insider detectors are off for UFC.
+  - `lib/collection-stats/read.ts` gained a UFC arm: the five cheapest live Aptos asks from the sniper's own source. A failed read gives null plus `sniper_deals_failed`, which renders "couldn't load".
+- Pinned in `__tests__/ufc-overview-reads-aptos.test.tsx`; a planted ARCHIVED defect reds it.
+- Revert: `git revert <this commit>` (code only, no DB change).
+
 ### 2026-11-26 ~1:29 PM PT · 🔧 SHIPPED — **Site search answers a league or brand: "dc", "nascar", "world cup" lead with the Panini / Candy page for it** (Cowork cloud; Trevor: "Do it all")
 
 - **What:** `/api/search` prepends up to 3 league / brand rows (kind `league` / `brand`) linking `/<publisher>/property/<slug>`. Match is on the name or a leading run of its words ("nba" is not "wnba"). A scoped search stays inside its publisher. Index: Panini's board rows (only leagues with a page) + Candy brands that have a collection, read once an hour per instance; a failed read adds no rows, is not cached, and never fails the search.
