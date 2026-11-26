@@ -13,6 +13,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:20 AM PT · 🔧 SHIPPED (UI) — UFC Aptos sale rows: Aptos addresses go to the Aptos explorer (not the Flow wallet analyzer), UFC's store/issuer wallets named, "Aptos · Rarible/Tradeport" venue chip, banner no longer says "everything below is historical Flow data" (Claude Code cloud; Trevor: "Keep going")
+
+- **Defect.** UFC sales from Aptos (`source='aptos_indexer_v1'`, 2,156 rows) carry 64-hex Aptos addresses, and both sales-table wallet cells (`SalesTablePaginated`, `EditionActivity`) linked them into `/ufc/collection?wallet=…`. That page is the Flow wallet analyzer and cannot describe an Aptos collector. The rows also carried no venue, under a banner claiming everything below was historical Flow data. Since 11-25 the page also shows the live Rarible ask.
+- **Fix:**
+  - `lib/ufc-aptos.ts` gains `isAptosAccountAddress`, `aptosWalletDisplay` (Aptos explorer link; `0x8a94…8e7f` = "UFC Strike store", `0x80f6…6cdb` = "UFC Strike") and `aptosSaleVenue`.
+  - Both wallet cells branch on Aptos first; Flow/EVM/Solana paths are unchanged.
+  - The price cell gets an "Aptos · Rarible" / "Aptos · Tradeport" chip.
+  - The banner is retitled "UFC Strike now trades on Aptos".
+- **Checked, no change:** the "30d Sales · Nd since last" stat already counts Aptos sales (McGregor UFC 178: 121 d = its 07-28 Aptos sale), so backlog item #4 is closed.
+- Proof: `__tests__/component-SalesTablePaginated-aptos.test.tsx` has 7 cases. Planting the defect back (Aptos branch disabled) turns 2 red. Neighbouring component and banner suites: 46/46. `npm run preflight` is green.
+- Revert: `git revert` the code commit (UI only; no data).
+
 ### 2026-11-26 ~7:35 AM PT · ✅ SHIPPED — concierge portfolio snapshot adds the asker's linked Panini cards for their own wallet; docs carry the Saved Wallets + Panini-in-FMV rules (Cowork cloud; Trevor: "Keep going")
 
 - `get_collection_snapshot`: when a signed-in member asks about one of their OWN saved wallets, Portfolio FMV / Total Assets add their linked Panini cards (`readLinkedPaniniValue`), matching the dashboard; any other wallet stays wallet-scoped like the share card; a failed Panini read is said, never $0. 3 tests (own / not own / failed).
