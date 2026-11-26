@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~9:20 PM PT · 🔧 SHIPPED (code) — Interactive Moment slab ON FOR EVERYONE on /moment/[id] (Claude Code cloud; Trevor: "Yes do it all")
+
+- `lib/slab-3d.ts` `slabEnabled`: default on; `?slab=0` turns it off for that browser (remembered), `?slab=1` back on; `NEXT_PUBLIC_MOMENT_SLAB_3D=0` is the kill switch for everyone who has not opted in. `InteractiveSlab` server-renders the default, so no flash on load.
+- Tests re-pinned (premise changed): default on SSR + client; the plain hero (no back, no controls) is still exercised through the kill switch and a remembered opt-out. Planted defect (server ignoring the kill switch) reds the SSR test.
+- QA before the switch, live with `?slab=1`: Golazos front + back (Carvalho), UFC animated media (Oliveira); Top Shot and All Day verified earlier tonight. Pins are on their own pages, untouched.
+- Revert: set `NEXT_PUBLIC_MOMENT_SLAB_3D=0` in Vercel and redeploy (fastest), or `git revert` the code commit (find by message "Interactive Moment slab on for everyone").
+
 ### 2026-11-25 ~9:05 PM PT · 🗄 APPLIED (`20261126044653`) + 🔧 script — UFC Aptos listings keyed per Moment: a Rarible bundle is one listing object holding several Moments (Claude Code cloud; Trevor: "push to main. Fix any issues you encountered")
 
 - **Failure.** The second listings run (dispatch 45756488480, ~8:45 PM PT) scanned fine after the 8:35 fix, then died on its first upsert: 21000 "ON CONFLICT DO UPDATE command cannot affect row a second time". The cause is that `ufc_aptos_listings` was keyed on `listing_address` alone, and a bundle's Moments all share one listing address. Nothing was written: count 0, cursor NULL.
