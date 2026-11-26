@@ -129,6 +129,30 @@ describe("usePaniniScope + PaniniScopeBar", () => {
     await waitFor(() => expect(c.querySelector('[data-testid="panini-scope-bar"]')).not.toBeNull())
     expect(c.querySelector('[data-testid="slug"]')!.textContent).toBe("")
   })
+  it("a tab with rows for one league only shows no control; once a league is chosen it shows, so the pick can be cleared", () => {
+    const index = toScopeIndex(INDEX)!
+    const base = { index, failed: false, name: null, pending: false, setSlug: () => {} }
+    const counts = new Map([["nba", 5]])
+    const none = render(<PaniniScopeBar scope={{ ...base, slug: "" }} counts={counts} total={5} />).container
+    expect(none.querySelector('[data-testid="panini-scope-bar"]')).toBeNull()
+    cleanup()
+    const picked = render(<PaniniScopeBar scope={{ ...base, slug: "nba", name: "NBA" }} counts={counts} total={5} />).container
+    expect([...picked.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["All · 5", "NBA · 5"])
+  })
+  it("storage that throws on read (blocked site data) is no scope, and the control still renders", async () => {
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("denied")
+    })
+    try {
+      const c = render(<Harness />).container
+      await waitFor(() => expect(c.querySelector('[data-testid="panini-scope-bar"]')).not.toBeNull())
+      expect(read).toHaveBeenCalled()
+      expect(c.querySelector('[data-testid="slug"]')!.textContent).toBe("")
+      expect(c.querySelector('[data-testid="name"]')!.textContent).toBe("")
+    } finally {
+      read.mockRestore()
+    }
+  })
   it("a failed index read renders no control; a scoped arrival is told the filter is not applied", async () => {
     fetchState.ok = false
     const plain = render(<Harness />).container
