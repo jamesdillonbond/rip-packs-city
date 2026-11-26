@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:35 AM PT · ✅ SHIPPED — concierge portfolio snapshot adds the asker's linked Panini cards for their own wallet; docs carry the Saved Wallets + Panini-in-FMV rules (Cowork cloud; Trevor: "Keep going")
+
+- `get_collection_snapshot`: when a signed-in member asks about one of their OWN saved wallets, Portfolio FMV / Total Assets add their linked Panini cards (`readLinkedPaniniValue`), matching the dashboard; any other wallet stays wallet-scoped like the share card; a failed Panini read is said, never $0. 3 tests (own / not own / failed).
+- Docs: wallet-and-portfolio.md (11-25/26 section), packs.md (per-collection split), concierge dictionary (tiles add up to Portfolio FMV).
+- Revert: `git revert` the commit titled "Concierge portfolio snapshot adds linked Panini cards for the asker's own wallet".
+
 ### 2026-11-26 ~7:05 AM PT · 🗄 APPLIED (`20261126150605`) — ts-sold-floor-clear moved off the Atlas drain's minutes (Claude Code cloud, autonomous pass)
 - **Found:** the remaining `ts-sold-floor-clear` failures (`deadlock detected`, 8:25 AM + 12:45 PM PT 11-24, 4:25 / 6:25 / 9:15 PM PT 11-25) all fall on ODD minutes, where `rpc-ts-sold-floor-clear` (5,15,25,35,45,55) starts in the same second as `rpc-atlas-market-drain` (`1-59/2`, avg 13 s, p95 29 s). Both update `topshot_atlas_market_events` rows in different orders (Postgres deadlock detail, 11-26 logs).
 - **Fix:** jobid 825 schedule `5,10,15,25,30,35,45,50,55` → `4,10,14,24,30,34,44,50,54` (same 9 ticks/h, max gap 10 min vs the watchlist's 25; command md5 unchanged `5415d28b…`); watchlist note updated. Load neutral: minute 4 = 36 s/h vs 5 = 55, 44 = 35 vs 45 = 98 (pg_cron seconds started per hour, 24 h).
