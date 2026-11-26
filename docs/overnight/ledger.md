@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:50 PM PT · 🗄 APPLIED (`20261126034736`) — Sentinel "Cadence Collapse" WARN cleared: `allday-drop-windows` gets the cadence bridge its 11-24 cadence cut owed (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Sentinel 7:04 PM PT WARN read `allday-drop-windows` at 17 % of baseline (48/day vs 288). It is the planned cut in `20261125050221` (job 623: dead Studio walk every 5 min → `refresh_allday_drop_windows_from_atlas()` every 30 min), which did not carry the `cadence_exempt_lanes` bridge the rule requires. Lane healthy: 46/46 runs ok since the change, 3,201 source rows each; Pipeline Silence (60 min) still watches it.
+- One `cadence_exempt_lanes` row, `review_by` 2026-12-06 (the median over `[today−17, today−3)` holds ≥ 8 post-change days from then). After apply: `check_pipeline_cadence_collapse()` → degraded `[]`, suppressed 1.
+- Revert: `DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'allday-drop-windows';`
+
 ### 2026-11-25 ~7:50 PM PT · 🗄 APPLIED (`20261126033647`), NOT YET SCHEDULED — Top Shot rip pricing for rips the at-rip hydrator makes priceable (Claude Code cloud; Trevor's "keep going")
 - **What:** `price_topshot_rips_backlog(p_limit)` uses the same whole-pack, all-or-nothing rule as `price_recent_topshot_rips`, but takes its candidates from the hydrator's output: the rips of Moments that an at-height request (pg_cron 932) wrote in the last day. It logs `topshot-rip-pricing-backlog` and is on the cadence watchlist.
 - **Why:** older unpriced rips (34.4K in April–May, 12.5K in September–November) would otherwise get priced only by the hourly backfill leg, at about 75 an hour. Scanning `pack_rips` for candidates instead measured 370K buffers / 10.6 s cold; the request-driven read measured 62 ms / 2.3K buffers.
