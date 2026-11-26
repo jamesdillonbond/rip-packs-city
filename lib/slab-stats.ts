@@ -17,6 +17,8 @@ export type EspnLeague = "nba" | "wnba" | "nfl"
 export interface StatChip {
   label: string
   value: string
+  /** This game's number beat the player's average for the season (basketball PTS / REB / AST). */
+  aboveAverage?: boolean
 }
 
 export interface SlabStatBlock {
@@ -25,6 +27,8 @@ export interface SlabStatBlock {
   /** "vs ORL · W 114-109 · Dec 10, 2024" / "Milwaukee Bucks · 58 games" */
   detail: string | null
   chips: StatChip[]
+  /** ESPN's game page for this game (the box score), when the game is known by ESPN's id. */
+  link?: string | null
 }
 
 export interface SlabStats {
@@ -45,6 +49,7 @@ export interface SeasonLine {
 
 export interface GamelogGame {
   source: "gamelog"
+  event_id?: string | null
   game_date?: string | null
   season_type?: string | null
   at_vs?: string | null
@@ -57,6 +62,7 @@ export interface GamelogGame {
 
 export interface BoxGame {
   source: "box"
+  event_id?: string | null
   game_date?: string | null
   at_vs?: string | null
   opponent_abbr?: string | null
@@ -247,7 +253,29 @@ export function gameBlock(league: EspnLeague, game: GamelogGame | BoxGame | null
   const result = game.source === "gamelog" && game.result && game.score ? `${game.result} ${game.score}` : null
   const post = game.source === "gamelog" && /postseason/i.test(game.season_type ?? "") ? "Playoffs" : null
   const detail = [opp, result, post, plainDate(game.game_date)].filter(Boolean).join(" · ") || null
-  return { title: "This game", detail, chips: unique }
+  return { title: "This game", detail, chips: unique, link: espnGameUrl(league, game.event_id) }
+}
+
+/** ESPN's game page — only for an id that is ESPN's numeric event id. */
+export function espnGameUrl(league: EspnLeague, eventId: string | null | undefined): string | null {
+  if (!eventId || !/^\d{6,12}$/.test(eventId)) return null
+  return `https://www.espn.com/${league}/game/_/gameId/${eventId}`
+}
+
+/** Basketball game chips that beat the same season's per-game average. */
+const ABOVE_AVERAGE: Record<string, string> = { PTS: "PPG", REB: "RPG", AST: "APG" }
+export function markAboveAverage(game: SlabStatBlock | null, season: SlabStatBlock | null): SlabStatBlock | null {
+  if (!game || !season) return game
+  const avg = new Map(season.chips.map((c) => [c.label, num(c.value)]))
+  return {
+    ...game,
+    chips: game.chips.map((c) => {
+      const key = ABOVE_AVERAGE[c.label]
+      const a = key ? avg.get(key) : null
+      const v = num(c.value)
+      return key && a != null && v != null && v > a ? { ...c, aboveAverage: true } : c
+    }),
+  }
 }
 
 export function seasonBlock(league: EspnLeague, season: number, rows: SeasonLine[] | null | undefined): SlabStatBlock | null {
@@ -289,8 +317,8 @@ export function slabStatsFromContext(ctx: MomentGameContext | null | undefined):
   if (!ctx) return null
   const league = asEspnLeague(ctx.espn_league)
   if (!league || !Number.isFinite(ctx.season)) return null
-  const game = gameBlock(league, ctx.game)
   const season = seasonBlock(league, ctx.season, ctx.season_rows)
+  const game = league === "nfl" ? gameBlock(league, ctx.game) : markAboveAverage(gameBlock(league, ctx.game), season)
   if (!game && !season) return null
   return { game, season }
 }

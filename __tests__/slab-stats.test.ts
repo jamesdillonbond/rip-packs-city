@@ -199,3 +199,28 @@ describe("fetchSlabStats budget", () => {
     if (!r.ok) expect(r.error).toMatch(/slab stats.*exceeded 20ms/)
   })
 })
+
+describe("above-average markers and the ESPN link", () => {
+  it("marks basketball game stats that beat the season's per-game average", () => {
+    const s = slabStatsFromContext({
+      espn_league: "nba", season: 2025, season_rows: [avg(LILLARD_AVG)],
+      game: { source: "gamelog", event_id: "401734902", game_date: "2024-12-10", at_vs: "vs", opponent_abbr: "ORL", score: "114-109", result: "W", names: NBA_NAMES, values: LILLARD },
+    })
+    const marks = Object.fromEntries((s?.game?.chips ?? []).map((c) => [c.label, !!c.aboveAverage]))
+    // 28 PTS > 24.9 PPG, 2 REB < 4.7 RPG, 9 AST > 7.1 APG; shooting lines are never marked
+    expect(marks).toEqual({ PTS: true, REB: false, AST: true, FG: false, "3PT": false })
+    expect(s?.game?.link).toBe("https://www.espn.com/nba/game/_/gameId/401734902")
+  })
+  it("marks nothing without a season line, and never on NFL", () => {
+    const g = slabStatsFromContext({ espn_league: "nba", season: 2025, season_rows: [], game: { source: "gamelog", names: NBA_NAMES, values: LILLARD } })
+    expect(g?.game?.chips.some((c) => c.aboveAverage)).toBe(false)
+    const n = slabStatsFromContext({ espn_league: "nfl", season: 2024, season_rows: [], game: { source: "gamelog", names: NFL_NAMES, values: NFL_QB } })
+    expect(n?.game?.chips.some((c) => c.aboveAverage)).toBe(false)
+  })
+  it("links only an ESPN numeric event id", async () => {
+    const { espnGameUrl } = await import("@/lib/slab-stats")
+    expect(espnGameUrl("wnba", "401620123")).toBe("https://www.espn.com/wnba/game/_/gameId/401620123")
+    expect(espnGameUrl("nba", "abc")).toBe(null)
+    expect(espnGameUrl("nba", null)).toBe(null)
+  })
+})

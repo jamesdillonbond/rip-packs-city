@@ -318,3 +318,33 @@ describe("InteractiveSlab badges on the back", () => {
     expect(queryByLabelText("Badges")).toBeNull()
   })
 })
+
+describe("InteractiveSlab box score link", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance", "setTimeout", "Date"] })
+    window.history.replaceState(null, "", "/moment/x?slab=1")
+  })
+  afterEach(() => vi.useRealTimers())
+  it("offers ESPN's box score only while the back is showing", () => {
+    const { getByText, queryByText } = render(
+      <InteractiveSlab
+        frameColor="red"
+        title="T"
+        rows={[]}
+        finish={null}
+        stats={{ game: { title: "This game", detail: null, chips: [{ label: "PTS", value: "28", aboveAverage: true }], link: "https://www.espn.com/nba/game/_/gameId/401734902" }, season: null }}
+      >
+        <span>m</span>
+      </InteractiveSlab>,
+    )
+    expect(queryByText("ESPN box score ↗")).toBeNull()
+    fireEvent.click(getByText("Flip"))
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    const a = getByText("ESPN box score ↗") as HTMLAnchorElement
+    expect(a.getAttribute("href")).toBe("https://www.espn.com/nba/game/_/gameId/401734902")
+    expect(a.getAttribute("rel")).toContain("noopener")
+    expect(getByText("(above season average)", { exact: false })).toBeTruthy()
+  })
+})

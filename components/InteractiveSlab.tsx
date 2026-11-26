@@ -663,6 +663,11 @@ export default function InteractiveSlab({
               {tiltState === "on" ? "Tilt on" : tiltState === "blocked" ? "Tilt blocked" : "Tilt"}
             </button>
           ) : null}
+          {isBack && stats?.game?.link ? (
+            <a href={stats.game.link} target="_blank" rel="noopener noreferrer" style={{ ...slabButton, display: "inline-flex", alignItems: "center", boxSizing: "border-box", textDecoration: "none" }}>
+              ESPN box score ↗
+            </a>
+          ) : null}
           {!touched ? (
             <span style={{ color: "var(--rpc-text-muted)" }}>Drag to spin it</span>
           ) : null}
@@ -730,7 +735,17 @@ function StatBlockView({ block, accent }: { block: SlabStatBlock; accent: string
       <div style={{ display: "flex", gap: "clamp(8px, 3%, 16px)", marginTop: 4 }}>
         {block.chips.map((c) => (
           <div key={c.label} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <span style={{ fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4.6vw, 24px)", lineHeight: 1 }}>{c.value}</span>
+            <span
+              style={{ fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4.6vw, 24px)", lineHeight: 1, color: c.aboveAverage ? (accent ?? undefined) : undefined }}
+            >
+              {c.value}
+              {c.aboveAverage ? (
+                <>
+                  <span aria-hidden="true" style={{ fontSize: "0.5em", marginLeft: 2, verticalAlign: "super" }}>▲</span>
+                  <span style={SR_ONLY}> (above season average)</span>
+                </>
+              ) : null}
+            </span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.12em", color: "var(--rpc-text-muted)", marginTop: 2 }}>{c.label}</span>
           </div>
         ))}
@@ -738,6 +753,18 @@ function StatBlockView({ block, accent }: { block: SlabStatBlock; accent: string
     </section>
   );
 }
+
+const SR_ONLY: CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+};
 
 const slabButton: CSSProperties = {
   font: "inherit",
