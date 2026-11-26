@@ -82,13 +82,26 @@ export interface TeamGame {
   result?: string | null
 }
 
+/** A LaLiga Golazos Moment's match (20261126170312), from ESPN's LaLiga scoreboard. */
+export interface MatchGame {
+  source: "match"
+  event_id?: string | null
+  game_date?: string | null
+  home_name?: string | null
+  away_name?: string | null
+  home_score?: number | null
+  away_score?: number | null
+  /** The side the Moment's player played for, from the edition's own record; null when unknown. */
+  side?: "home" | "away" | null
+}
+
 export interface MomentGameContext {
   league?: string
   espn_league: string
   season: number
   moment_game_date?: string | null
   season_rows: SeasonLine[]
-  game: GamelogGame | BoxGame | TeamGame | null
+  game: GamelogGame | BoxGame | TeamGame | MatchGame | null
 }
 
 export function asEspnLeague(v: unknown): EspnLeague | null {
@@ -267,8 +280,8 @@ function footballSeasonChips(rows: SeasonLine[]): StatChip[] {
 
 // ── blocks ──────────────────────────────────────────────────────────────────
 
-export function gameBlock(league: EspnLeague, game: GamelogGame | BoxGame | TeamGame | null | undefined): SlabStatBlock | null {
-  if (!game) return null
+export function gameBlock(league: EspnLeague, game: GamelogGame | BoxGame | TeamGame | MatchGame | null | undefined): SlabStatBlock | null {
+  if (!game || game.source === "match") return null
   if (game.source === "team") {
     // A team Moment: the result is the line. No result, nothing — never a bare opponent.
     if (!game.result || !game.score) return null
@@ -349,9 +362,37 @@ export function seasonBlock(league: EspnLeague, season: number, rows: SeasonLine
   return { title: `${seasonLabel(league, season)} season`, detail, chips }
 }
 
+/**
+ * A Golazos Moment's match: the final from the player's side ("W 6-2", "D 1-1") with the opponent on
+ * the detail line, or the plain final ("Real Madrid 2-6 Barcelona") when the side is unknown. No
+ * score, nothing — never a bare fixture.
+ */
+export function matchBlock(m: MatchGame | null | undefined): SlabStatBlock | null {
+  if (!m || m.source !== "match") return null
+  const hs = m.home_score
+  const as = m.away_score
+  if (typeof hs !== "number" || typeof as !== "number" || !Number.isFinite(hs) || !Number.isFinite(as)) return null
+  const link = m.event_id && /^\d{4,12}$/.test(m.event_id) ? `https://www.espn.com/soccer/match/_/gameId/${m.event_id}` : null
+  const date = plainDate(m.game_date)
+  if (m.side === "home" || m.side === "away") {
+    const own = m.side === "home" ? hs : as
+    const opp = m.side === "home" ? as : hs
+    const oppName = m.side === "home" ? m.away_name : m.home_name
+    const res = own > opp ? "W" : own < opp ? "L" : "D"
+    const detail = [oppName ? `${m.side === "home" ? "vs" : "@"} ${oppName}` : null, date].filter(Boolean).join(" · ") || null
+    return { title: "This match", detail, chips: [{ label: "Final", value: `${res} ${own}-${opp}` }], link }
+  }
+  if (!m.home_name || !m.away_name) return null
+  return { title: "This match", detail: date, chips: [{ label: "Final", value: `${m.home_name} ${hs}-${as} ${m.away_name}` }], link }
+}
+
 /** Everything the slab's back shows about the player, or null when there is nothing real to show. */
 export function slabStatsFromContext(ctx: MomentGameContext | null | undefined): SlabStats | null {
   if (!ctx) return null
+  if (ctx.espn_league === "laliga") {
+    const game = ctx.game && ctx.game.source === "match" ? matchBlock(ctx.game) : null
+    return game ? { game, season: null } : null
+  }
   const league = asEspnLeague(ctx.espn_league)
   if (!league || !Number.isFinite(ctx.season)) return null
   const season = seasonBlock(league, ctx.season, ctx.season_rows)

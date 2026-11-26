@@ -26,7 +26,8 @@ type RpcClient = {
   }
 }
 
-export const SLAB_STATS_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day"])
+// laliga_golazos (2026-11-26): the match result, from ESPN's LaLiga scoreboard (get_moment_game_context).
+export const SLAB_STATS_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "laliga_golazos"])
 
 export type SlabStatsRead = { ok: true; ctx: MomentGameContext | null } | { ok: false; error: string }
 

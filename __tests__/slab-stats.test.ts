@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { momentSeason, gameBlock, seasonBlock, slabStatsFromContext, plainDate, type SeasonLine } from "@/lib/slab-stats"
+import { momentSeason, gameBlock, seasonBlock, slabStatsFromContext, plainDate, matchBlock, type SeasonLine } from "@/lib/slab-stats"
 import { fetchSlabStats, isFunctionMissing } from "@/lib/moment-detail/slab-stats-fetch"
 
 // Real ESPN shapes, captured 2026-11-25: Lillard's game log line for the NBA Cup game his
@@ -146,6 +146,33 @@ describe("team Moments", () => {
   })
 })
 
+describe("Golazos matches", () => {
+  const clasico = { source: "match" as const, event_id: "251232", game_date: "2009-05-02", home_name: "Real Madrid", away_name: "Barcelona", home_score: 2, away_score: 6 }
+  it("reads the final from the player's side: an away win is W 6-2, @ the home club", () => {
+    const b = matchBlock({ ...clasico, side: "away" })
+    expect(b?.title).toBe("This match")
+    expect(b?.chips).toEqual([{ label: "Final", value: "W 6-2" }])
+    expect(b?.detail).toContain("@ Real Madrid")
+    expect(b?.link).toBe("https://www.espn.com/soccer/match/_/gameId/251232")
+  })
+  it("the home side of the same match is L 2-6, vs the away club; a level score is a D", () => {
+    expect(matchBlock({ ...clasico, side: "home" })?.chips[0].value).toBe("L 2-6")
+    expect(matchBlock({ ...clasico, side: "home" })?.detail).toContain("vs Barcelona")
+    expect(matchBlock({ ...clasico, home_score: 1, away_score: 1, side: "home" })?.chips[0].value).toBe("D 1-1")
+  })
+  it("without a side it shows the plain final; without a score it shows nothing", () => {
+    expect(matchBlock({ ...clasico, side: null })?.chips[0].value).toBe("Real Madrid 2-6 Barcelona")
+    expect(matchBlock({ ...clasico, home_score: null, side: "away" })).toBe(null)
+  })
+  it("a Golazos context becomes a match block and no season; a test fixture id is not an ESPN link", () => {
+    const st = slabStatsFromContext({ espn_league: "laliga", season: 2009, season_rows: [], game: { ...clasico, event_id: "clasico09", side: "away" } })
+    expect(st?.game?.chips[0].value).toBe("W 6-2")
+    expect(st?.game?.link).toBe(null)
+    expect(st?.season).toBe(null)
+    expect(slabStatsFromContext({ espn_league: "laliga", season: 2009, season_rows: [], game: null })).toBe(null)
+  })
+})
+
 describe("slabStatsFromContext", () => {
   it("returns null when there is nothing real to show", () => {
     expect(slabStatsFromContext(null)).toBe(null)
@@ -192,6 +219,12 @@ describe("fetchSlabStats", () => {
     expect(await fetchSlabStats({ ...ED, collection_slug: "disney_pinnacle" }, c as never)).toEqual({ ok: true, ctx: null })
     expect(await fetchSlabStats({ ...ED, game_date: null }, c as never)).toEqual({ ok: true, ctx: null })
     expect(c.calls).toHaveLength(0)
+  })
+  it("asks the reader for a Golazos Moment's match", async () => {
+    const ctx = { espn_league: "laliga", season: 2009, season_rows: [], game: null }
+    const c = fakeClient({ ctx: { data: ctx, error: null } })
+    expect(await fetchSlabStats({ ...ED, collection_slug: "laliga_golazos", game_date: "2009-05-02" }, c as never)).toEqual({ ok: true, ctx })
+    expect(c.calls.map((x) => x.fn)).toEqual(["get_moment_game_context"])
   })
   it("returns the game context when the reader exists", async () => {
     const ctx = { espn_league: "nba", season: 2025, season_rows: [], game: null }

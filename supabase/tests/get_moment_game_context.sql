@@ -14,6 +14,9 @@
 --   (e) the season is ESPN's number for that date (NBA by the year it ENDS, NFL by the year it starts);
 --   (f) the box-score fallback answers only when the night before is empty;
 --   (g) a collection without ESPN stats, or a player without an ESPN id, is NULL;
+--   (i) a LaLiga Golazos Moment gets its MATCH from espn_soccer_matches: both clubs pair home↔home and
+--       away↔away (club tokens), on the Moment's date or the day before, completed, exactly one; the side
+--       comes from the edition's own club, never ESPN's names; a swapped derby does not pair (20261126170312);
 --   (h) a TEAM Moment (its subject is one of its own two teams) gets that team's result, read from the
 --       lines whose opponent is the OTHER team on that date — never the other side's line (an Eagles
 --       Moment never shows the Chiefs' result), with or without a player_id; no line, or a placeholder
@@ -21,17 +24,24 @@
 --
 -- The function DDL below is VERBATIM from
 -- supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql (moment_gamelog_season)
--- and supabase/migrations/20261126162015_audit_20261126_moment_game_context_team_moments_without_player_id.sql (get_moment_game_context);
+-- and supabase/migrations/20261126170312_audit_20261126_moment_game_context_golazos_matches.sql (get_moment_game_context, soccer_club_tokens);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
 
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, collection_id uuid, player_id uuid, game_date date, home_team text, away_team text,
-  description text, player_name text
+  description text, player_name text, team_name text
+);
+CREATE TABLE public.espn_soccer_matches (
+  league text, event_id text, match_date date, kickoff timestamptz, home_name text, away_name text,
+  home_score int, away_score int, completed boolean, refreshed_at timestamptz
 );
 CREATE TABLE public.player_identities (
   player_id uuid, league text, espn_league text, espn_id text, stats_refreshed_at timestamptz
@@ -53,7 +63,8 @@ CREATE TABLE public.player_game_stats (
 \set TS '95f28a17-224a-4025-96ad-adf8a4c63bfd'
 \set AD 'dee28451-5d62-409e-a1ad-a83f763ac070'
 \set PIN 'aaaaaaaa-0000-0000-0000-000000000001'
-INSERT INTO public.collections VALUES (:'TS'::uuid, 'nba_top_shot'), (:'AD'::uuid, 'nfl_all_day'), (:'PIN'::uuid, 'disney_pinnacle');
+\set GZ 'aaaaaaaa-0000-0000-0000-000000000002'
+INSERT INTO public.collections VALUES (:'TS'::uuid, 'nba_top_shot'), (:'AD'::uuid, 'nfl_all_day'), (:'PIN'::uuid, 'disney_pinnacle'), (:'GZ'::uuid, 'laliga_golazos');
 
 -- players: Giannis, Lillard, an NFL QB, a Top Shot player with no ESPN id, Brunson
 INSERT INTO public.player_identities VALUES
@@ -94,6 +105,30 @@ INSERT INTO public.editions VALUES
   ('20000000-0000-0000-0000-000000000016', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-01-10', 'Miami Heat ', 'New York Knicks', NULL),
   -- (b) Brunson 2026-02-22 again, the description naming the opponent's CITY ("against Houston")
   ('20000000-0000-0000-0000-000000000017', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-02-22', NULL, NULL, 'Jalen Brunson pulls up against Houston for the go-ahead three.');
+
+-- (i) Golazos: matches as ESPN's LaLiga scoreboard names them
+INSERT INTO public.espn_soccer_matches VALUES
+  ('esp.1', 'clasico09', '2009-05-02', '2009-05-02 18:00+00', 'Real Madrid', 'Barcelona', 2, 6, true, now()),
+  ('esp.1', 'ath-rma', '2023-01-22', '2023-01-22 20:00+00', 'Athletic Club', 'Real Madrid', 0, 2, true, now()),
+  ('esp.1', 'derbi', '2021-12-12', '2021-12-12 20:00+00', 'Atlético Madrid', 'Real Madrid', 0, 2, true, now()),
+  ('esp.1', 'sporting', '2009-02-08', '2009-02-08 20:00+00', 'Barcelona', 'Sporting Gijón', 3, 1, true, now()),
+  ('esp.1', 'barca-esp', '2019-12-07', '2019-12-07 20:00+00', 'Barcelona', 'Espanyol', 4, 0, true, now()),
+  ('esp.1', 'notdone', '2024-01-01', '2024-01-01 20:00+00', 'Sevilla', 'Elche', null, null, false, now());
+INSERT INTO public.editions (id, collection_id, player_id, game_date, home_team, away_team, description, player_name, team_name) VALUES
+  -- the Clásico 2-6, a Barcelona player: away side, W 6-2 from his side
+  ('20000000-0000-0000-0000-000000000030', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b1', '2009-05-02', 'Real Madrid', 'FC Barcelona', NULL, 'Lionel Messi', 'FC Barcelona'),
+  -- dated a day late (Golazos 2023-01-23, played 01-22)
+  ('20000000-0000-0000-0000-000000000031', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b2', '2023-01-23', 'Athletic Club', 'Real Madrid', NULL, 'Toni Kroos', 'Real Madrid'),
+  -- the derby recorded with home and away the other way round from ESPN: never pairs
+  ('20000000-0000-0000-0000-000000000032', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b2', '2021-12-12', 'Real Madrid', 'Atlético de Madrid', NULL, 'Toni Kroos', 'Real Madrid'),
+  -- "Real Sporting" is Sporting Gijón
+  ('20000000-0000-0000-0000-000000000033', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b1', '2009-02-08', 'FC Barcelona', 'Real Sporting', NULL, 'Lionel Messi', 'FC Barcelona'),
+  -- an Espanyol player in the Barcelona derby: his side is the edition's away, though his club's name holds "barcelona"
+  ('20000000-0000-0000-0000-000000000034', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b3', '2019-12-07', 'FC Barcelona', 'RCD Espanyol de Barcelona', NULL, 'Wu Lei', 'RCD Espanyol de Barcelona'),
+  -- a placeholder club ("N/A" has no tokens, and an empty set sits inside every set) pairs with nothing
+  ('20000000-0000-0000-0000-000000000036', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b3', '2009-05-02', 'Real Madrid', 'N/A', NULL, 'X', 'Real Madrid'),
+  -- a match not completed is not a result
+  ('20000000-0000-0000-0000-000000000035', :'GZ'::uuid, '10000000-0000-0000-0000-0000000000b3', '2024-01-01', 'Sevilla FC', 'Elche CF', NULL, 'X', 'Sevilla FC');
 
 -- (h) TEAM Moments: the subject is one of the edition's own teams; no player identity exists for them
 INSERT INTO public.editions VALUES
@@ -153,6 +188,19 @@ $$;
 -- <<< END verbatim <<<
 
 -- >>> BEGIN verbatim (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.soccer_club_tokens(p_name text)
+returns text[]
+language sql stable
+set search_path = pg_catalog, public
+as $$
+  select coalesce(array_agg(t order by t), '{}'::text[])
+    -- one alias: Golazos writes Sporting Gijón as "Real Sporting" (3 editions, 2008-2010)
+    from regexp_split_to_table(lower(extensions.unaccent(regexp_replace(coalesce(p_name, ''), '^\s*Real Sporting\s*$', 'Sporting Gijón', 'i'))), '[^a-z0-9]+') t
+   where t <> ''
+     and length(t) > 1
+     and t not in ('fc', 'cf', 'cd', 'ud', 'sd', 'rcd', 'rc', 'ca', 'cp', 'club', 'de', 'la', 'del', 'el', 'sad', 'balompie', 'futbol')
+$$;
+
 CREATE OR REPLACE FUNCTION public.get_moment_game_context(p_edition_id uuid)
 returns jsonb
 language plpgsql stable security definer
@@ -173,13 +221,62 @@ declare
   v_subj   text;
   v_other  text;
   v_event  text;
+  v_side   text;
 begin
-  select e.player_id, e.player_name, e.game_date, c.slug, e.home_team, e.away_team, e.description into v_e
+  select e.player_id, e.player_name, e.team_name, e.game_date, c.slug, e.home_team, e.away_team, e.description into v_e
     from public.editions e
-    join public.collections c on c.id = e.collection_id and c.slug in ('nba_top_shot', 'nfl_all_day')
+    join public.collections c on c.id = e.collection_id and c.slug in ('nba_top_shot', 'nfl_all_day', 'laliga_golazos')
    where e.id = p_edition_id;
   if v_e.game_date is null then
     return null;
+  end if;
+
+  -- LaLiga Golazos: the MATCH, from ESPN's LaLiga scoreboard (espn_soccer_matches). Both clubs pair —
+  -- the edition's home with ESPN's home, its away with ESPN's away (club tokens, one inside the other) —
+  -- on the Moment's date or the day before (Golazos dates some Moments a day late: 135 of 575, 11-26),
+  -- completed matches only, exactly one or none. The player's side is read from the EDITION (its club is
+  -- its home or away team), never from ESPN's names ("Espanyol de Barcelona" holds "barcelona").
+  if v_e.slug = 'laliga_golazos' then
+    if v_e.home_team is null or v_e.away_team is null then
+      return null;
+    end if;
+    v_side := case when lower(btrim(coalesce(v_e.team_name, ''))) = lower(btrim(v_e.home_team)) then 'home'
+                   when lower(btrim(coalesce(v_e.team_name, ''))) = lower(btrim(v_e.away_team)) then 'away' end;
+    select count(*), min(x.event_id) into v_n, v_event
+      from public.espn_soccer_matches x
+     where x.league = 'esp.1'
+       and x.match_date between v_e.game_date - 1 and v_e.game_date
+       and x.completed
+       and (public.soccer_club_tokens(x.home_name) <@ public.soccer_club_tokens(v_e.home_team)
+            or public.soccer_club_tokens(v_e.home_team) <@ public.soccer_club_tokens(x.home_name))
+       and (public.soccer_club_tokens(x.away_name) <@ public.soccer_club_tokens(v_e.away_team)
+            or public.soccer_club_tokens(v_e.away_team) <@ public.soccer_club_tokens(x.away_name))
+       and cardinality(public.soccer_club_tokens(x.home_name)) > 0
+       and cardinality(public.soccer_club_tokens(x.away_name)) > 0
+       and cardinality(public.soccer_club_tokens(v_e.home_team)) > 0
+       and cardinality(public.soccer_club_tokens(v_e.away_team)) > 0;
+    if v_n <> 1 then
+      return null;
+    end if;
+    select jsonb_build_object(
+             'source', 'match',
+             'event_id', x.event_id,
+             'game_date', x.match_date,
+             'home_name', x.home_name,
+             'away_name', x.away_name,
+             'home_score', x.home_score,
+             'away_score', x.away_score,
+             'side', v_side)
+      into v_game
+      from public.espn_soccer_matches x
+     where x.league = 'esp.1' and x.event_id = v_event;
+    return jsonb_build_object(
+      'league', 'laliga',
+      'espn_league', 'laliga',
+      'season', extract(year from (v_game->>'game_date')::date)::int,
+      'moment_game_date', v_e.game_date,
+      'season_rows', '[]'::jsonb,
+      'game', v_game);
   end if;
   -- An All Day play without both teams is not a game: a Player/Team Melt (280 are dated to the
   -- 2023 opener), a Draft Pick, or a placeholder play All Day has not filled in. Its date names no
@@ -406,6 +503,20 @@ SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000
   '(f) the box-score lane does not lend the 11-21 game to an 11-22 Moment');
 -- (g) out of scope
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000008') IS NULL, '(g) Pinnacle has no ESPN stats');
+SELECT _assert_eq((public.get_moment_game_context('20000000-0000-0000-0000-000000000030')->'game'->>'source') || ' ' || (public.get_moment_game_context('20000000-0000-0000-0000-000000000030')->'game'->>'side') || ' ' || (public.get_moment_game_context('20000000-0000-0000-0000-000000000030')->'game'->>'home_score') || '-' || (public.get_moment_game_context('20000000-0000-0000-0000-000000000030')->'game'->>'away_score'),
+  'match away 2-6', '(i) the Clásico 2-6 for a Barcelona player: the match, his side away');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000031')->'game'->>'event_id', 'ath-rma',
+  '(i) a Moment dated the day after the match pairs with it');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000032') IS NULL,
+  '(i) a derby recorded with home and away swapped never pairs');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000033')->'game'->>'away_name', 'Sporting Gijón',
+  '(i) "Real Sporting" is Sporting Gijón');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000034')->'game'->>'side', 'away',
+  '(i) the side comes from the edition, never from ESPN names');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000036') IS NULL,
+  '(i) a placeholder club pairs with nothing');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000035') IS NULL,
+  '(i) a match not completed is not a result');
 SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->'game'->>'source', 'team',
   '(h) a team Moment gets the team result');
 SELECT _assert_eq((public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->'game'->>'result') || ' ' || (public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->'game'->>'score'), 'L 22-40',
