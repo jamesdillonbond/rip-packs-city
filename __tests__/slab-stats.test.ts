@@ -127,6 +127,25 @@ describe("seasonBlock", () => {
   })
 })
 
+describe("team Moments", () => {
+  it("shows the team's final, with the opponent, playoffs and date on the detail line and ESPN's box score", () => {
+    const b = gameBlock("nfl", { source: "team", event_id: "401671889", game_date: "2025-02-09", season_type: "2024 Postseason", at_vs: "@", opponent_abbr: "PHI", score: "40-22", result: "L" })
+    expect(b?.title).toBe("This game")
+    expect(b?.chips).toEqual([{ label: "Final", value: "L 40-22" }])
+    expect(b?.detail).toContain("@ PHI")
+    expect(b?.detail).toContain("Playoffs")
+    expect(b?.link).toBe("https://www.espn.com/nfl/game/_/gameId/401671889")
+  })
+  it("shows nothing for a team game without a result — never a bare opponent", () => {
+    expect(gameBlock("nba", { source: "team", event_id: "1", game_date: "2023-02-19", at_vs: "vs", opponent_abbr: "LEB", score: null, result: null })).toBe(null)
+  })
+  it("a team Moment's back is the game alone (no season line)", () => {
+    const st = slabStatsFromContext({ espn_league: "nba", season: 2023, season_rows: [], game: { source: "team", event_id: "401524696", game_date: "2023-02-19", season_type: "2022-23 Regular Season", at_vs: "vs", opponent_abbr: "LEB", score: "184-175", result: "W" } })
+    expect(st?.game?.chips).toEqual([{ label: "Final", value: "W 184-175" }])
+    expect(st?.season).toBe(null)
+  })
+})
+
 describe("slabStatsFromContext", () => {
   it("returns null when there is nothing real to show", () => {
     expect(slabStatsFromContext(null)).toBe(null)

@@ -13,11 +13,15 @@
 --       season: NULL (20261126021927);
 --   (e) the season is ESPN's number for that date (NBA by the year it ENDS, NFL by the year it starts);
 --   (f) the box-score fallback answers only when the night before is empty;
---   (g) a collection without ESPN stats, or a player without an ESPN id, is NULL.
+--   (g) a collection without ESPN stats, or a player without an ESPN id, is NULL;
+--   (h) a TEAM Moment (its subject is one of its own two teams) gets that team's result, read from the
+--       lines whose opponent is the OTHER team on that date — never the other side's line (an Eagles
+--       Moment never shows the Chiefs' result), with or without a player_id; no line, or a placeholder
+--       opponent, is NULL (20261126161848, 20261126162015).
 --
 -- The function DDL below is VERBATIM from
 -- supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql (moment_gamelog_season)
--- and supabase/migrations/20261126032613_audit_20261125_moment_game_context_description_city.sql (get_moment_game_context);
+-- and supabase/migrations/20261126162015_audit_20261126_moment_game_context_team_moments_without_player_id.sql (get_moment_game_context);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -27,7 +31,7 @@ BEGIN;
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, collection_id uuid, player_id uuid, game_date date, home_team text, away_team text,
-  description text
+  description text, player_name text
 );
 CREATE TABLE public.player_identities (
   player_id uuid, league text, espn_league text, espn_id text, stats_refreshed_at timestamptz
@@ -91,6 +95,19 @@ INSERT INTO public.editions VALUES
   -- (b) Brunson 2026-02-22 again, the description naming the opponent's CITY ("against Houston")
   ('20000000-0000-0000-0000-000000000017', :'TS'::uuid, '10000000-0000-0000-0000-000000000005', '2026-02-22', NULL, NULL, 'Jalen Brunson pulls up against Houston for the go-ahead three.');
 
+-- (h) TEAM Moments: the subject is one of the edition's own teams; no player identity exists for them
+INSERT INTO public.editions VALUES
+  -- the Chiefs' Super Bowl: read from a Chiefs player's line (opponent Philadelphia Eagles) → L 22-40
+  ('20000000-0000-0000-0000-000000000018', :'AD'::uuid, '10000000-0000-0000-0000-0000000000a1', '2025-02-09', 'Philadelphia Eagles', 'Kansas City Chiefs', NULL, 'Kansas City Chiefs'),
+  -- the Eagles' side of the same game: the only stored line is a CHIEFS player's (opponent = the Eagles),
+  -- which is not the Eagles' result — nothing
+  ('20000000-0000-0000-0000-000000000019', :'AD'::uuid, '10000000-0000-0000-0000-0000000000a2', '2025-02-09', 'Philadelphia Eagles', 'Kansas City Chiefs', NULL, 'Philadelphia Eagles'),
+  -- a Top Shot team Moment dated by the UTC date: the Bucks' 12-10 ET game vs Orlando → W 114-109
+  -- (Top Shot's team editions carry NO player_id — 139 in production, 2026-11-26)
+  ('20000000-0000-0000-0000-000000000020', :'TS'::uuid, NULL, '2024-12-11', 'Milwaukee Bucks', 'Orlando Magic', NULL, 'Milwaukee Bucks'),
+  -- a placeholder opponent is not a game
+  ('20000000-0000-0000-0000-000000000021', :'TS'::uuid, '10000000-0000-0000-0000-0000000000a3', '2024-12-11', 'Milwaukee Bucks', 'N/A', NULL, 'Milwaukee Bucks');
+
 INSERT INTO public.player_season_stats VALUES
   ('nba', '3032977', 2027, 2, 'averages', 'Averages', 'miami-heat', false, '{PTS}', '{avgPoints}', '{28.2}'),
   ('nba', '6606',    2025, 2, 'averages', 'Averages', 'milwaukee-bucks', false, '{PTS}', '{avgPoints}', '{24.9}'),
@@ -153,18 +170,68 @@ declare
   v_tops   int;
   v_home   text;
   v_away   text;
+  v_subj   text;
+  v_other  text;
+  v_event  text;
 begin
-  select e.player_id, e.game_date, c.slug, e.home_team, e.away_team, e.description into v_e
+  select e.player_id, e.player_name, e.game_date, c.slug, e.home_team, e.away_team, e.description into v_e
     from public.editions e
     join public.collections c on c.id = e.collection_id and c.slug in ('nba_top_shot', 'nfl_all_day')
    where e.id = p_edition_id;
-  if v_e.player_id is null or v_e.game_date is null then
+  if v_e.game_date is null then
     return null;
   end if;
   -- An All Day play without both teams is not a game: a Player/Team Melt (280 are dated to the
   -- 2023 opener), a Draft Pick, or a placeholder play All Day has not filled in. Its date names no
   -- game and no season, so the slab shows no stats for it.
   if v_e.slug = 'nfl_all_day' and (v_e.home_team is null or v_e.away_team is null) then
+    return null;
+  end if;
+
+  -- A TEAM Moment (All Day's "One to Remember": the subject is one of the edition's own two teams,
+  -- checked against nflallday.com/edition/5951 on 2026-11-26) has no player line; its back carries
+  -- the team's result. The stored lines whose opponent is the OTHER team on that date were played
+  -- by the subject team's players, so their score and result are the subject team's. Exactly one
+  -- such game, or none.
+  v_subj := lower(btrim(coalesce(v_e.player_name, '')));
+  if v_subj <> '' and v_subj in (lower(btrim(coalesce(v_e.home_team, ''))), lower(btrim(coalesce(v_e.away_team, '')))) then
+    v_other := case when v_subj = lower(btrim(v_e.home_team)) then btrim(v_e.away_team) else btrim(v_e.home_team) end;
+    if v_other is null or v_other = '' or lower(v_other) = 'n/a' or lower(v_other) = v_subj then
+      return null;
+    end if;
+    v_other := lower(regexp_replace(v_other, '^.*\s', ''));
+    select count(distinct l.event_id), min(l.event_id), min(l.espn_league) into v_n, v_event, v_el
+      from public.player_gamelog_lines l
+     where l.espn_league = any (case when v_e.slug = 'nfl_all_day' then array['nfl'] else array['nba', 'wnba'] end)
+       and (l.game_date = v_e.game_date or l.game_date_utc = v_e.game_date)
+       and lower(regexp_replace(coalesce(l.opponent_name, ''), '^.*\s', '')) = v_other;
+    if v_n <> 1 then
+      return null;
+    end if;
+    select jsonb_build_object(
+             'source', 'team',
+             'event_id', l.event_id,
+             'game_date', l.game_date,
+             'season_type', l.season_type_name,
+             'at_vs', l.at_vs,
+             'opponent_abbr', l.opponent_abbr,
+             'opponent_name', l.opponent_name,
+             'score', l.score,
+             'result', l.result)
+      into v_game
+      from public.player_gamelog_lines l
+     where l.espn_league = v_el and l.event_id = v_event
+       and lower(regexp_replace(coalesce(l.opponent_name, ''), '^.*\s', '')) = v_other
+     limit 1;
+    return jsonb_build_object(
+      'league', v_el,
+      'espn_league', v_el,
+      'season', public.moment_gamelog_season(v_el, v_e.game_date),
+      'moment_game_date', v_e.game_date,
+      'season_rows', '[]'::jsonb,
+      'game', v_game);
+  end if;
+  if v_e.player_id is null then
     return null;
   end if;
   -- The edition's two teams as nicknames ("Los Angeles Clippers" -> "clippers"), trimmed; a
@@ -339,6 +406,18 @@ SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000
   '(f) the box-score lane does not lend the 11-21 game to an 11-22 Moment');
 -- (g) out of scope
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000008') IS NULL, '(g) Pinnacle has no ESPN stats');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->'game'->>'source', 'team',
+  '(h) a team Moment gets the team result');
+SELECT _assert_eq((public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->'game'->>'result') || ' ' || (public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->'game'->>'score'), 'L 22-40',
+  '(h) the Chiefs team Moment reads the Chiefs'' result from a Chiefs player''s line');
+SELECT _assert_eq(public.get_moment_game_context('20000000-0000-0000-0000-000000000018')->>'season', '2024',
+  '(h) a team Moment carries the season number');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000019') IS NULL,
+  '(h) the Eagles team Moment never borrows the Chiefs'' line');
+SELECT _assert_eq((public.get_moment_game_context('20000000-0000-0000-0000-000000000020')->'game'->>'result') || ' ' || (public.get_moment_game_context('20000000-0000-0000-0000-000000000020')->'game'->>'opponent_abbr'), 'W ORL',
+  '(h) a Top Shot team Moment dated by the UTC date finds its game');
+SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000021') IS NULL,
+  '(h) N/A is not an opponent');
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-000000000009') IS NULL, '(g) no ESPN id, no stats');
 SELECT _assert(public.get_moment_game_context('20000000-0000-0000-0000-0000000000ff') IS NULL, '(g) an unknown edition');
 

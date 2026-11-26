@@ -70,13 +70,25 @@ export interface BoxGame {
   stats: Record<string, string>
 }
 
+/** A TEAM Moment's game (20261126161848): the subject team's result, no player line. */
+export interface TeamGame {
+  source: "team"
+  event_id?: string | null
+  game_date?: string | null
+  season_type?: string | null
+  at_vs?: string | null
+  opponent_abbr?: string | null
+  score?: string | null
+  result?: string | null
+}
+
 export interface MomentGameContext {
   league?: string
   espn_league: string
   season: number
   moment_game_date?: string | null
   season_rows: SeasonLine[]
-  game: GamelogGame | BoxGame | null
+  game: GamelogGame | BoxGame | TeamGame | null
 }
 
 export function asEspnLeague(v: unknown): EspnLeague | null {
@@ -255,8 +267,16 @@ function footballSeasonChips(rows: SeasonLine[]): StatChip[] {
 
 // ── blocks ──────────────────────────────────────────────────────────────────
 
-export function gameBlock(league: EspnLeague, game: GamelogGame | BoxGame | null | undefined): SlabStatBlock | null {
+export function gameBlock(league: EspnLeague, game: GamelogGame | BoxGame | TeamGame | null | undefined): SlabStatBlock | null {
   if (!game) return null
+  if (game.source === "team") {
+    // A team Moment: the result is the line. No result, nothing — never a bare opponent.
+    if (!game.result || !game.score) return null
+    const opp = game.opponent_abbr ? `${game.at_vs === "@" ? "@" : "vs"} ${game.opponent_abbr}` : null
+    const post = /postseason/i.test(game.season_type ?? "") ? "Playoffs" : null
+    const detail = [opp, post, plainDate(game.game_date)].filter(Boolean).join(" · ") || null
+    return { title: "This game", detail, chips: [{ label: "Final", value: `${game.result} ${game.score}` }], link: espnGameUrl(league, game.event_id) }
+  }
   if (game.source === "box" && game.did_not_play) return null
   const names = game.source === "gamelog" ? game.names : Object.keys(game.stats ?? {})
   const values = game.source === "gamelog" ? game.values : Object.values(game.stats ?? {}).map(String)
