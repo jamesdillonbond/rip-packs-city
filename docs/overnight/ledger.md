@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:55 AM PT · 🔧 FIX — **Panini league and brand pages were behind the sign-in wall for signed-out visitors (307 → /login); opened** (Cowork cloud; found reading the live page signed out, minutes after the ship)
+
+- `proxy.ts`: `property` joins the public entity-page pattern, the rate-limited page set and the case-fold tabs. The 11:50 AM ship added `/panini-blockchain/property/<slug>` to the overview, the products index and the sitemap without opening it — the same miss as the product pages on 10-25. Test: `__tests__/proxy-panini-product-pages-are-public.test.ts` (GET/HEAD public, POST closed, look-alike closed).
+- **Revert:** `git revert` the commit titled "proxy: Panini league and brand pages are public".
+
 ### 2026-11-26 ~11:52 AM PT · 🔧 SHIPPED — Pinnacle pin slab back adds the live market (Floor ask · % listed); soccer lane mid-backfill read (Claude Code cloud; Trevor: "Keep going")
 
 - **Pin back:** adds **Floor ask** (`ed.floor_ask`, the same number as the page's own "Floor ask" card) and **Listed** (the page's `pctListed`). A failed listings read shows no row; tracked holders are left off because that number needs its "not every holder" caveat.
