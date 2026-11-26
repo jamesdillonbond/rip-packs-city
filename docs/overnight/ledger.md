@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~1:15 AM PT · 🗄 APPLIED (`20261126091058`) — ts-sold-floor-clear: a run whose work rolled back no longer reports rows written (Claude Code cloud, autonomous overnight)
+- **Found:** `ts-sold-floor-clear` failed 3× on 11-25 and 2× on 11-24 with `deadlock detected` (1.4 % of 216 runs/day — harmless, the next 5-min tick redoes the work). But the body's `BEGIN … EXCEPTION` rolls back EVERYTHING while the counters assigned before the failure survive, so those failed runs logged `rows_written` 6 / 7 / 10 (5 of 6 failed runs since 11-23 carried writes > 0) — the R120 shape, a count of rows ATTEMPTED published as WRITTEN.
+- **Fix:** the EXCEPTION handler zeroes every write counter (recent/backlog closes, floor events closed, floors cleared, refilled, verify dispatched); the read counts (floors_found, backlog_scanned) are kept. Only change vs the live body (md5 guard `550268bb…`, new `c805045e…`, matches the file byte-for-byte). ACL unchanged (anon/authenticated = false). Preflight 5/5.
+- **Not changed:** the deadlock itself (1.4 %, self-healing) — left as is.
+- **Also checked this sweep (no action):** 1:00–1:06 AM PT timeouts on `/api/profile/top-movers` (2 × 25 s, same wallet, same ms), `/insights/trade-in` and `/insights/trophies` — a cold-cache spell under the top-of-hour cron burst; `get_top_movers` is 0.2 s warm / 2.2 s semi-cold for a 16k wallet (54k hits, unchanged shape since `20261120161120`). `pinnacle_signed_media` now front 413 / quarter 78 / thumb 87 (sibling-variant storage working).
+- **Verify:** next failed run of `ts-sold-floor-clear` carries `rows_written = 0`; ok runs unchanged.
+- **Revert:** re-apply `20261106024733_ts_sold_floor_clear_reads_unmapped_sales.sql` (its md5 guard will need to name `c805045e00ddabfcfcd75a5077db4fa2`).
+
 ### 2026-11-26 ~1:10 AM PT · 📥 STRANDED-OUTPUT CARRY — flow-ecosystem-watch 2026-11-25 entry committed (the flow-ecosystem-watch task wrote the laptop 11-25 17:39Z and never pushed; origin was stuck at the 11-18 entry) (Cowork cloud overnight pass, run 63a86f0f)
 - Mount file (614 lines) was a clean superset of origin (591): origin ⊆ mount, only the 11-25 "## no new material ECOSYSTEM developments … WNBA resolver_misses 80→8 internal scope change, no refresh" block was absent from origin. Carried wholesale (no laptop copy edited/deleted). Revert: find this commit by message, `git revert` it (docs-only; restores the flow file to the 11-18 entry tip).
 
