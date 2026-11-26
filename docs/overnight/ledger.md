@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:50 AM PT · 🗄 APPLIED (`20261126150542`) — 16 wrong ESPN ids cleared and re-queued for the checked matcher (Claude Code cloud; Trevor: "Keep going")
+
+- `player_identities`: espn_id / espn_league / espn_id_matched_by → NULL on the 3 someone-else ids (Michael Cage, Michael Cooper, Tim Thomas) and the 13 ids ESPN has no athlete for (Candace Parker, Nate Robinson, …); only rows still holding the measured id were touched (16 / 16). They are back in `player_stats_espn_resolve_targets`; the 10:23 AM PT resolver run re-searches them with the athlete check pushed in `eef1780`.
+- Verified: Tim Thomas's Moments now show no stats (were Sue Wicks's season). Scratch probe table dropped.
+- Revert: the migration file carries the exact UPDATE that restores the 16 old ids.
+
 ### 2026-11-26 ~7:40 AM PT · 🔧 SHIPPED (code) — ESPN id matcher checks the athlete is the person before taking an id (Claude Code cloud; Trevor: "Keep going")
 
 - Found from the Moment game-lines lane: Candace Parker's id 404'd. Probing every `espn-search:stats-probe` match and every basketball id ESPN's stored names did not cover (56, via pg_net) found **3 ids that are someone else** — Michael Cage → nba/31 Dalibor Bagaric, Michael Cooper → nba/142 John Celestand, Tim Thomas → wnba/22 Sue Wicks (their pages and slabs showed that person's stats) — and **13 that do not exist** under the league's athlete path (college ids from ESPN search). The other 40 are right.
