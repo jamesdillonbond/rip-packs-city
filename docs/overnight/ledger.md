@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:15 PM PT · 🗄 APPLIED (`20261126220235`) + 🔧 SHIPPED — **binder / pack history Winners & Losers count only packs paid for** (Claude Code cloud; Trevor: "Yes do that")
+
+- `get_wallet_pack_history` v39: `p_outcome` requires a cost above $0, so free reward packs and box packs (a known $0, not a purchase) are in neither bucket; they still list, sort and total. Applied ~2:02 PM PT as a one-edit DO block asserting the v38 md5 before and `0e369855…` after; ACL unchanged (anon / authenticated false). Live on Trevor's Top Shot Sealed tab: winners 331 → 194, losers 94, of 430. Pin V39-1..2 (red on the v38 body). The Winners / Losers hover text says only packs you paid for count.
+- **Revert:** re-apply `get_wallet_pack_history` from `20261126200712_audit_20261126_pack_history_v38_binder_filters.sql`; `git revert` the commit "winners / losers: only packs paid for".
+
 ### 2026-11-26 ~1:55 PM PT · 🗄 APPLIED (`20261126215321`) — `fmv_offer_pull_log` is kept to 180 days by a daily prune job (chat session; Trevor: "Yes do it all")
 
 - pg_cron job 941 `rpc-fmv-offer-pull-log-prune`, daily 3:07 AM PT, one `DELETE … WHERE logged_at < now() - interval '180 days'` over `fmv_offer_pull_log_logged_idx`. The log held 95 rows / 96 kB when it was scheduled; nothing is old enough to delete until late May 2027. Pricing unchanged. Also (no repo change): the Mon 11-30 FMV read now splits the week at the 11-26 noon rule change and reads the log instead of inverting, and a Mon 12-07 10:17 AM PT read scores the first full week and the Legendary check (74.8, two consecutive reads). **Revert:** `SELECT cron.unschedule('rpc-fmv-offer-pull-log-prune');`
