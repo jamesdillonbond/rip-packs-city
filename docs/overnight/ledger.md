@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~1:29 PM PT · 🔧 SHIPPED — **Site search answers a league or brand: "dc", "nascar", "world cup" lead with the Panini / Candy page for it** (Cowork cloud; Trevor: "Do it all")
+
+- **What:** `/api/search` prepends up to 3 league / brand rows (kind `league` / `brand`) linking `/<publisher>/property/<slug>`. Match is on the name or a leading run of its words ("nba" is not "wnba"). A scoped search stays inside its publisher. Index: Panini's board rows (only leagues with a page) + Candy brands that have a collection, read once an hour per instance; a failed read adds no rows, is not cached, and never fails the search.
+- **Revert:** `git revert` the code commit (find by message "search: a league or brand name leads"). No DB change.
+
 ### 2026-11-26 ~1:22 PM PT · 🔧 SHIPPED — **Candy Market tab: "League or brand" bar (`?property=`), a brand crumb on Candy set pages, Panini's Baseball joins the MLB tile on `/leagues`** (Cowork cloud; Trevor: "Do it all")
 
 - **Market:** the Candy Market tab gets the same chip bar Panini has (MLB · DC · NASCAR …, only brands with a live ask). The API reads `candy_market_board_for_property(slug)` — the view's own rows for that brand (891 DC, 1,559 MLB of 2,462 at ship) — so every filter and sort applies unchanged. Unknown slug → 400, failed lookup → 503, never the whole board under a brand's name. New public GET `/api/candy-properties` (the chip index). Candy and Panini each remember their own pick.
