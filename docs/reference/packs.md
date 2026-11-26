@@ -79,6 +79,13 @@ All 7 cursors:
 - `pack_distributions.metadata.retail_price_usd` value range: `$0` for reward / quest packs and `$2+` for paid drops. `~$1M+` values would need `/1e8` satoshi conversion but no current Top Shot values exceed that, so flat numeric reading works.
 - **Quest reward / set completion packs flow through the same `PackNFT.Withdraw` / `PackNFT.Mint` events as paid drops** and get `is_primary_drop = true` correctly. UI distinguishes via `pack_distributions.metadata.retail_price_usd = 0`.
 
+### `pack_drop_pool.pool_source` and which pools `sync_topshot_pools_from_atlas` rewrites (2026-11-25)
+
+- Three sources: `atlas` (current), `gql` (the GraphQL lane, dormant since 2026-08-28) and `gql_historical` (the 08-28 historical lane). Until `20261126011212` the hourly Atlas sync upgraded only all-`gql` pools, so 1,161 `gql_historical` dists sat frozen at 08-28 weights. Both now take the upgrade arm under the same gates.
+- Candidate order is fill → refresh → upgrade (`20261126013404`): upgrades that fail a gate come back every hour, so they must never sit ahead of refreshes inside the 400-candidate LIMIT.
+- ⚠ **A pool-coverage check must count weight-0 rows as PRESENT.** They are editions Atlas reports as drawn out, which a sealed pack today cannot pull. Counting only `drop_weight > 0` made a ~2 % gap read as 11 % of pulled value (11-25).
+- ⚠ **`pack_ev_backtest` compares TODAY's EV with the last 30 days of pulls.** On a fast-falling drop (Luka Top Shot This: base ~$31 → $2) it reads as a 6× EV miss that is pure timing. Align EV to the rip (`pack_ev_history` ≤ `sealed_at`, ≤ 2 d old) before judging Pack EV: 11-25 read median 1.06, rip-weighted 1.18, 56.6 % of dists within ±25 %.
+
 ### ⛔ Two `pack_drop_pool` columns that are NOT the instrument they look like (2026-08-28)
 
 Both were nearly used to verify the pool-backfill fix, and both would have given a wrong answer.
