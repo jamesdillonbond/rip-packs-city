@@ -130,6 +130,11 @@ All present and live (2026-07-16; ✅ re-swept 2026-11-24, none missing, plus `s
   is pre-created for next year). `sales_serial_backfill_failures` is a **separate** table
   (a failure log), not a `sales` partition despite the `sales_` name prefix.
 
+- 📏 **2026-11-25 (Claude Code cloud; additions since the 11-24 regeneration):**
+  - new table **`pinnacle_signed_media`** (`render_id, variant` PK → `url`, `expires_at`, `source`, `fetched_at`; RLS on, no policy, anon/authenticated revoked; `20261125155001`);
+  - **`trade_rooms.submitted_tx_id`** (nullable, hex64 CHECK; `20261126011522`);
+  - `get_panini_product_market_cap` gains the key `minted_supply_known` (`20261126012426`).
+
 ## Enum values (catch casing drift like MED vs MEDIUM)
 
 | Enum | Live values |

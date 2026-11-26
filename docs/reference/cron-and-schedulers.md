@@ -3224,3 +3224,9 @@ A lane paused on cron-job.org (or `cron.alter_job(active := false)`) keeps its a
 ### ⛔ A backtest baseline must use only data that had LANDED by the scored moment — `sold_at < t` is not enough under ingest lag (2026-11-24)
 
 `scripts/panini-fmv-paired-read.sql` scored the published FMV against a naive last-3 median of sales with `sold_at < t`. Panini sales land 12–160 h after `sold_at`, so naive's window held sales the engine could not yet have seen: worth **+10 points on HIGH** (61.4 vs 51.3, n 2,184). Only 17 of 2,262 of those "newer" sales were in the DB before the scored sale. With `first_seen_at < t` the two read 51.3 / 51.3, so the 10-20 → 10-29 "engine trails naive" gaps were this artifact. ⭐ The tell: split by "naive saw a sale newer than the snapshot". On the rows where it didn't, engine = naive; the whole gap sat on the rows where it did. Any baseline over a lagged feed needs an ingestion-time filter (`first_seen_at`, `ingested_at`), not an event-time one.
+
+## ⚠ "The rest stays NULL for the next run" is a claim about a CALLER — name it (2026-11-25, PT)
+
+`wallet-backfill-ufc`'s enrichment chain logged `deadline reached … the rest stays NULL for the next run`. The drain written for exactly that remainder (`/api/cron/ufc-enrichment-drain`) had had **no caller since cron-job.org disabled it on 10-18** (0 `pipeline_runs` rows in retention), so 114 rows stayed unkeyed until the trust arm fired.
+- **A log line that defers work is only as true as the schedule behind it.** Grep for the deferred route's callers (cron-job.org, pg_cron, GHA, vercel.json, in-repo fetches) before trusting it.
+- The fix shipped both halves (`ded424306`). The producer hands its remainder to the drain itself (`lib/chains/flow/ufc-drain-handoff.ts`), and the drain is a `dead-lane-backstop.yml` lane as the backstop. Its egress is pinned in `scripts/check-lane-egress.mjs`.

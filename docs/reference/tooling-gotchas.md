@@ -2642,3 +2642,12 @@ from net._http_response where id between <first id> and <last id>;
 ### ⚠ A scheduled task created from a cloud session carries NO connectors here (2026-11-23)
 
 `create_trigger` refuses the `connectors` parameter for this org ("not available for this organization"), and without it the task stores none, so a fired session has no Supabase / Vercel / Resend tools and a DB read scheduled that way runs blind. The result says so in a trailing `warning:` line; read it. Put such a read in `docs/overnight/focus.md` for the nightly pass or Cowork, or have Trevor create the task from the claude.ai routines UI (the existing dated-read tasks carry connectors because they were made that way).
+
+## ⭐ Name a route's slow upstream with Vercel's external-API metrics — no new logging, history included (2026-11-25, PT)
+
+- `create_observability_query` with metric `vercel.external_api_request.request_duration_ms`, aggregation `max` or `p95`, and `groupBy: ["request_hostname"]` (or `filter: "request_hostname eq '<host>'"`) gives every outbound host's latency, bucketed by `granularity`, for the whole retention window. Count with `vercel.external_api_request.count` and aggregation `sum`.
+  - ⚠ `request_duration_ms` is a MEASURE, not a filter dimension: `request_duration_ms ge 4000` is a 400 `invalid_query`.
+  - It answered in two queries what a slow-leg log would have needed a night to collect. disneypinnacle.com hit its 10 s timeout in 4 of 24 hours, while studio-platform failed in ≤ 251 ms (530).
+- `get_runtime_logs` over 24 h–7 d **times out** with a free-text query. Narrow to minutes, pass `requestId`, or use `get_runtime_errors` with `routes` (clustered, 7 d, fast).
+- ⭐ **A request id encodes its edge start time** (`dfmqj-1795604666666-…` = 11:04:26.666Z). Subtracting it from the error's log time gave **7.05 s on three separate cases**: a fixed interval is somebody's timeout, so look for whose.
+- ⛔ **A `send_later` / session-bound scheduled task dies with an archived thread.** Before archiving, move dated reads into `docs/overnight/focus.md` (the passes read it), or into a fresh-session scheduled task. Deleting another task can be refused by the permission classifier; leave a harmless redundant one in place and say so in its filing.
