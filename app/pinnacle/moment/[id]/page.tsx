@@ -44,7 +44,9 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { pinInsightChips } from "@/lib/pinnacle/pin-insight-chips"
-import { pinnacleBadgesFor } from "@/lib/pinnacle/pin-badges"
+import { pinnacleBadgesFor, PINNACLE_BADGE_LABELS } from "@/lib/pinnacle/pin-badges"
+import InteractiveSlab from "@/components/InteractiveSlab"
+import { tierColorVar } from "@/lib/moment-detail-format"
 import PinnacleBadges from "@/components/pinnacle/PinnacleBadges"
 import { readPinChipFacts } from "@/lib/pinnacle/pin-insight-reads"
 
@@ -263,14 +265,39 @@ export default async function PinnacleMomentPage({
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
 
       <section className="rpc-pm-hero rpc-pm-hero-flex">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="rpc-pm-art"
-          src={`/api/public/pinnacle-image/${encodeURIComponent(ed.render_id)}`}
-          alt={ed.character_name ?? "Pinnacle pin"}
-          width={180}
-          height={180}
-        />
+        {/* 2026-11-26 (Trevor: "enable this for all collections"): the pin is an InteractiveSlab,
+            the same one Moments and edition pages use — drag / flip / tilt, ?slab=0 opts out,
+            NEXT_PUBLIC_MOMENT_SLAB_3D=0 is the kill switch. A pin has no stat line, so its back
+            is the pin's label: set, franchise, variant, edition, mint, FMV. */}
+        <div className="rpc-pm-art-slab">
+          <InteractiveSlab
+            frameColor={ed.is_chaser ? "var(--rpc-legendary, var(--rpc-red))" : tierColorVar(null)}
+            title={ed.character_name ?? "Pinnacle pin"}
+            eyebrow="Disney Pinnacle"
+            subtitle={metaField(ed.series_name) ?? null}
+            serialLine={null}
+            finish={null}
+            badges={pinBadges.map((b) => PINNACLE_BADGE_LABELS[b])}
+            rows={[
+              metaField(ed.set_name) ? { label: "Set", value: metaField(ed.set_name) as string } : null,
+              franchise ? { label: "Franchise", value: franchise } : null,
+              metaField(ed.variant) ? { label: "Variant", value: metaField(ed.variant) as string } : null,
+              metaField(ed.edition_type) ? { label: "Edition", value: metaField(ed.edition_type) as string } : null,
+              ed.total_minted != null ? { label: "Minted", value: fmtInt(ed.total_minted) } : null,
+              fmv != null ? { label: "FMV", value: fmtUsd(fmv) } : null,
+            ].filter((x): x is { label: string; value: string } => x != null && x.value !== "")}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className="rpc-pm-art-face"
+              src={`/api/public/pinnacle-image/${encodeURIComponent(ed.render_id)}`}
+              alt={ed.character_name ?? "Pinnacle pin"}
+              width={260}
+              height={260}
+              draggable={false}
+            />
+          </InteractiveSlab>
+        </div>
         <div className="rpc-pm-hero-body">
           <div className="rpc-pm-eyebrow">DISNEY PINNACLE</div>
           <h1 className="rpc-pm-h1">{ed.character_name ?? "—"}</h1>
@@ -844,6 +871,8 @@ const CSS = `
 .rpc-pm-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
 .rpc-pm-hero-flex { display: flex; gap: 22px; align-items: center; }
 .rpc-pm-art { width: 180px; height: 180px; object-fit: contain; border-radius: 6px; background: var(--rpc-surface-raised); border: 1px solid var(--rpc-border-subtle); flex-shrink: 0; }
+.rpc-pm-art-slab { width: 260px; max-width: 100%; flex-shrink: 0; }
+.rpc-pm-art-face { box-sizing: border-box; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 10px; background: var(--rpc-surface-raised); }
 .rpc-pm-hero-body { min-width: 0; }
 .rpc-pm-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-pm-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 5vw, 56px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }

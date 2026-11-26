@@ -40,6 +40,11 @@ import { fetchTitleDisambiguator } from "@/lib/edition/title-twins"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import InteractiveSlab from "@/components/InteractiveSlab"
+import { finishFromBadges } from "@/lib/slab-3d"
+import { slabStatsFromContext } from "@/lib/slab-stats"
+import { fetchSlabStats, type SlabStatsRead } from "@/lib/moment-detail/slab-stats-fetch"
+import { tierColorVar } from "@/lib/moment-detail-format"
 import { ENTITY_HERO_SIZES } from "@/lib/hero-srcset"
 import { proxyIpfsImageUrl, proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
@@ -640,8 +645,12 @@ export default async function EditionPage(
   // marketplace closed. Defaults to a FAILED read on UFC, so a throw below can never read as "no ask".
   const isUfc = isUfcAptosBinder(collection)
   let ufcFloorRes: { floor: UfcAptosFloor | null; ok: boolean } = { floor: null, ok: !isUfc }
+  // The slab's back (2026-11-26, the slab on every collection): the player's line from this
+  // edition's game and that season, where a feed exists (lib/moment-detail/slab-stats-fetch gates
+  // the collections). Defaults to a FAILED read, so a throw renders a back with no stats, never "0".
+  let slabStatsRes: SlabStatsRead = { ok: false, error: "not read" }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes, ufcFloorRes] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes, ufcFloorRes, slabStatsRes] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -680,6 +689,7 @@ export default async function EditionPage(
     isUfc
       ? fetchUfcAptosEditionFloor(detail.id)
       : Promise.resolve({ floor: null, ok: true }),
+    fetchSlabStats({ id: detail.id, collection_slug: coll.dbSlug, game_date: null, date_from_db: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -946,7 +956,32 @@ export default async function EditionPage(
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="rpc-card" style={{ padding: 18 }}>
         <div className="rpc-entity-hero">
-          <div style={{ position: "relative", width: "100%", maxWidth: 320, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden" }}>
+          {/* 2026-11-26 (Trevor: "enable this for all collections"): the edition hero is the same
+              InteractiveSlab /moment uses — drag / flip / tilt, ?slab=0 opts out,
+              NEXT_PUBLIC_MOMENT_SLAB_3D=0 is the kill switch. An edition has no serial, so the
+              back carries the edition's label (set, printing, mint, FMV) and, where a stats feed
+              exists, the player's line from that game and season. */}
+          <div style={{ width: "100%", maxWidth: 320 }}>
+          <InteractiveSlab
+            frameColor={tierColorVar(detail.tier)}
+            title={editionTitle}
+            eyebrow={collectionDisplayName(collection)}
+            subtitle={[detail.tier, detail.series_label].filter((x): x is string => !!x && x.trim() !== "").join(" · ") || null}
+            serialLine={null}
+            finish={finishFromBadges([])}
+            stats={slabStatsRes.ok ? slabStatsFromContext(slabStatsRes.ctx) : null}
+            badges={detail.badges ?? []}
+            rows={[
+              detail.set_name ? { label: "Set", value: detail.set_name } : null,
+              currentSibling?.subedition_name
+                ? { label: "Printing", value: currentSibling.subedition_name }
+                : parallelLabel ? { label: "Printing", value: parallelLabel } : null,
+              detail.team_name && detail.team_name !== editionTitle ? { label: "Team", value: detail.team_name } : null,
+              detail.circulation_count != null ? { label: "Minted", value: fmtCount(detail.circulation_count) } : null,
+              // FMV only where the page itself shows one (never on a closed market); confidence never.
+              !marketClosed && fmv?.fmv_usd != null ? { label: "FMV", value: fmtUsd(fmv.fmv_usd) } : null,
+            ].filter((x): x is { label: string; value: string } => x != null && x.value !== "")}
+          >
             <MomentHeroMedia
               imageCandidates={heroImageCandidates}
               // 2026-10-22: through the same-origin proxy, as the grid tiles already do.
@@ -967,6 +1002,7 @@ export default async function EditionPage(
                 </div>
               }
             />
+          </InteractiveSlab>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>

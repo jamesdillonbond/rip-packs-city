@@ -37,12 +37,26 @@ export function isFunctionMissing(err: { code?: string; message?: string } | nul
 }
 
 /**
+ * The edition a slab-stats read is for. `game_date` gates the read on /moment, which knows the date.
+ * An EDITION page (2026-11-26, the slab on every collection) does not select one, so it passes
+ * `date_from_db: true`: the DB function reads the edition's own date, and a missing date there is
+ * a null context, never a guessed season. The season-only fallback (function missing) still needs
+ * a known date, so with no date it reads nothing.
+ */
+export type SlabStatsEdition = {
+  id: string
+  collection_slug: string | null
+  game_date: string | null
+  date_from_db?: boolean
+}
+
+/**
  * The whole read — up to three sequential calls on the fallback path — runs under ONE 4 s budget,
  * the same bound every other read in the Moment page's Promise.all has, so the page ceiling stays
  * 4 s + 4 s (lib/moment-detail/fetchers.ts). An overrun is a failed read: no stats on the slab.
  */
 export async function fetchSlabStats(
-  edition: { id: string; collection_slug: string | null; game_date: string | null },
+  edition: SlabStatsEdition,
   client: RpcClient = supabaseAdmin as unknown as RpcClient,
   timeoutMs = 4_000,
 ): Promise<SlabStatsRead> {
@@ -54,10 +68,10 @@ export async function fetchSlabStats(
 }
 
 async function readSlabStats(
-  edition: { id: string; collection_slug: string | null; game_date: string | null },
+  edition: SlabStatsEdition,
   client: RpcClient,
 ): Promise<SlabStatsRead> {
-  if (!edition.collection_slug || !SLAB_STATS_COLLECTIONS.has(edition.collection_slug) || !edition.game_date) {
+  if (!edition.collection_slug || !SLAB_STATS_COLLECTIONS.has(edition.collection_slug) || (!edition.game_date && !edition.date_from_db)) {
     return { ok: true, ctx: null }
   }
   const primary = await client.rpc("get_moment_game_context", { p_edition_id: edition.id })
@@ -68,7 +82,8 @@ async function readSlabStats(
     return { ok: false, error: primary.error.message ?? "get_moment_game_context failed" }
   }
 
-  // Fallback: the season lines only.
+  // Fallback: the season lines only — and only with a date we were given (no season is guessed).
+  if (!edition.game_date) return { ok: true, ctx: null }
   const ed = await client.from("editions").select("player_id").eq("id", edition.id).limit(1).maybeSingle()
   if (ed.error) return { ok: false, error: ed.error.message ?? "editions read failed" }
   const playerId = (ed.data as { player_id?: string | null } | null)?.player_id ?? null

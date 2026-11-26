@@ -248,6 +248,21 @@ describe("fetchSlabStats", () => {
     expect(c.calls.map((x) => x.fn)).toEqual(["get_moment_game_context", "get_player_season_stats"])
     expect(c.calls[1].args).toEqual({ p_player_id: "1fad8fd1-188a-4ee9-9070-a8037434803a", p_seasons: 20 })
   })
+  it("an edition page (no date selected) asks the DB, which owns the date", async () => {
+    const ctx = { espn_league: "nba", season: 2025, season_rows: [], game: null }
+    const c = fakeClient({ ctx: { data: ctx, error: null } })
+    expect(await fetchSlabStats({ ...ED, game_date: null, date_from_db: true }, c as never)).toEqual({ ok: true, ctx })
+    expect(c.calls.map((x) => x.fn)).toEqual(["get_moment_game_context"])
+    // still gated by collection: a pin or a card asks nothing
+    const d = fakeClient({})
+    expect(await fetchSlabStats({ ...ED, collection_slug: "panini_blockchain", game_date: null, date_from_db: true }, d as never)).toEqual({ ok: true, ctx: null })
+    expect(d.calls).toHaveLength(0)
+  })
+  it("never guesses a season on the fallback path without a date", async () => {
+    const c = fakeClient({ ctx: { data: null, error: MISSING } })
+    expect(await fetchSlabStats({ ...ED, game_date: null, date_from_db: true }, c as never)).toEqual({ ok: true, ctx: null })
+    expect(c.calls.map((x) => x.fn)).toEqual(["get_moment_game_context"])
+  })
   it("reports a failed read as a failure, never as 'no stats'", async () => {
     expect((await fetchSlabStats(ED, fakeClient({ ctx: { data: null, error: { code: "57014", message: "canceling statement" } } }) as never)).ok).toBe(false)
     expect((await fetchSlabStats(ED, fakeClient({ ctx: { data: null, error: MISSING }, playerId: { data: null, error: { message: "boom" } } }) as never)).ok).toBe(false)
