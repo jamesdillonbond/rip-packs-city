@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:10 PM PT · 🗄 APPLIED (`20261126221042` + `20261126221106`) — **a Legendary / Ultimate price no longer falls back to a low offer 30 days after its last sale** (chat session; Trevor: "No we need to fix that")
+
+- **Rule:** the noon skip (a Legendary / Ultimate ignores an open offer under half the price) now also applies to an ask-based (ASK_ONLY) price while the edition has a market sale inside 365 days. The engine re-labels a listed edition ASK_ONLY 30 days after its last sale, so the skip used to lapse there (Clingan Rookie Revelation would have gone ~$96 → ~$37 around 11-28). Older than 365 days, never sold, and every other tier: unchanged.
+- **Re-stamp:** 329 current rows lifted to their pre-pull price (summed +~$47,800, median ×2.25), backup `audit_20261126_topshot_offer_pull_restamp_ask_only_backup`.
+- **Known cost:** decided over the 661-sale backtest, which favoured the pull in the 31–90-day band (33–34 % within ±25 % vs 21–23 % unpulled). The Mon 12-07 read scores it.
+- **Revert:** rule — re-apply the function body of `20261126212338` (prosrc md5 `adb6c97a13bdffc07f19f1c8214c7b6d`); rows — `UPDATE public.fmv_snapshots fs SET fmv_usd = b.old_fmv_usd, algo_version = b.old_algo_version FROM public.audit_20261126_topshot_offer_pull_restamp_ask_only_backup b WHERE fs.id = b.snapshot_id AND fs.fmv_usd = b.new_fmv_usd;`
+
 ### 2026-11-26 ~2:13 PM PT · 🔧 SHIPPED — **Panini league pages: Teams / Nations / Clans section and a Prizm / Select brand-line filter; dashboard Panini and Candy tiles show the cards by league** (Cowork cloud; Trevor: "Keep going and do it all")
 
 - **Correction to the 1:45 PM note:** "card rows carry no reliable group field" was wrong — `panini_editions.nation` holds the group Panini prints on the card (a TEAM on NBA / NFL / WNBA / NWSL / baseball cards, 94–100 % filled; a NATION on World Cup cards, 20 % filled; a clan on Bad Eggs). And the per-user holdings are NOT capped: `panini_user_holdings` is the full walk (46,786 rows, 22 usernames); only the Binder's page read is 500 rows.
