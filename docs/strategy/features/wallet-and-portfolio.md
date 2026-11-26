@@ -24,6 +24,32 @@ Trevor: "let them have access until we can verify easily and effectively" (full 
 - **One verified flag:** new `saved_wallets` collection rows inherit the user's existing verification for the wallet (trigger `20261115230729`).
 - **Adoption read:** scheduled one-off Wed 11-18 10:23 AM PT.
 
+## ⭐ 2026-11-24/25 — My Binder: one big number, plain stats, a table that fits (Trevor)
+
+Trevor (11-24 ~5:05 PM PT): "We need to make these figures very simple and digestible, no subtext. We also need to have this binder page be more visibly appealing."
+
+- **Header** (`components/wallet-stat-row.tsx`, live-market branch):
+  - One whole-dollar **Collection value**, with the stale-priced share folded in (the 11-22 one-number rule reaches the Binder).
+  - Below it, plain stats: Moments · Unlocked · Top offers · Profit / Loss.
+  - A Packs / Market / Rewards / Gifts / **Other** bar. The bar spans the whole count; the unknown-source share is "Other".
+  - No captions. The Locked FMV tile and the cost-basis strip are gone.
+  - Profit / Loss shows only from the wallet-wide `get_wallet_summary`.
+  - Unlocked still excludes moments whose lock state was never checked; the stat's hover title names them.
+  - Closed-market and UFC-on-Aptos branches unchanged.
+- **Close to completing:** one chip per set, linking to the Sets tab.
+- **Cards** (viewport < 768 px): two-up sleeve grid from 600 px, art on a tier-coloured glow.
+- **Desktop table:**
+  - The Series label no longer repeats its season ("Series 2024-25", not "Series 2024-25 · 2024-25") and stays on one line.
+  - The Parallel column is folded into the Set cell, as a tag on real parallels only.
+  - The non-parallel printing reads **Standard**, never "Base" (11-25: "Base is a set"). `parallelLabel` / `isParallelRow` cover what users see or export; the internal "Base" default is unchanged.
+  - The Packs column is hidden for signed-out visitors (it was "?" on every row).
+  - Binder-scoped cell padding (`.rpc-table--binder`) lets 13 columns fit 1280–1920 px, measured on live rows.
+- **Packs tab:**
+  - Both rows use the same stat strip.
+  - Coverage captions moved to hover titles. Net P&L withholding unchanged.
+  - The Unopened Market cell stacks Ask / Rip EV / Last one per line.
+- **Record:** ledger 11-24/11-25; session log 11-24 ~5:05 PM entry; handoff `claude/handoff-2026-11-24-binder-simple-hero.md` (project).
+
 ## ⭐ 2026-11-22 — one Portfolio FMV number, Total Assets (Trevor)
 
 - **Portfolio FMV** (dashboard, public profile, share card) is ONE figure: fresh + stale-priced Moments across EVERY collection — UFC included (Trevor ~3:09 PM PT: "We should have ufc"; a 3:05 PM closed-market exclusion was reversed) — + sealed packs at capped low ask.
@@ -34,7 +60,7 @@ Trevor: "let them have access until we can verify easily and effectively" (full 
 ## ⭐ 2026-11-09 night — audit-pass changes (found by walking production signed in)
 
 - **Cost basis count:** the Collection tab printed "27 moments with a known cost" beside a cost basis summed over 6,628 moments; the count came from the rows on screen. It now uses `get_wallet_summary.moments_with_cost`.
-- **Locked + Unlocked vs Wallet FMV:** the split includes stale-priced moments and the headline does not ($54,437 + $2,981 vs $52,275 on one wallet); a caption says so when stale-priced moments exist.
+- **Locked + Unlocked vs Wallet FMV:** the split includes stale-priced moments and the headline does not ($54,437 + $2,981 vs $52,275 on one wallet); a caption says so when stale-priced moments exist. ⚠ **Superseded on the Binder 2026-11-24:** the header is one Collection value with the stale-priced share folded in, and there is no Locked tile or caption (see the 11-24/25 section above).
 - **Locked tile** no longer reads "n/a for this collection" while loading on a collection that has locking.
 - Dashboard, trophy cases, pack history, transaction history, public profile, trades, trade block and API keys were walked and read correctly.
 
