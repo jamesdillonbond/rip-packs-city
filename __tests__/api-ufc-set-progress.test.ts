@@ -123,4 +123,29 @@ describe("GET /api/ufc-set-progress", () => {
     // The driver message must NOT be published — lib/api-error.ts classifies it.
     expect((await res.json()).error).not.toContain("connection reset")
   })
+
+  // 2026-11-26: UFC lives on Flow and Aptos. An Aptos account address reaches the RPC as itself
+  // (lowercased), never through the Flow username gate.
+  describe("an Aptos account address", () => {
+    const APT = "0x" + "AB".repeat(32)
+    it("is passed to the RPC lowercased and its holdings map like any wallet", async () => {
+      const seen: any[] = []
+      const orig = (await import("@/lib/supabase")).supabaseAdmin as any
+      const prev = orig.rpc
+      orig.rpc = async (_fn: string, args: any) => { seen.push(args); return { data: { sets: [{ setId: "s1", setName: "UFC 290", totalPlays: 2, ownedPlays: 1 }] }, error: null } }
+      try {
+        const res = await GET(req("http://x/api/ufc-set-progress?wallet=" + APT))
+        expect(res.status).toBe(200)
+        expect(seen[0]).toEqual({ p_wallet: APT.toLowerCase() })
+      } finally { orig.rpc = prev }
+    })
+    it("owning nothing is 'not indexed' (409), never 0% of every set", async () => {
+      rpc.data = { sets: [{ setId: "s1", setName: "UFC 290", totalPlays: 2, ownedPlays: 0 }] }
+      const res = await GET(req("http://x/api/ufc-set-progress?wallet=" + APT))
+      expect(res.status).toBe(409)
+      const body = await res.json()
+      expect(body.code).toBe("wallet_not_indexed")
+      expect(body.error).toMatch(/Aptos/)
+    })
+  })
 })

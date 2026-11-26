@@ -52,9 +52,11 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚽ FMV — from real Flow sales where Golazos trades; thin editions labelled",
   ],
   "ufc": [
-    "⚡ COLLECTION ANALYZER — FMV + active listing prices",
-    "⚡ SNIPER — fight moments below market",
-    "⚡ ANALYTICS — portfolio tracking",
+    // 2026-11-26: UFC reopened on Aptos. "below market" was false by construction — UFC FMV is
+    // capped at the live Aptos ask, so nothing sits below it (lib/sniper/ufc-aptos.ts).
+    "⚡ TWO CHAINS — Flow and Aptos holdings, sales and asks, each tagged",
+    "⚡ SNIPER — every live Aptos ask on Rarible against RPC FMV",
+    "⚡ BINDER — search a Flow or Aptos wallet; one total across both",
   ],
   // 2026-09-25: two lines here had gone false. "The highest sales-backed share
   // on the platform" read 18.4% HIGH/MEDIUM against Top Shot's 55.1% (a floor

@@ -43,6 +43,10 @@ export function isAptosAccountAddress(value: string | null | undefined): boolean
   return !!value && APTOS_ACCOUNT_RE.test(value.trim())
 }
 
+/** Set Tracker copy for an Aptos address RPC holds no UFC Moments for (it may simply not be indexed). */
+export const UFC_APTOS_NOT_INDEXED_COPY =
+  "RPC hasn't indexed UFC Moments for this Aptos wallet yet. Search it on the Binder tab to see what it holds."
+
 /** UFC Strike's own Aptos wallets, by lowercase address. */
 export const UFC_APTOS_KNOWN_WALLETS: Readonly<Record<string, string>> = {
   "0x8a94446716e60160571b930bd1097b31c7788decbe4d375802bebfc79d928e7f": "UFC Strike store",
