@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 /**
  * /insights/panini-premiums client (2026-10-10). Absences: a failed read is not "no premiums", a
@@ -27,7 +27,7 @@ function payload(over: Partial<PaniniPremiumsPayload> = {}): PaniniPremiumsPaylo
     ...over,
   }
 }
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe("PaniniPremiumsClient", () => {
   it("lists parallels with product, base and premium, links RPC's edition page, and names an unnamed product by id", () => {
@@ -85,5 +85,58 @@ describe("PaniniPremiumsClient", () => {
     fireEvent.change(c.querySelector("#panini-premiums-q")!, { target: { value: "zzz" } })
     expect(c.querySelector('[data-testid="panini-premiums-filtered-out"]')).not.toBeNull()
     expect(c.querySelector('[data-testid="panini-premiums-none"]')).toBeNull()
+  })
+})
+
+describe("PaniniPremiumsClient — League chips (2026-11-26)", () => {
+  const INDEX = {
+    properties: [
+      { slug: "fifa-world-cup", name: "FIFA World Cup", heading: "leagues", sort_order: 1 },
+      { slug: "nba", name: "NBA", heading: "leagues", sort_order: 2 },
+      { slug: "nfl", name: "NFL", heading: "leagues", sort_order: 3 },
+    ],
+    setProperty: { "2332": "fifa-world-cup", "1972": "nba", "1940": "nfl" },
+  }
+  function stubIndex(res: () => Response) {
+    vi.stubGlobal("fetch", vi.fn(async () => res()))
+  }
+  const ok = () => new Response(JSON.stringify(INDEX), { status: 200, headers: { "content-type": "application/json" } })
+
+  it("shows a chip per league that has rows, with its count, and narrows to the one picked", async () => {
+    stubIndex(ok)
+    const c = render(<PaniniPremiumsClient data={payload()} fetchedAt={null} failed={false} />).container
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-premiums-league"]')).not.toBeNull())
+    const chips = [...c.querySelectorAll('[data-testid="panini-premiums-league"] button')].map((b) => b.textContent)
+    expect(chips).toEqual(["All", "FIFA World Cup · 1", "NBA · 1"])
+    // NFL has no row on THIS tab, so it gets no chip — a chip that empties the list is not offered.
+    expect(chips.some((t) => t?.includes("NFL"))).toBe(false)
+    fireEvent.click([...c.querySelectorAll('[data-testid="panini-premiums-league"] button')].find((b) => b.textContent?.startsWith("NBA"))!)
+    const rows = [...c.querySelectorAll("tbody tr")].map((r) => r.textContent ?? "")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain("Victor Wembanyama")
+    expect(c.textContent).toContain("Showing 1 of 2 with your filters.")
+    // The league row replaces the sport row; the two are never stacked.
+    expect(c.querySelector('[aria-label="Sport"]')).toBeNull()
+    // The on-screen label never uses the URL word.
+    expect(c.textContent?.toLowerCase()).not.toContain("property")
+  })
+
+  it("a failed index read keeps the sport chips and hides no row", async () => {
+    stubIndex(() => new Response("nope", { status: 503 }))
+    const c = render(<PaniniPremiumsClient data={payload()} fetchedAt={null} failed={false} />).container
+    await waitFor(() => expect((globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0))
+    expect(c.querySelector('[data-testid="panini-premiums-league"]')).toBeNull()
+    expect(c.querySelector('[aria-label="Sport"]')).not.toBeNull()
+    expect(c.querySelectorAll("tbody tr")).toHaveLength(2)
+  })
+
+  it("switching tab clears the league pick, so the other tab is never silently narrowed", async () => {
+    stubIndex(ok)
+    const c = render(<PaniniPremiumsClient data={payload()} fetchedAt={null} failed={false} />).container
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-premiums-league"]')).not.toBeNull())
+    fireEvent.click([...c.querySelectorAll('[data-testid="panini-premiums-league"] button')].find((b) => b.textContent?.startsWith("NBA"))!)
+    fireEvent.click([...c.querySelectorAll('[role="tab"]')].find((b) => b.textContent?.includes("serials"))!)
+    expect(c.querySelectorAll("tbody tr")).toHaveLength(1)
+    expect(c.querySelector("tbody tr")!.textContent).toContain("Patrick Mahomes")
   })
 })

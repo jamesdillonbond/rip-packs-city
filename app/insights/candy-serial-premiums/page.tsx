@@ -22,6 +22,7 @@ import {
 } from "@/lib/insights/candy-parity-boards"
 import { fmtBoardDay, fmtBoardUsd, fmtMultiplier } from "@/lib/insights/pinnacle-board-format"
 import { editionRouteHref } from "@/lib/entity-href"
+import { candyPropertyHref, readCandyEditionBrands } from "@/lib/candy/properties"
 
 export const revalidate = 3600
 
@@ -41,6 +42,17 @@ export default async function CandySerialPremiumsPage() {
   const empty: CandySerialPayload = { stats: [], rows: [] }
   const res = await fetchBoardForPage("Candy serial premiums", empty, (db) => fetchCandySerialPremiums(db), READ_BUDGET_MS)
   const { stats, rows } = res.data
+  // 2026-11-26: the table mixes brands (MLB and DC sales). Each row names its own; a failed lookup names none.
+  const brands = rows.length > 0 ? await readCandyEditionBrands(rows.map((r) => r.external_id)) : null
+  const brandTally = new Map<string, { name: string; n: number }>()
+  if (brands) for (const r of rows) {
+    const b = brands[r.external_id]
+    if (!b) continue
+    const t = brandTally.get(b.slug)
+    if (t) t.n += 1
+    else brandTally.set(b.slug, { name: b.name, n: 1 })
+  }
+  const brandList = [...brandTally.entries()].sort((a, b) => b[1].n - a[1].n)
 
   return (
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 18px 64px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -81,6 +93,19 @@ export default async function CandySerialPremiumsPage() {
         <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)" }}>No #1, jersey-match or perfect-serial sale on record yet.</p>
       ) : null}
 
+      {brandList.length >= 2 ? (
+        <p data-testid="candy-serial-brands" style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+          In this list:{" "}
+          {brandList.map(([slug, t], i) => (
+            <span key={slug}>
+              {i > 0 ? " · " : ""}
+              <Link prefetch={false} href={candyPropertyHref("candy-mlb", slug)} style={{ color: "var(--rpc-text-primary)" }}>{t.name}</Link> {t.n.toLocaleString("en-US")}
+            </span>
+          ))}
+          . A jersey-match serial only exists where the card&rsquo;s subject wears a number.
+        </p>
+      ) : null}
+
       {rows.length > 0 ? (
         <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border-subtle)", borderRadius: 8, padding: 12 }}>
           <div style={{ overflowX: "auto" }}>
@@ -102,7 +127,7 @@ export default async function CandySerialPremiumsPage() {
                       <Link prefetch={false} href={editionRouteHref("candy-mlb", r.external_id)} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
                         {r.name ?? r.external_id}
                       </Link>
-                      <div style={{ color: "var(--rpc-text-muted)", fontSize: 10, marginTop: 2 }}>{r.set_name ?? ""}</div>
+                      <div style={{ color: "var(--rpc-text-muted)", fontSize: 10, marginTop: 2 }}>{[r.set_name, brands?.[r.external_id]?.name].filter(Boolean).join(" · ")}</div>
                     </td>
                     <td style={cell}>
                       #{r.serial_number}{r.circulation_count != null ? ` / ${r.circulation_count}` : ""}

@@ -16,11 +16,13 @@
 //   · capped lists say they are capped; dates are absolute PT (no reader clock in render)
 //   · RPC is read-only: rows link the edition page, nothing else
 
-import { useMemo, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import type { PaniniPremiumsPayload, PaniniParallelPremium, PaniniSerialPremium } from "@/lib/insights/panini-premiums"
 import { textIncludes } from "@/lib/filter-match"
 import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
+import { fetchJson } from "@/lib/analytics/fetch-json"
+import { SCOPE_SOURCES, countByProperty, paniniSetIdOf, propertyOfSetId, toScopeIndex, type PaniniScopeIndex } from "@/lib/panini/scope"
 
 type Tab = "parallels" | "serials"
 
@@ -75,6 +77,11 @@ function sportsOf(rows: { sport: string | null }[]): string[] {
   return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([s]) => s)
 }
 
+/** The Panini product a row belongs to: the id in its card key, else the product id the view carries. */
+function setIdOfRow(r: { external_id: string; product_set_id: number | null }): number | null {
+  return paniniSetIdOf(r.external_id) ?? r.product_set_id
+}
+
 function matches(q: string, ...fields: (string | null | undefined)[]): boolean {
   if (!q) return true
   return fields.some((f) => textIncludes(f, q))
@@ -94,18 +101,39 @@ export default function PaniniPremiumsClient({
   const [query, setQuery] = useState("")
   const q = query.trim().toLowerCase()
 
-  const rowsForTab: { sport: string | null }[] = tab === "parallels" ? data.parallels : data.serials
+  // 2026-11-26: League chips (NBA and WNBA are one sport and two leagues). Both lists are on the client, so
+  // narrowing here is exact. A failed index read shows the sport chips instead and filters nothing by league.
+  const [league, setLeague] = useState("")
+  const [leagueIndex, setLeagueIndex] = useState<PaniniScopeIndex | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<unknown>(SCOPE_SOURCES.panini.endpoint).then((r) => {
+      if (cancelled) return
+      const index = r.ok ? toScopeIndex(r.json) : null
+      if (index) setLeagueIndex(index)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const rowsForTab: { sport: string | null; external_id: string; product_set_id: number | null }[] = tab === "parallels" ? data.parallels : data.serials
   const sports = useMemo(() => sportsOf(rowsForTab), [rowsForTab])
+  const leagueCounts = useMemo(() => countByProperty(leagueIndex, rowsForTab, setIdOfRow), [leagueIndex, rowsForTab])
+  const leagueOptions = useMemo(
+    () => (leagueIndex ? leagueIndex.properties.filter((p) => (leagueCounts.get(p.slug) ?? 0) > 0).sort((a, b) => (leagueCounts.get(b.slug) ?? 0) - (leagueCounts.get(a.slug) ?? 0)) : []),
+    [leagueIndex, leagueCounts],
+  )
+  const byLeague = leagueOptions.length >= 2
+  const activeLeague = byLeague ? league : ""
 
   const parallels = useMemo(
-    () => data.parallels.filter((r) => (!sport || r.sport === sport) && matches(q, r.player_name, r.parallel, r.product_name)),
-    [data.parallels, sport, q],
+    () => data.parallels.filter((r) => (!sport || r.sport === sport) && (!activeLeague || propertyOfSetId(leagueIndex, setIdOfRow(r)) === activeLeague) && matches(q, r.player_name, r.parallel, r.product_name)),
+    [data.parallels, sport, q, activeLeague, leagueIndex],
   )
   const serials = useMemo(
-    () => data.serials.filter((r) => (!sport || r.sport === sport) && matches(q, r.player_name, r.parallel, r.product_name)),
-    [data.serials, sport, q],
+    () => data.serials.filter((r) => (!sport || r.sport === sport) && (!activeLeague || propertyOfSetId(leagueIndex, setIdOfRow(r)) === activeLeague) && matches(q, r.player_name, r.parallel, r.product_name)),
+    [data.serials, sport, q, activeLeague, leagueIndex],
   )
-  const filtering = sport !== "" || q !== ""
+  const filtering = sport !== "" || q !== "" || activeLeague !== ""
   const total = tab === "parallels" ? data.parallels.length : data.serials.length
   const shown = tab === "parallels" ? parallels.length : serials.length
 
@@ -120,10 +148,10 @@ export default function PaniniPremiumsClient({
       </Note>
 
       <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Board" style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "14px 0 8px" }}>
-        <button type="button" role="tab" aria-selected={tab === "parallels"} onClick={() => { setTab("parallels"); setSport("") }} style={chip(tab === "parallels")}>
+        <button type="button" role="tab" aria-selected={tab === "parallels"} onClick={() => { setTab("parallels"); setSport(""); setLeague("") }} style={chip(tab === "parallels")}>
           Parallels
         </button>
-        <button type="button" role="tab" aria-selected={tab === "serials"} onClick={() => { setTab("serials"); setSport("") }} style={chip(tab === "serials")}>
+        <button type="button" role="tab" aria-selected={tab === "serials"} onClick={() => { setTab("serials"); setSport(""); setLeague("") }} style={chip(tab === "serials")}>
           #1 &amp; perfect serials
         </button>
       </div>
@@ -153,7 +181,16 @@ export default function PaniniPremiumsClient({
       ) : (
         <>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "12px 0 10px" }}>
-            {sports.length > 1 ? (
+            {byLeague ? (
+              <div role="group" aria-label="League or brand" data-testid="panini-premiums-league" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button type="button" aria-pressed={league === ""} onClick={() => setLeague("")} style={chip(league === "")}>All</button>
+                {leagueOptions.map((o) => (
+                  <button key={o.slug} type="button" aria-pressed={league === o.slug} onClick={() => setLeague(o.slug)} style={chip(league === o.slug)}>
+                    {o.name} · {(leagueCounts.get(o.slug) ?? 0).toLocaleString("en-US")}
+                  </button>
+                ))}
+              </div>
+            ) : sports.length > 1 ? (
               <div role="group" aria-label="Sport" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button type="button" aria-pressed={sport === ""} onClick={() => setSport("")} style={chip(sport === "")}>All sports</button>
                 {sports.map((sp) => (

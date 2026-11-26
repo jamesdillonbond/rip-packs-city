@@ -377,3 +377,40 @@ export async function readCandySetBrandIndex(db: any = supabaseAdmin): Promise<C
 }
 
 export const fetchCandySetBrandIndex = cache(() => readCandySetBrandIndex())
+
+// ── Brand of a handful of Candy cards, by card key (a board that lists cards from several brands) ─────────
+
+const CANDY_COLLECTION_ID = "209ade70-32c5-4470-bc7c-4793d660f713"
+
+/**
+ * Card key → its league / brand, for a board's rows (2026-11-26: Candy serial premiums lists MLB and DC sales
+ * in one table). null = a read failed, so the caller shows NO brand on any row — never a guessed one. A key
+ * with no placed set is simply absent from the map.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readCandyEditionBrands(externalIds: readonly string[], db: any = supabaseAdmin): Promise<Record<string, { slug: string; name: string }> | null> {
+  const ids = [...new Set(externalIds.filter((x) => typeof x === "string" && x))]
+  if (ids.length === 0) return {}
+  try {
+    const index = await readCandySetBrandIndex(db)
+    if (!index) return null
+    const out: Record<string, { slug: string; name: string }> = {}
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100)
+      const res = await withQueryDeadline<unknown>(
+        db.from("editions").select("external_id,set_id").eq("collection_id", CANDY_COLLECTION_ID).in("external_id", chunk).order("external_id", { ascending: true }).limit(200),
+        "candy/edition-brands",
+        apiReadTimeoutMs(),
+      )
+      if (res.error || !Array.isArray(res.data)) return null
+      for (const r of res.data as Array<{ external_id?: unknown; set_id?: unknown }>) {
+        if (typeof r?.external_id !== "string" || typeof r?.set_id !== "string") continue
+        const slug = index.bySetId[r.set_id]
+        if (slug) out[r.external_id] = { slug, name: index.names[slug] }
+      }
+    }
+    return out
+  } catch {
+    return null
+  }
+}
