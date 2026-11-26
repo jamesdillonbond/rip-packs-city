@@ -96,6 +96,31 @@ describe("seasonBlock", () => {
     expect(b?.chips).toEqual([{ label: "REC", value: "97" }, { label: "REC YDS", value: "1338" }, { label: "REC TD", value: "6" }])
     expect(b?.detail).toBe("Kansas City Chiefs · 16 games")
   })
+  it("keeps a receiver's season to his side of the ball — no special-teams tackle, no stray carries", () => {
+    const rows: SeasonLine[] = [
+      { category: "rushing", team_slug: "los-angeles-rams", labels: [], names: ["gamesPlayed", "rushingAttempts", "rushingYards", "rushingTouchdowns"], values: ["14", "2", "9", "0"] },
+      { category: "receiving", team_slug: "los-angeles-rams", labels: [], names: ["gamesPlayed", "receptions", "receivingYards", "receivingTouchdowns"], values: ["14", "60", "789", "14"] },
+      { category: "defensive", team_slug: "los-angeles-rams", labels: [], names: ["gamesPlayed", "totalTackles", "sacks", "interceptions", "passesDefended"], values: ["14", "1", "0", "0", "0"] },
+    ]
+    const labels = seasonBlock("nfl", 2025, rows)?.chips.map((c) => c.label)
+    expect(labels).toEqual(["REC", "REC YDS", "REC TD"])
+  })
+  it("keeps a mobile quarterback's rushing next to his passing", () => {
+    const rows: SeasonLine[] = [
+      { category: "passing", team_slug: "buffalo-bills", labels: [], names: ["gamesPlayed", "passingAttempts", "passingYards", "passingTouchdowns", "interceptions", "QBRating"], values: ["17", "483", "3731", "28", "6", "101.4"] },
+      { category: "rushing", team_slug: "buffalo-bills", labels: [], names: ["gamesPlayed", "rushingAttempts", "rushingYards", "rushingTouchdowns"], values: ["17", "102", "531", "12"] },
+    ]
+    const labels = seasonBlock("nfl", 2024, rows)?.chips.map((c) => c.label)
+    expect(labels).toEqual(["PASS YDS", "PASS TD", "INT", "RTG", "RUSH YDS"])
+  })
+  it("keeps a defender's season to defense", () => {
+    const rows: SeasonLine[] = [
+      { category: "rushing", team_slug: "pittsburgh-steelers", labels: [], names: ["gamesPlayed", "rushingAttempts", "rushingYards", "rushingTouchdowns"], values: ["17", "1", "12", "0"] },
+      { category: "defensive", team_slug: "pittsburgh-steelers", labels: [], names: ["gamesPlayed", "totalTackles", "sacks", "interceptions", "passesDefended"], values: ["17", "56", "11.5", "0", "3"] },
+    ]
+    const labels = seasonBlock("nfl", 2024, rows)?.chips.map((c) => c.label)
+    expect(labels).toEqual(["TKL", "SACK", "PD"])
+  })
   it("shows nothing for no lines or an all-zero season", () => {
     expect(seasonBlock("nba", 2025, [])).toBe(null)
     expect(seasonBlock("nba", 2025, [avg(LILLARD_AVG.map(() => "0"))])).toBe(null)

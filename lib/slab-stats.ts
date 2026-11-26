@@ -216,6 +216,8 @@ const FOOTBALL_SEASON: Array<{ category: string; picks: Pick[]; leadsWhen: strin
   ] },
 ]
 
+const OFFENSE_YARDS: Record<string, string> = { passing: "passingYards", rushing: "rushingYards", receiving: "receivingYards" }
+
 function footballSeasonChips(rows: SeasonLine[]): StatChip[] {
   const byCat = new Map(rows.map((r) => [r.category, r]))
   // The position the season was about leads: the category with the most volume.
@@ -227,8 +229,23 @@ function footballSeasonChips(rows: SeasonLine[]): StatChip[] {
     })
     .filter((x) => x.r && x.vol > 0)
     .sort((a, b) => b.vol - a.vol)
+  // The leading category decides the side of the ball. Defense joins only when it leads (one
+  // special-teams tackle is not a receiver's stat); another offensive category joins only with at
+  // least a tenth of the lead's yards (a mobile QB's rushing, an RB's receiving — not a WR's two
+  // carries).
+  const lead = ranked[0]
+  const yards = (x: (typeof ranked)[number]) => {
+    const y = OFFENSE_YARDS[x.f.category]
+    return y ? num(valueOf(x.r!.names, x.r!.values, y)) ?? 0 : 0
+  }
+  const kept = ranked.filter((x, i) => {
+    if (i === 0) return true
+    if (lead.f.category === "defensive" || x.f.category === "defensive") return false
+    const leadYards = yards(lead)
+    return leadYards > 0 && yards(x) >= leadYards * 0.1
+  })
   const chips: StatChip[] = []
-  for (const { f, r } of ranked) {
+  for (const { f, r } of kept) {
     for (const c of chipsFrom(r!.names, r!.values, f.picks, 5)) {
       if (chips.length < 5) chips.push(c)
     }
