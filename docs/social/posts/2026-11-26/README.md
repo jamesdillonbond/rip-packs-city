@@ -26,9 +26,9 @@ Posting this as a **quote of the 11-24 tweet** that asked for the feature would 
 
 ## The media
 
-`slab-spin.mp4` (6.6 s, 966×936): the Standard Metallic Silver Giannis Antetokounmpo #11/509 (Assist, Nov 14, 2026) turning on its live page, holding on the back — VS DET · W 137-117, 34 / 14 / 8 (each marked above his season average), 2026-27 Miami Heat season 28.2 / 12.6 / 5.5 — then turning back to Top Shot's own video. Captured 11-26 ~7:05 AM PT from the live page, one still per 20° (the page's own rendering, rotated by script; nothing composited), assembled with ffmpeg. A GIF of the same frames was sent to Trevor in the thread.
+`slab-spin.mp4` (6.6 s, 966×936): the Standard Metallic Silver Giannis Antetokounmpo #11/509 (Assist, Nov 14, 2026) turning on its live page, holding on the back — VS DET · W 137-117, 34 / 14 / 8 (each marked above his season average), 2026-27 Miami Heat season 28.2 / 12.6 / 5.5 — then turning back to Top Shot's own video. Captured 11-26 ~7:00 AM PT from the live page, one still per 20° (the page's own rendering, rotated by script; nothing composited), assembled with ffmpeg. A GIF of the same frames was sent to Trevor in the thread.
 
-## Checked live (11-26, ~7:10 AM PT, signed out)
+## Checked live (11-26, ~7:08 AM PT, signed out)
 
 - `/moment/53254447` with the utm parameters renders the slab, Flip and the back; preview card is `summary_large_image` (`/api/og/moment/53254447`).
 - The game line was verified against ESPN 11-25 (34 / 14 / 8 vs DET on the US date).

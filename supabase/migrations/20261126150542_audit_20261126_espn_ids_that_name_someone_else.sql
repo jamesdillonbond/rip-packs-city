@@ -1,6 +1,6 @@
 -- audit_20261126_espn_ids_that_name_someone_else
 --
--- 16 player_identities carried an ESPN id that is not the person (measured 2026-11-26 ~7:20 AM PT by
+-- 16 player_identities carried an ESPN id that is not the person (measured 2026-11-26 ~6:55 AM PT by
 -- fetching each id's athlete page in its own league through pg_net):
 --   · 3 are SOMEONE ELSE (matcher espn-search:stats-probe took an id from another league's search hit
 --     and accepted it because the id had seasons here; ESPN ids are per league): Michael Cage → nba/31
