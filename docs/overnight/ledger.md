@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:25 PM PT · 🔧 SHIPPED (code) — Panini pack market stops printing a rounded-to-zero edge as "$0.00 vs cost" (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Found by a rendered-DOM sweep of 28 public pages (Playwright; every other page clean of NaN / undefined / $0.00, apart from chart-axis and Recharts measurement spans). `/panini-blockchain/packs`, New Yolk City Green: EV (mean) $14.12 on a $14 floor, edge line "$0.00 vs cost". `panini_pack_ev_board.net_rip_edge_usd` is `round(ev − cost)`, i.e. WHOLE DOLLARS, and the card printed it with cents: a rounded 0 read as an exact break-even, and "+$1.00" covered anything from +$0.50 to +$1.49.
+- Fix (`components/packs/PaniniPackMarket.tsx`): the edge prints in whole dollars ("+$6 vs cost"), and a rounded zero reads "about even with cost (within $0.50)". The typical-pull delta (real cents) is unchanged. Tests re-pinned (premise change: the value is whole dollars), plus a zero-edge case; 4 tests red on the old component. Preflight green.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-25 ~8:15 PM PT · 🗄 APPLIED (`20261126035731`) — Sentinel "Zero-Yield Lanes" WARN cleared: an orphaned repair job paused (lane budget −1), one correct zero recorded (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - `rpc-head-sweep-cursor-unlatch` (`29 * * * *`) resets only the Golazos pack-sales, Golazos pack-opens and Pinnacle pack-opens cursors. Their three Studio lanes were paused 11-18 (`20261119080000`), and the three cursors have not moved since 11-17, so the job could never find work. It is now paused the same way (`active := false`, command kept), its Pipeline Silence watch is off, and it has a RETIRED zero-yield row. **Lane budget: −1 job, none added.**
