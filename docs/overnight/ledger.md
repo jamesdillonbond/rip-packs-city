@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 3:32 PM PT · docs: UFC Aptos reopen recorded (session log, UFC roadmap); 11-28 verification scheduled task
+- `docs/sessions/2026-11.md`: the UFC entry now runs to ~3:40 PM. It adds the afternoon ships (watchlist row, overview, Set Tracker, analytics order book, ticker), what was checked, and what is still open.
+- `docs/strategy/collections/ufc-strike.md`: a new top section, "2026-11-26 REOPENED, chain-agnostic". It supersedes the "Reopen flip HELD" line and the "no sniper tab" line.
+- One heading time corrected: the order-book entry was stamped 3:20 PM; the commit was at 3:18 PM.
+- New standalone scheduled task `trig_01VsHRs8sEvFFmqQJtHPWfLY`, Sat 11-28 1:17 PM PT, running in a fresh session and not this thread. It re-checks all five Aptos lanes, the sniper, overview, analytics, Set Tracker and the 4 saved rows, and fixes or reverts anything that regressed.
+- Revert: `git revert <this commit>`. Delete the scheduled task in claude.ai if it is not wanted.
+
 ### 2026-11-26 ~3:25 PM PT · 🗄 DATA — **Panini soccer season lines: scheduled check; Messi 2022 World Cup request queued by hand** (scheduled check, cloud)
 
 - **What:** one row inserted into `espn_soccer_athlete_fetches` (`45843` · `fifa.world` · team `202`) with its `net.http_get`, so the drain could fetch it now instead of ~3 h from now. The drain stored 6 World Cup lines; 2022 reads G 7 · A 3 (correct). Live `/panini-blockchain/edition/packcard-1733_331242_8797896_8` serves "2022 World Cup · Argentina · 7 G · 3 A" server-side.
@@ -28,7 +35,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Migration:** `20261126231408_audit_20261126_candy_wallet_collection_progress` (applied via MCP, file committed).
 - **Revert:** `git revert` the code commit (find by message "candy: every collection a wallet holds on the Sets tab"). The function is unread after that.
 
-### 2026-11-26 3:20 PM PT · /ufc/analytics Order Book Depth reads the live Aptos book
+### 2026-11-26 3:18 PM PT · /ufc/analytics Order Book Depth reads the live Aptos book
 - The card said "No live listings." because `analytics_listings_summary` reads Flow listings only, while about 465 Aptos asks were live on Rarible.
 - `/api/analytics/listings/summary?collections=ufc` now replaces the UFC row with the Aptos book. The source is the same as `/ufc/sniper`: `lib/analytics/ufc-aptos-book.ts` builds count, median and p90 from `computeUfcAptosSniperFeed`.
 - A failed Aptos read is a 500, which the card shows as "couldn't load". The card now names the book as Aptos/Rarible.

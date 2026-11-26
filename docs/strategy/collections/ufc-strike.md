@@ -1,6 +1,25 @@
 # UFC Strike — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## 2026-11-26 — REOPENED, chain-agnostic (supersedes the "Reopen flip HELD" line and "There is no sniper tab" below)
+
+**Decision (Trevor, 11-26 9:35 AM PT):** "Do it all … visibility be interchangeable … a Flow or Aptos tag … aggregate across the multiple chains/wallets". Not a site-wide Aptos push: only per item (binder asset, sniper listing, moment-page sale).
+
+Dated sample, 11-26 ~3:30 PM PT. Sessions log 2026-11 holds the full list, and the ledger 11-26 ~11:45 AM → 3:18 PM PT holds the revert paths.
+- **Market open.** UFC is out of `CLOSED_MARKETS`. FMV is capped at the cheapest live single Rarible ask × APT/USD (trigger `fmv_snapshots_cap_ufc_to_aptos_ask`). Tabs: overview, collection, **sniper**, sets, analytics.
+- **Per-item chain tags** (`components/collection/ChainTag.tsx`) appear on:
+  - binder rows (one table and one value across chains; an Aptos address searchable directly);
+  - every UFC sale row;
+  - each Moment page (`/api/ufc/moment-chain`; owner never returned);
+  - sniper rows.
+- **Aptos is aggregated into:** the binder total, saved-wallet stats (dashboard / profile / email), the Set Tracker, the overview "Cheapest Aptos Asks" panel, the analytics Order Book Depth card, and concierge floors.
+- **Lanes** (4×/day, `.github/workflows/ufc-aptos-sales-ingest.yml`): sales, wallet links, holdings, listings, identity link. `ufc-aptos-listings` is on the cadence watchlist; the rest auto-arm about 11-28.
+- **Market reality:** 465 live Aptos asks, median $1.49. The last Aptos sale was 10-22, so "Priced from recent sales" reads 0 % and that is true.
+- **Open:**
+  - The Aug–Oct 2025 migrants link on 12-14 (Dune).
+  - No sales-silence ceiling (≈1 sale/month).
+  - A $1.86M troll ask sits in the book (medians are safe).
+
 ## 2026-11-15/16 — UFC Strike on Aptos is being built (supersedes "Aptos: watch, don't build" below)
 
 **Decision (Trevor, 11-15):** UFC Strike on Aptos extends the existing `ufc_strike` collection. Plan: `claude/ufc-reopen-on-aptos-plan-2026-11-16.md` (claude.ai Project). Dated sample, 11-15 ~9 PM PT:
