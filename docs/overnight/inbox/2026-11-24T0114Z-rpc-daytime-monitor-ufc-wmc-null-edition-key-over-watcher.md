@@ -69,3 +69,9 @@ LOW / read-only symptom. The only user-visible failure mode is if either of the 
 - The estate is at **0 of 7,314** UFC wmc rows unkeyed.
 - The one new recurrence (`0x9a26549ac659995d`, 114 rows, 11-25 1:44 AM PT) came from the remainder the chain left at its deadline. It was fixed in `ded424306`: the backfill hands its remainder to the NULL-key drain, and the drain is a dead-lane-backstop lane. The drain wrote 114/114 at 7:14 AM PT, and the trust arm is clear.
 - The 11-26 scheduled verify (`RPC: verify UFC null edition_key rows drained after the keyset fix`) is left in place and should simply confirm these zeros. Deleting it was refused by the permission classifier.
+
+## ✅ SCHEDULED VERIFY 2026-11-26 ~9:15 AM PT (Claude Code cloud, scheduled; read-only) — confirmed closed
+
+- `wallet_moments_cache` UFC (`9b4824a8…`): **0** rows with `edition_key IS NULL` estate-wide. `0xfd6debe3815415c3` 0 of 249 (last_seen 11-23 7:41 PM PT); `0xe5492c968fb5d358` 0 of 106 (last_seen 11-23 7:40 PM PT).
+- `pipeline_runs` since 11-23 7:40 PM PT: one `wallet-backfill-ufc` run per wallet at 7:40 PM PT, both `ok=true`, `terminated_reason=no_more_moments`. `ufc-enrichment-drain` ran 4× (11-25 7:14 AM PT wrote 114 for the separate `0x9a26…` recurrence; the 3 since read "no null-edition_key UFC rows").
+- Nothing changed; INDEX row was already ✅ RESOLVED.

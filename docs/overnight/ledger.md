@@ -13,6 +13,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~9:15 AM PT · 📝 docs — UFC null edition_key scheduled verify: confirmed 0 unkeyed (Claude Code cloud, scheduled)
+- Read-only re-check of inbox `2026-11-24T0114Z`: UFC wmc NULL `edition_key` = 0 estate-wide; both wallets 0 (249/249, 106/106). Appended a dated ✅ note to the filing; INDEX already RESOLVED. Revert: drop the appended section.
+
 ### 2026-11-26 ~9:12 AM PT · 🗄 APPLIED (`20261126165600`, `…165704`, `…170312`) + pg_cron + 🔧 code — Golazos slab backs show the match (Claude Code cloud; Trevor: "Keep going")
 
 - New lane `golazos-match-results`: `espn_soccer_scoreboard_dispatch` / `_drain` (pg_cron `rpc-golazos-scoreboard-dispatch` :07/:27/:47, `-drain` :09/:29/:49) fetch ESPN's LaLiga scoreboard for every Golazos match date and the day before (Golazos dates 135 / 575 Moments a day late) into `espn_soccer_matches`. Backfilled by hand 8:55–9:05 AM PT: 545 dates, 1,689 matches, 0 errors. Spot-checked Clásicos against the record (Real Madrid 2-6 Barcelona 2009-05-02, Barcelona 5-0 2010-11-29, Real Madrid 0-4 2022-03-20).
