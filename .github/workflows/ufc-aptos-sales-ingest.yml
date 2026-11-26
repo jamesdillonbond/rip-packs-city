@@ -15,6 +15,9 @@ name: UFC Strike Aptos sales ingest
 # those batches are skipped and retried next run. Finding: claude/ufc-aptos-wallet-link-finding-2026-11-15.md.
 # Third step (2026-11-16): scripts/ufc-aptos-holdings.mjs refreshes ufc_aptos_holdings (UFC tokens currently owned on
 # Aptos by linked wallets; read via get_ufc_aptos_holdings_for_flow). Plan: claude/ufc-reopen-on-aptos-plan-2026-11-16.md.
+# Step 2b (2026-11-26): scripts/ufc-aptos-identity-link.mjs links saved users' Flow wallets to the Aptos wallets UFC
+# minted their known Moments to (serial + edition carried through the migration) — covers the Aug-Oct 2025 wave
+# without mainnet26 history. Migration audit_20261126_ufc_aptos_identity_link.
 # Fourth step (2026-11-25): scripts/ufc-aptos-listings.mjs keeps ufc_aptos_listings (live Rarible asks) current;
 # v_ufc_aptos_edition_floor gives the per-edition UFC floor. Built 11-16, landed 11-25 (table was empty until then).
 
@@ -80,6 +83,18 @@ jobs:
           flag=""
           if [ "$APPLY" = "true" ]; then flag="--apply"; fi
           node scripts/ufc-aptos-wallet-link.mjs $flag --budget-sec 540 --enum-budget-sec 720
+      - name: Wallet links by Moment identity (Aug-Oct 2025 migrants)
+        if: ${{ !cancelled() }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APTOS_API_KEY: ${{ secrets.APTOS_API_KEY }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          set -euo pipefail
+          flag=""
+          if [ "$APPLY" = "true" ]; then flag="--apply"; fi
+          node scripts/ufc-aptos-identity-link.mjs $flag --budget-sec 240
       - name: Aptos holdings for linked wallets
         if: ${{ !cancelled() }}
         env:
