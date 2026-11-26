@@ -13,6 +13,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~10:30 AM PT · 🔧 SHIPPED — Panini and Candy card slabs show that card's season line on the back; stale rpc-surface-qa skill bundle re-packed (Claude Code cloud; Trevor: "Yes do it all")
+
+- **Cards have no game, so the back shows the season the CARD is from** (`cardSeason` in `lib/slab-stats.ts`): "2021-22 …" → the NBA's 2021-22; a single year → that NFL / MLB / WNBA season. An NBA product with one year ("2022 Panini NFT Hoops") could be either season, so it shows nothing. No fallback to another season: on a legend's card, a namesake's current season would be the wrong person.
+- **Panini:** read through `get_panini_player_season_stats` (the player hub's crosswalk read) by the player's slug; the season comes from the PRODUCT name (`panini_products.name` from `packcard-<set_id>_`), because card set names are just "Base Prizms Silver". Measured 2026-11-26: about 19.0k of 57.7k Panini cards get a line. The rest: soccer (1,246 crosswalked ids, no season feed), 7.3k single-year NBA products, no crosswalk link.
+- **Candy MLB:** `get_player_season_stats` by the edition's player (100 ICONs keyed); the set year is the season ("2022 Leadoff ICONs" → 2022). Shown on both the edition page and `/moment`.
+- **New MLB season block:** hitters show AVG · HR · RBI · OPS · SB; pitchers (fewer than 50 AB) show W · ERA · K · WHIP · SV.
+- Reads default to FAILED (no stats, never "0"); a failed product read is a failed read.
+- **Also fixed `main` red:** `21b60eb` edited `docs/cowork-skills/rpc-surface-qa/references/surface-checklist.md` without re-packing; `rpc-surface-qa.skill` re-packed with `node scripts/pack-cowork-skill.mjs rpc-surface-qa` (bundle guard: 11 match).
+- Tests: `__tests__/card-slab-stats.test.ts` (new). Preflight green apart from that guard, which passes after the re-pack.
+- **Revert:** `git revert` the code commit (message "card slab season lines"); no DB change.
+
 ### 2026-11-26 ~11:00 AM PT · 📝 docs — pricing accuracy pass recorded; dated checks handed to Cowork in focus.md (Claude Code cloud; Trevor: "update any relevant documentation before I archive this thread")
 - Session log entry for 11-26 in `docs/sessions/2026-11.md`. New focus.md steer (11-26 ~11:00 AM PT) hands Cowork the 11-27 check (conflated-editions remap `20261126174004`, hot-lane drift arm `20261126162440`, pg_cron 932/933) and the 12-02 close-out (pull backlog, Top Shot recent-rips EV re-run, drift-arm read). Creating those as scheduled tasks from this session was refused twice, so the full task prompts are in the Project doc `claude/handoff-2026-11-26-pricing-accuracy-pass.md`.
 - Revert: docs only.
