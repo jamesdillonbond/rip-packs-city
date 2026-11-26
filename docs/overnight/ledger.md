@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:55 PM PT · 🔧 SHIPPED (code) — Binder Packs tab table min-width 760 → 640 px, so all three tabs fit a ~780 px window now that the Market cell stacks (Claude Code cloud; Trevor: "Keep going and work through everything you can in this thread")
+
+- After `7da3951` the live Unopened table still overflowed: 760/726 in Trevor's signed-in Chrome. Width was held by a hard-coded `minWidth: 760` set before the Market cell stacked.
+- Injecting 640 on the live page measured 726/726 on Unopened, Opened and Sold alike (7, 6 and 7 columns). Narrower viewports still scroll horizontally as before.
+- Docs in the same push: feature-doc section `wallet-and-portfolio.md` 11-24/25; the Standard-not-Base rule in key-files-and-honesty.md; session entry 11-25.
+- Revert: `git revert` the code commit.
+
 ### 2026-11-25 ~5:22 PM PT · 🗄 APPLIED (`20261126011522`) + 🔧 SHIPPED (code) — trade room: a submitted swap is recorded the moment it is sent, so a room whose tab closed can still be sealed from the chain (Claude Code cloud; Trevor: "work through everything you can in this thread")
 
 - **Why.** This was trading.md Open 6 item 1, the last open item from the 11-24 security review. A room only learned its tx id at the client's `sealed` call, after the seal was read. A tab closed in between left it `signing` forever: cancel refused, and unsealable with no id. The SealUnconfirmed message also pointed at a "Check the chain" button that is not rendered on a signing room.
