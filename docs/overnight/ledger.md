@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:15 PM PT · 🗄 APPLIED (`20261126035731`) — Sentinel "Zero-Yield Lanes" WARN cleared: an orphaned repair job paused (lane budget −1), one correct zero recorded (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- `rpc-head-sweep-cursor-unlatch` (`29 * * * *`) resets only the Golazos pack-sales, Golazos pack-opens and Pinnacle pack-opens cursors. Their three Studio lanes were paused 11-18 (`20261119080000`), and the three cursors have not moved since 11-17, so the job could never find work. It is now paused the same way (`active := false`, command kept), its Pipeline Silence watch is off, and it has a RETIRED zero-yield row. **Lane budget: −1 job, none added.**
+- `atlas-rearm-minted-dists` is a CORRECT ZERO. Independent count: 39 Top Shot distributions minted packs in 30 days, 0 of them at `total_pack_count` 0, 0 missing from `topshot_atlas_dists`. It now has a suppression row with its re-check condition.
+- After apply: `check_zero_yield_lanes()` offenders `[]`.
+- Revert: in the migration header (re-activate the job and watch row, delete the two suppression rows).
+
 ### 2026-11-25 ~8:00 PM PT · 🔧 SHIPPED (code) — Concierge `explain_fmv` stops calling the lowest past sale "the floor" (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Found by an FMV spot-check (14-day sale median vs HIGH/MEDIUM FMV; Top Shot 98.2 % / 91.4 % within ±25 %, All Day 94.0 % / 82.8 %, so no pricing defect). Shaedon Sharpe `91:3100`: FMV $2.90 = the confirmed live ask, but its snapshot `floor_price_usd` is $1.00. That field is the LOWEST SALE in the pricing window on every sales-priced row (fmv-recalc `Math.min(...prices)`); only ASK_ONLY rows carry an ask. The concierge said "Floor price is $1.00": a past $1 offer fill stated as a buy-now price.
