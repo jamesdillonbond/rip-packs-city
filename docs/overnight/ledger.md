@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~12:55 PM PT · 🔧 FIX (CI) — `main` red since the Panini `?property=` ship on ONE job: component statement coverage 90.84 % vs the 90.85 % ratchet; two tests added (chat session; Trevor: "Keep going")
+
+- First red on `0736ad9` (another session's ship; every later CI run inherited it, incl. the offer-pull commits). Added to `__tests__/panini-scope.test.tsx`: storage that throws on read is no scope and the control still renders (`readAsk`'s catch); a tab with rows for one league shows no control until a league is chosen. Local full component run: 420 files / 5,287 tests, 90.85 % before the second test. ⚠ The margin is one or two statements — the next untested component line reds it again.
+- **Revert:** `git revert` the commit (message "panini scope: two tests").
+
 ### 2026-11-26 ~12:30 PM PT · 🔧 SHIPPED — **Candy's leagues and brands: brand code read from each collection's own metadata, "What Candy covers" on the overview, a page per league / brand (`/candy-mlb/property/<slug>`)** (Cowork cloud; Trevor: "Do it all")
 
 - **What:** every Candy collection's official metadata document (arweave.net) carries the publisher's brand code in `symbol`. New pg_net lane `candy_collections_brand_step()` (pg_cron `rpc-candy-collection-brand`, :54 hourly) reads it into `candy_collections.brand_symbol`; 400 of 401 collections now carry one (the 401st, "2026 MLB All-Star Game ICONs", has no symbol in its document and is placed by the "MLB" in its own name). 9 Candy rows in `publisher_properties` (MLB, NASCAR, Sweet Futures, WWE; DC, Netflix, Getty Images, Palm Garden, Sex Pistols); `candy_collections.property_slug` + `program` kept by trigger. Two collections (MCNY Commemorative Tickets, Bank of America — 0 cards) stay unplaced and are counted as such, not guessed.
