@@ -16,14 +16,14 @@
 --      pulled no lower than half ($125 with $40 -> $62.50, was $53.18). From half up nothing changed, any tier
 --      ($60 with $40 -> $44.27).
 --   9. (2026-11-26 afternoon) the Legendary / Ultimate skip also holds on an ASK_ONLY price while the edition has
---      a market sale inside 365 days ($125 with a $40 offer stays $125, untagged) -- the engine re-labels a listed
---      edition ASK_ONLY 30 days after its last sale and the skip used to lapse there. Last sale older than 365
---      days, or never sold: still pulled ($53.18).
+--      a market sale inside 180 days ($125 with a $40 offer stays $125, untagged) -- the engine re-labels a listed
+--      edition ASK_ONLY 30 days after its last sale and the skip used to lapse there. Last sale older than 180
+--      days, or never sold: still pulled ($53.18). (Shipped as 365 days at 2:10 PM, narrowed to 180 at ~3:20 PM.)
 --   8. (2026-11-26) every price the pull step acted on or skipped leaves one public.fmv_offer_pull_log row with
 --      the PRE-pull price, the offer and the outcome ('pulled' | 'floored' | 'skipped'); a price the step never
 --      considered leaves none; and a log write that fails does not fail the price.
 -- The function DDL is VERBATIM from
--- supabase/migrations/20261126221042_audit_20261126_topshot_offer_pull_legendary_skip_covers_ask_only.sql;
+-- supabase/migrations/20261126231111_audit_20261126_topshot_offer_pull_legendary_ask_only_skip_180d.sql;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
@@ -79,9 +79,11 @@ begin
     -- (holders accepted 0.7 % of such offers), and (b) every other tier is never pulled below half the price
     -- (median sale with a 25-40 % bid = 0.51 of the price). ASK_ONLY unchanged.
     -- 2026-11-26 (afternoon, Trevor: "we need to fix that"): the Legendary / Ultimate skip also covers an
-    -- ASK_ONLY price while the edition has a market sale inside 365 days. The engine re-labels a listed
+    -- ASK_ONLY price while the edition has a market sale inside 180 days. The engine re-labels a listed
     -- edition ASK_ONLY 30 days after its last sale, so the skip used to lapse on day 30 and the price fell
     -- back to the offer (Clingan Rookie Revelation: $96 -> $37 with no new sale and no new offer).
+    -- The window is 180 days (first shipped as 365; narrowed the same afternoon, Trevor's choice): unpulled prices
+    -- scored 3 % within +/-25 % of the next sale vs 45 % pulled when the last sale was 181-365 days old (n 33).
     if v_bid is not null and v_bid > 0 and v_bid < new.fmv_usd
        and v_bid >= (case when new.confidence = 'LOW' then 0.25 else 0.10 end) * new.fmv_usd then
       v_pre := new.fmv_usd;
@@ -90,7 +92,7 @@ begin
          and (new.confidence = 'LOW'
               or exists (select 1 from public.sales_market s
                           where s.edition_id = new.edition_id
-                            and s.sold_at > now() - interval '365 days'))
+                            and s.sold_at > now() - interval '180 days'))
       then
         v_outcome := 'skipped';
       else
@@ -196,7 +198,7 @@ INSERT INTO public.offers VALUES
 
 INSERT INTO public.editions VALUES
   ('b0000000-0000-0000-0000-0000000000c1', 'LEGENDARY'), ('b0000000-0000-0000-0000-0000000000c2', 'ULTIMATE');
-INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-0000000000c1', now() - interval '400 days');
+INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-0000000000c1', now() - interval '200 days');
 INSERT INTO public.offers VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-0000000000c1', 40.00, 'open', 'edition', NULL),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-0000000000c2', 40.00, 'open', 'edition', NULL);
@@ -271,12 +273,12 @@ BEGIN
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000e';
   PERFORM _assert_eq(r.fmv_usd::text, '44.27', 'above half the floor changes nothing for another tier');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
-  -- case 9: bd sold inside 365 days; c1 last sold 400 days ago; c2 never sold (no estimate).
+  -- case 9: bd sold inside 180 days; c1 last sold 200 days ago; c2 never sold (no estimate).
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000d';
-  PERFORM _assert_eq(r.fmv_usd::text, '125', 'a Legendary ASK-ONLY price with a sale inside 365 days ignores an offer under half of it (the day-30 relabel)');
+  PERFORM _assert_eq(r.fmv_usd::text, '125', 'a Legendary ASK-ONLY price with a sale inside 180 days ignores an offer under half of it (the day-30 relabel)');
   PERFORM _assert_eq(r.algo_version, 'x', 'and is not tagged _bidpull');
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-0000000000c1';
-  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price whose last sale is over 365 days old is still pulled');
+  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price whose last sale is over 180 days old is still pulled');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-0000000000c2';
   PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price that has never sold is still pulled');
