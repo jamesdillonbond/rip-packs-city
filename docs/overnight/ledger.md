@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~8:25 AM PT · ✅ VERIFIED — Saved Wallets + Panini-in-FMV thread closed; weekly-email Panini check scheduled for 11-30 (Cowork cloud; docs only)
+
+- Live checks green (smoke suites on every main commit, zero client errors after the deploys, profile = dashboard). One-shot scheduled task "RPC: verify weekly email carries Panini cards (11-30)" at Mon 11-30 9:47 AM PT verifies the first real weekly send with the Panini block. Docs: wallet-and-portfolio.md verified/pending line, sessions entry.
+- Revert: docs only — `git revert` this commit.
+
 ### 2026-11-26 ~8:04 AM PT · 🔧 SHIPPED (code) — slab usage beacons carry the page path (Claude Code cloud; Trevor: "Keep going")
 
 - Verified live 8:00 AM PT: `moment-slab-flipped` (via button) and `moment-slab-back-seen` landed in `usage_events` with has_game / has_season true (QA in Trevor's signed-in Chrome — an internal account, excluded from counts). They carried sid but no path, so reach per page view could not be read; `metadata.path` added (page views already carry it).
