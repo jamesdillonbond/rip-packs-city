@@ -166,16 +166,28 @@ describe("readPaniniProductTopPlayers", () => {
 describe("PaniniProductMarketCapTile (2026-11-23)", () => {
   const cap = {
     editions: 5362, editions_with_cap_row: 5361, editions_supply_known: 5361, editions_priced: 5289,
-    minted: 276186, burned: 11634, issuer_held: 27948, collector_held: 236604,
+    minted: 276186, minted_supply_known: 276180, burned: 11634, issuer_held: 27948, collector_held: 236604,
     mcap_usd: 5042419.63, mcap_minted_usd: 5690436.79, refreshed_at: "2026-11-24T02:41:00Z", stale: null,
   }
   it("shows the cap, says how many editions it leaves out, and claims no rank", () => {
     const c = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap }} />).container
     const tile = c.querySelector('[data-testid="panini-product-mcap"]')?.textContent ?? ""
     expect(tile).toContain("$5.04M")
-    expect(tile).toContain("of 276,186 minted")
+    // 2026-11-25 re-pin: collector-held is set against the minted supply of the SAME supply-known editions
+    expect(tile).toContain("of 276,180 minted on the 5,361 editions with a known split")
     expect(c.querySelector('[data-testid="panini-product-mcap-note"]')?.textContent).toContain("73 of 5,362 editions have no price yet")
     expect(tile).not.toMatch(/Rank|#\d/)
+  })
+  it("⚠ collector-held is never set against EVERY edition's minted supply (two populations understate the ratio)", () => {
+    const partial = { ...cap, minted: 300000, minted_supply_known: 250000, editions_supply_known: 4000 }
+    const t = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap: partial }} />).container.querySelector('[data-testid="panini-product-mcap"]')?.textContent ?? ""
+    expect(t).toContain("of 250,000 minted on the 4,000 editions with a known split")
+    expect(t).not.toContain("300,000 minted")
+    cleanup()
+    const full = { ...cap, editions_supply_known: cap.editions, minted_supply_known: cap.minted }
+    const f = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap: full }} />).container.querySelector('[data-testid="panini-product-mcap"]')?.textContent ?? ""
+    expect(f).toContain("of 276,186 minted")
+    expect(f).not.toContain("editions with a known split")
   })
   it("an unknown cap is Unknown, never $0; a failed read says so; no row hides the tile", () => {
     const u = render(<PaniniProductBody collection="panini-blockchain" collectionLabel="Panini" product={P} packs={PACKS} marketCap={{ ok: true, cap: { ...cap, mcap_usd: null, editions_priced: 0 } }} />).container

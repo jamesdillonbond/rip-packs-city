@@ -174,6 +174,8 @@ export interface PaniniProductMarketCap {
   editions_supply_known: number
   editions_priced: number
   minted: number | null
+  /** 2026-11-25: minted over the SAME supply-known editions collector_held covers — the only honest denominator for it. */
+  minted_supply_known: number | null
   burned: number | null
   issuer_held: number | null
   collector_held: number | null
@@ -206,6 +208,7 @@ export async function readPaniniProductMarketCap(slug: string, db: any = supabas
         editions_supply_known: num(r.editions_supply_known) ?? 0,
         editions_priced: num(r.editions_priced) ?? 0,
         minted: num(r.minted),
+        minted_supply_known: num(r.minted_supply_known),
         burned: num(r.burned),
         issuer_held: num(r.issuer_held),
         collector_held: num(r.collector_held),

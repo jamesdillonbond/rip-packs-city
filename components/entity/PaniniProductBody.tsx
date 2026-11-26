@@ -283,7 +283,17 @@ export function PaniniProductMarketCapTile({ res }: { res: { ok: boolean; cap: P
         <StatCell
           label="Collector-held"
           value={c.editions_supply_known === 0 || c.collector_held == null ? "—" : fmtCount(c.collector_held)}
-          sub={c.editions_supply_known === 0 ? "holder split not known yet" : c.minted != null ? `of ${fmtCount(c.minted)} minted` : undefined}
+          // 2026-11-25: collector_held covers only editions with a known split, so its "of N minted" is the minted
+          // supply of THOSE editions (minted_supply_known), never every edition's — two populations understated it.
+          sub={
+            c.editions_supply_known === 0
+              ? "holder split not known yet"
+              : c.minted_supply_known != null
+                ? partialSupply
+                  ? `of ${fmtCount(c.minted_supply_known)} minted on the ${fmtCount(c.editions_supply_known)} editions with a known split`
+                  : `of ${fmtCount(c.minted_supply_known)} minted`
+                : undefined
+          }
         />
         <StatCell label="Burned" value={c.burned != null ? fmtCount(c.burned) : "—"} sub={c.issuer_held != null ? `${fmtCount(c.issuer_held)} still with Panini` : undefined} />
       </div>
