@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~2:21 PM PT · 🔧 SHIPPED — **Below-FMV board: a League row for Panini and Candy (`?property=`); Candy Binder shows the wallet's cards by league or brand** (Cowork cloud; Trevor: "Keep going and do it all")
+
+- **Below FMV (`/insights/deals`):** picking Panini or Candy shows a second pill row (All · FIFA World Cup · NBA … / MLB · DC …). The API takes `property=<slug>` with `collection=panini_blockchain|candy_mlb`: Panini is narrowed at the source by product-id prefix and re-checked exactly; Candy's leg is read whole (clamp-checked) and narrowed by the brand's collection names. Unknown or misplaced slug → 400; failed lookup or a filled Candy window → the board's unavailable response. A failed chip read leaves the row out and the board unfiltered.
+- **Candy Binder:** a "By league or brand" strip (MLB 106,482 · DC 16,856 …) linking each brand page, from `/api/league-split`. It is information, not a filter: the Binder's paged read is `get_wallet_moments_with_fmv`, one RPC shared by every collection, and was not changed.
+- **Not built, by design:** a brand filter on Candy's Sets and Packs tabs — both are single-brand today (Sets tracks the 2026 MLB Base Series; Packs is Candy's one sealed pack product), so a filter would have one option.
+- **Revert:** `git revert` the code commit (find by message "insights: league row on the Below-FMV board"). No DB change.
+
 ### 2026-11-26 ~2:10 PM PT · 🗄 APPLIED (`20261126221042` + `20261126221106`) — **a Legendary / Ultimate price no longer falls back to a low offer 30 days after its last sale** (chat session; Trevor: "No we need to fix that")
 
 - **Rule:** the noon skip (a Legendary / Ultimate ignores an open offer under half the price) now also applies to an ask-based (ASK_ONLY) price while the edition has a market sale inside 365 days. The engine re-labels a listed edition ASK_ONLY 30 days after its last sale, so the skip used to lapse there (Clingan Rookie Revelation would have gone ~$96 → ~$37 around 11-28). Older than 365 days, never sold, and every other tier: unchanged.
