@@ -1290,6 +1290,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // 2026-11-26: a Panini username's / Solana wallet's cards by league or brand — the same public holdings
     // the Binder tabs show, grouped. GET-only, no session.
     "/api/league-split",
+    // 2026-11-26: a Solana wallet's progress across every Candy collection it holds (the Candy Sets tab's
+    // second panel) — the same public holdings the Binder shows. GET-only, no session.
+    "/api/candy-collections-progress",
     // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
     // the same public listing data Panini's marketplace shows) — same commit.
     "/api/panini-collection",

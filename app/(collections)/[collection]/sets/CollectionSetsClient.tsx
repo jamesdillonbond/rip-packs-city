@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { isValidAddressForChain } from "@/lib/address";
+import CandyCollectionsProgress from "@/components/collection/CandyCollectionsProgress";
 import { getCollection } from "@/lib/collections";
 import { filterAndSortSets, tierStripeColor, computeSetSummary } from "@/lib/sets/display";
 import { getOwnerKey, getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key";
@@ -704,6 +706,8 @@ export default function CollectionSetsClient({ collection }: { collection: strin
         </div>
         );
       })()}
+      {/* 2026-11-26: Candy is nine brands — every collection this wallet holds, beyond the Base Series tracker. */}
+      {isCandy && wallet && isValidAddressForChain(wallet, "solana") ? <CandyCollectionsProgress wallet={wallet} collection={collectionSlug} /> : null}
     </div>
   );
 }
