@@ -13,6 +13,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:34 PM PT · 🗄 APPLIED (`20261126012426`, `20261126012723`) + 🔧 SHIPPED (code) — the last two deferred 11-24 review findings: Panini product market-cap coverage honest; pack-identity targeted enqueue no longer guesses the collection (Claude Code cloud; Trevor: "work through everything you can in this thread")
+
+- **`get_panini_product_market_cap`** (review of c8accc6ef).
+  - The product tile read "collector-held of <every edition's minted> minted": two populations. A new key, `minted_supply_known`, is minted over the same supply-known editions, and the tile now says "of N minted on the K editions with a known split" when coverage is partial.
+  - `refreshed_at` is now `min(computed_at)` (min-of-max rule), so the staleness note fires when ANY row is stale.
+  - Measured latent: all 76 products' rows refresh together (spread 0 s) and none has partial supply today, so no shown value changes.
+  - Base md5 asserted; ACL unchanged. Tests re-pinned plus a new "never every edition's minted" case; a planted defect turns 2 red.
+- **`dispatch_pack_nft_identity`** (review finding 5). The targeted path's `LIMIT 1` collection guess across Top Shot and All Day is now one queue row per (collection, id) that the pack's own rip/purchase rows prove.
+  - Measured latent: 0 shared ids (398,395 TS vs 2,901 AD purchase ids).
+  - Old vs new on 30 recent ids: 30 = 30, 0 rows differ either way.
+  - Base md5 `73425dd9…` asserted. The rest of the body, SECURITY DEFINER and ACL are unchanged.
+- **Checks.** `npm run preflight`: 7 steps, 0 failed.
+- **Revert.** `git revert` this commit, then re-apply each function's previous migration (20261124033821; 20261119050000).
+
 ### 2026-11-25 ~6:05 PM PT · 🗄 APPLIED (`20261126011047`, `20261126011310`, `20261126011937`) + 🔧 SHIPPED (code) — 297 NFL All Day placeholder editions get their real game from All Day's own record; the on-chain builders stop writing placeholder games (Claude Code cloud; Trevor: "Keep digging and probing to try and figure it out" → "Keep going and work through everything you can in this thread, leaving nothing left unresolved")
 
 - Cause: Dapper mints some All Day plays BEFORE the play exists; the chain keeps a placeholder forever (2025: "…will have a key play added during the upcoming 2025-26 season…", gameDate = opener / draft day, home = away = player's team; 2024 Rookie Debut/Marquee: "…a play will be added…", "Invalid date", "Patriots vs Colts" for every player). The real play lives only on `nflallday.com/edition/<id>` (server-rendered metadata), read from Trevor's Chrome — our servers are WAF-blocked.
