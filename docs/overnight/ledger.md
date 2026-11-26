@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 3:20 PM PT · /ufc/analytics Order Book Depth reads the live Aptos book
+- The card said "No live listings." because `analytics_listings_summary` reads Flow listings only, while about 465 Aptos asks were live on Rarible.
+- `/api/analytics/listings/summary?collections=ufc` now replaces the UFC row with the Aptos book. The source is the same as `/ufc/sniper`: `lib/analytics/ufc-aptos-book.ts` builds count, median and p90 from `computeUfcAptosSniperFeed`.
+- A failed Aptos read is a 500, which the card shows as "couldn't load". The card now names the book as Aptos/Rarible.
+- Other collections and unscoped calls are untouched; the route never reads Aptos for them.
+- A planted defect reds `__tests__/ufc-aptos-order-book.test.ts`.
+- Revert: `git revert <this commit>` (code only).
+
 ### 2026-11-26 ~3:11 PM PT · 🗄 APPLIED (`20261126231111` + `20261126231112`) — **the Legendary ask-based skip window is 180 days, not 365** (chat session; Trevor chose 180 after the backtest)
 
 - **What changed:** the 2:10 PM rule (a Legendary / Ultimate ask-based price ignores an open offer under half of it while the edition has a recent sale) keeps its fix for the day-30 drop, but "recent" is now 180 days. I had picked 365 without a backtest; the read (Legendary / Ultimate sales 09-08 → 11-26, offer under half standing, within ±25 % of the sale, pulled vs not pulled): 31–90 d 39.5 vs 18.4 (n 76) · 91–180 d 39.7 vs 23.8 (n 63) · 181–365 d 45.5 vs 3.0 (n 33, unpulled ~2.7× the sale).
