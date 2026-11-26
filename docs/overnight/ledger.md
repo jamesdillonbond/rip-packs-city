@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:05 AM PT · 📄 docs — Cowork-owned items closed: dated checks scheduled, cron-job.org review found nothing to re-enable (Cowork; Trevor: "work through everything you can in this thread")
+
+- **Scheduled tasks (standalone cloud tasks, Supabase + Vercel attached):** `trig_0137N4o42ZG5rUKfYcQDjC3G` Fri 11-27 10:23 AM PT covers the 11-26 pricing-pass checks, the 11-26 overnight-fixes verification (8:30 AM steer) and the twin-retire lane; `trig_01J1oKJWRPi8uNEAwKju3ZJL` Wed 12-02 1:19 PM PT is the pull-backlog / recent-rips EV / hot-lane close-out. The overnight verification will close the bullet, so the connectorless `trig_01LPQL6QwYdKwBz5m15MR7oj` stands down.
+- **cron-job.org review (focus.md 11-26 8:30 AM steer):** console read in Claude in Chrome (titles + last run only): 77 entries, 12 inactive, 0 failed last runs. All 12 are deliberate: the 10 listed 11-06 plus Buyers Historical (7866110, paused 11-23 by Trevor) and Seed Topshot Pack Distribution (410 tombstone since 11-19). Nothing re-enabled. `docs/operations/cron-schedule.md` updated.
+- **Also checked:** the `ingest-topshot-challenges` stale suppression is gone, and the split-player merge was applied 11-23.
+- **Revert:** docs only; to cancel a check, disable its scheduled task in claude.ai.
+
 ### 2026-11-26 ~11:40 AM PT · 🔧 SHIPPED (UI) — /ufc/sniper still empty: the default-on "Deals after fees" gate hid all 465 Aptos asks; asks-board rows skip it too (Claude Code cloud; follow-up to ~11:20 AM)
 - Rendered DOM after the 11:20 fix read "465 listings are hidden by the Deals after fees filter … Those listings sit below FMV" — false for an asks board. `filterSniperDeals` now exempts `isAsksBoardRow` rows from that gate as well (planted defect reds the pin).
 - **Revert:** `git revert <this commit>`.
