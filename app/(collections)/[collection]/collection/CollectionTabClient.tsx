@@ -1766,8 +1766,9 @@ function WalletMomentsBody() {
             above speaks then, and a failed read is never "0 moments". */}
         {hasSearched && !loading && !error ? (
           <div role="status" aria-live="polite" className="sr-only" data-testid="binder-result-status">
-            {rows.length > 0
-              ? `Loaded ${rows.length.toLocaleString("en-US")}${paginatedTotal > rows.length ? ` of ${paginatedTotal.toLocaleString("en-US")}` : ""} moment${(paginatedTotal > rows.length ? paginatedTotal : rows.length) === 1 ? "" : "s"}`
+            {/* allRows: a UFC wallet whose Moments are all on Aptos is not "no moments" (2026-11-26). */}
+            {allRows.length > 0
+              ? `Loaded ${allRows.length.toLocaleString("en-US")}${paginatedTotal > rows.length ? ` of ${(paginatedTotal + allRows.length - rows.length).toLocaleString("en-US")}` : ""} moment${(paginatedTotal > rows.length ? paginatedTotal : allRows.length) === 1 ? "" : "s"}`
               : "Search finished — no moments to show for this wallet"}
           </div>
         ) : null}
