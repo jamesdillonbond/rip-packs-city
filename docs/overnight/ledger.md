@@ -13,6 +13,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:10 AM PT · 📝 verify — the 16 re-queued ESPN identities stay unlinked; GitHub shed the 10:23 AM player-stats-sync, dispatched by hand (Claude Code cloud, scheduled check)
+
+- **Schedule:** `player-stats-sync.yml` (`23 */6`) had no 10:23 AM PT run. GitHub shed it, as with the other skipped slots (only 12:36 AM and 1:49 PM ran yesterday). Dispatched via the REST API, run 45880604261, success in ~4 min:
+  - nfl 297 ok / 1 HTTP 500
+  - nba 295 ok
+  - mlb 100 ok
+- **The 16 (`20261126150542`):** all re-resolved, and none linked to anyone:
+  - 13 `unresolved:athlete-missing` (ESPN's only hits are ids whose NBA athlete page 404s)
+  - 2 `unresolved:none` (Michael Cage, Tim Thomas)
+  - 1 `unresolved:ambiguous:2` (Michael Cooper)
+- Their slab backs show no season line, rather than another person's. No further action.
+
 ### 2026-11-26 ~11:05 AM PT · 📄 docs — Cowork-owned items closed: dated checks scheduled, cron-job.org review found nothing to re-enable (Cowork; Trevor: "work through everything you can in this thread")
 
 - **Scheduled tasks (standalone cloud tasks, Supabase + Vercel attached):** `trig_0137N4o42ZG5rUKfYcQDjC3G` Fri 11-27 10:23 AM PT covers the 11-26 pricing-pass checks, the 11-26 overnight-fixes verification (8:30 AM steer) and the twin-retire lane; `trig_01J1oKJWRPi8uNEAwKju3ZJL` Wed 12-02 1:19 PM PT is the pull-backlog / recent-rips EV / hot-lane close-out. The overnight verification will close the bullet, so the connectorless `trig_01LPQL6QwYdKwBz5m15MR7oj` stands down.
