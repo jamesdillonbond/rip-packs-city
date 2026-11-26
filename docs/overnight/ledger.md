@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:53 AM PT · 🔧 SHIPPED (code) — Moment slab usage beacons: spun / flipped / back seen / tilt on / box score (Claude Code cloud; Trevor: "Keep going")
+
+- `components/InteractiveSlab.tsx` sends `moment-slab-spun` (≥ 20° of drag), `moment-slab-flipped` (`via` button | key), `moment-slab-back-seen`, `moment-slab-tilt-on`, `moment-slab-box-score` through `lib/telemetry/track` — each at most once per page view, only after the viewer acts, with `has_game` / `has_season`. Nothing is sent for an untouched page or with the slab off. Read: `docs/reference/schema-truth.md` (slab reach). Tests (planted defects: no once-guard, no spin threshold).
+- Also checked this morning: ESPN search returns only G League entries for the 13 dead-id players, so the 10:23 AM resolver run will leave them honestly unresolved (no stats) rather than re-take a bad id.
+- Revert: `git revert` the code commit (find by message "Moment slab usage beacons").
+
 ### 2026-11-26 ~7:47 AM PT · 🔧 SHIPPED (UI) — UFC edition pages drop the dead Flow "UFC ask" tile (Claude Code cloud; Trevor: "Keep going")
 
 - **Found in a rendered-DOM check** of /ufc/edition/GEOFF-NEAL-…-750 after the 7:20 AM ship. That ship is verified live: the banner reads "UFC Strike now trades on Aptos", sale rows show "Aptos · Rarible/Tradeport", the seller shows "UFC Strike store", there are 6 Aptos explorer links and 0 Aptos addresses linked into the Flow analyzer.
