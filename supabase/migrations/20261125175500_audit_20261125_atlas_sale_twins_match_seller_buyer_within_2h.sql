@@ -1,4 +1,5 @@
 -- audit_20261125_atlas_sale_twins_match_seller_buyer_within_2h
+-- ✅ APPLIED 2026-11-26 ~10:55 AM PT (recorded version 20261126185403) from Cowork: 231 twins found, 231 retired and archived, anon EXECUTE false.
 --
 -- Trevor 11-25 ("Yes do it all and update everything"), found checking the Wednesday rookie post.
 -- MEASURED 2026-11-25 ~9:50 AM PT: 231 Top Shot sales are stored twice, as an `atlas` row (no tx hash)
