@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:20 AM PT · ✅ SHIPPED — Saved Wallets tile FMV counts stale-priced Moments, so the tiles add up to Portfolio FMV (Cowork cloud; Trevor: "Keep going")
+
+- Live QA on Trevor's signed-in dashboard: tiles summed $60,587 against a $66,593 Portfolio FMV — the gap was exactly the stale-priced Moments the headline counts under the 11-22 one-number rule (TS $5,224.50 + AD $417.70 + UFC $364.11), and UFC Strike's tile read "—". Tile FMV is now fmv_total + fmv_stale_total + that collection's sealed packs. Test pins tiles = headline.
+- Also verified live: all 58 member wallets' pack caches carry the per-collection split; Panini tile, Pins/Cards labels, Unopened Packs and the Panini chart band render on production.
+- Revert: `git revert` the commit titled "Saved Wallets tile FMV counts stale-priced Moments".
+
 ### 2026-11-26 ~6:05 AM PT · 🗄 DATA — `golazos_offers` cursor-stall suppression re-bounded 90 d after it lapsed at 3:09 AM PT (Claude Code cloud, autonomous overnight)
 - **Found:** `rpc_ops_snapshot().pipeline_alerts` carried a HIGH `cursor_stalled` row for `golazos_offers` ("updated 3 mons 29 days ago at block 159452130") from 3:09 AM PT, the moment the 08-28 90-day suppression expired.
 - **Predicate re-derived live (not copied):** (1) `event_cursor('golazos_offers')` still frozen at the 2026-07-27 seeding tick, block 159452130; (2) 0 `pipeline_runs` rows matching `%golazos%offer%` over the retention window (floor 11-23 4:41 AM PT); 0 pg_cron jobs; no reference in `vercel.json` or `.github/` (only the unscheduled route `app/api/golazos-offers-indexer/route.ts`); live sibling cursors `topshot_offers` / `allday_offers` updated within 30 min.
