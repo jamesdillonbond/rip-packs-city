@@ -4,6 +4,7 @@
 // Phase 1B. Recent-sales table with "Load 30 more" client-side pagination.
 
 import { useMemo, useState } from "react"
+import { aptosWalletDisplay, aptosSaleVenue } from "@/lib/ufc-aptos"
 import { sectionEmptyCopy, sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
@@ -71,6 +72,17 @@ const TD: React.CSSProperties = {
 
 function WalletCell({ address, name, collectionUrlSlug }: { address: string | null; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
+  // UFC Strike on Aptos (2026-11-25): a 64-hex Aptos account never goes to the Flow wallet analyzer
+  // below — that page reads Flow wallets and cannot describe this collector. Aptos explorer instead;
+  // UFC's own store / issuer wallets are named (lib/ufc-aptos.ts).
+  const aptos = aptosWalletDisplay(address, name)
+  if (aptos) {
+    return (
+      <a href={aptos.href} target="_blank" rel="nofollow noopener noreferrer" title={aptos.title} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+        {aptos.label}
+      </a>
+    )
+  }
   // ⛔ 2026-09-19 — the fold-and-prefix fabrication, and this copy feeds the
   // HREF as well as the title. On a Candy MLB edition page a Solana mint was
   // lowercased (it is CASE-SENSITIVE) and given a Flow prefix, so every
@@ -216,6 +228,20 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                         textTransform: "uppercase",
                         verticalAlign: "middle",
                       }}>buyback</span>
+                    )}
+                    {aptosSaleVenue(s.source, s.marketplace) && (
+                      <span title="Sold on the Aptos blockchain (UFC Strike moved from Flow to Aptos)" style={{
+                        display: "inline-block",
+                        marginLeft: 6,
+                        padding: "1px 6px",
+                        borderRadius: 3,
+                        border: "1px solid var(--rpc-border)",
+                        color: "var(--rpc-text-secondary)",
+                        fontSize: 9,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        verticalAlign: "middle",
+                      }}>{aptosSaleVenue(s.source, s.marketplace)}</span>
                     )}
                   </td>
                   <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={collectionUrlSlug} /></td>

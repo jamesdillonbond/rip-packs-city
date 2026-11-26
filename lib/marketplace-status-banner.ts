@@ -16,9 +16,11 @@ export function bannerCopy(slug: string, status: string, notes: string | null): 
   if (status === "shutdown") {
     if (slug === "ufc") {
       return {
-        title: "UFC Strike has no active Flow marketplace",
+        title: "UFC Strike now trades on Aptos",
+        // 2026-11-25: was "Everything below is historical Flow data" — no longer true once edition pages
+        // carried Aptos sales (aptos_indexer_v1) and the live Rarible ask ("Lowest ask · Aptos").
         body:
-          "UFC Strike moved to the Aptos blockchain; Flow trading closed in May 2026. Everything below is historical Flow data — buy flows are disabled on Flow.",
+          "UFC Strike moved to the Aptos blockchain; Flow trading closed in May 2026. Sales and asks marked Aptos are from Rarible on Aptos; older sales are historical Flow data. RPC prices are paused for UFC until the Aptos market is fully tracked.",
         accent: "var(--rpc-red)",
         background: "rgba(224,58,47,0.08)",
         border: "rgba(224,58,47,0.35)",

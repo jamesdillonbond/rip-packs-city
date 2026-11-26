@@ -21,3 +21,52 @@ const UFC_SLUGS = new Set(["ufc", "ufc-strike"])
 export function isUfcAptosBinder(collectionSlug: string | null | undefined): boolean {
   return !!collectionSlug && UFC_SLUGS.has(collectionSlug)
 }
+
+// ── Aptos wallets and venues on sales rows (2026-11-25) ──────────────────────────────────────
+//
+// UFC sales ingested from Aptos (sales.source = 'aptos_indexer_v1') carry 64-hex Aptos account
+// addresses. The sales tables linked every buyer/seller into RPC's wallet analyzer,
+// /<collection>/collection?wallet=<addr>, which reads FLOW wallets — an Aptos address there is
+// a link to a wallet page that cannot describe that collector. Aptos addresses go to the Aptos
+// explorer instead, and UFC's own two wallets are named (78 % of UFC's single Rarible listings
+// on 2026-11-15 came from the store wallet).
+
+const APTOS_ACCOUNT_RE = /^0x[0-9a-fA-F]{64}$/
+
+/** A full-length Aptos account address (0x + 64 hex). Flow (16 hex) and EVM (40 hex) never match. */
+export function isAptosAccountAddress(value: string | null | undefined): boolean {
+  return !!value && APTOS_ACCOUNT_RE.test(value.trim())
+}
+
+/** UFC Strike's own Aptos wallets, by lowercase address. */
+export const UFC_APTOS_KNOWN_WALLETS: Readonly<Record<string, string>> = {
+  "0x8a94446716e60160571b930bd1097b31c7788decbe4d375802bebfc79d928e7f": "UFC Strike store",
+  "0x80f686c7bba12a0fce839ff160cb69774715497288996b861528727ccd256cdb": "UFC Strike",
+}
+
+/**
+ * Display for an Aptos address in a buyer/seller cell, or null when the address is not Aptos
+ * (the caller keeps its own Flow/EVM/Solana path untouched).
+ */
+export function aptosWalletDisplay(
+  address: string | null | undefined,
+  name?: string | null,
+): { label: string; href: string; title: string } | null {
+  if (!address || !isAptosAccountAddress(address)) return null
+  const a = address.trim().toLowerCase()
+  const known = UFC_APTOS_KNOWN_WALLETS[a]
+  const label = known ?? (name ? `@${name}` : `${a.slice(0, 6)}…${a.slice(-4)}`)
+  return {
+    label,
+    href: `https://explorer.aptoslabs.com/account/${a}?network=mainnet`,
+    title: `${known ? `${known} · ` : ""}${a} (Aptos)`,
+  }
+}
+
+/** "Aptos · Rarible" for a sale ingested from Aptos; null for every other sale. */
+export function aptosSaleVenue(source: string | null | undefined, marketplace: string | null | undefined): string | null {
+  if (source !== "aptos_indexer_v1") return null
+  const m = (marketplace ?? "").toLowerCase()
+  const venue = m === "rarible" ? "Rarible" : m === "tradeport" ? "Tradeport" : null
+  return venue ? `Aptos · ${venue}` : "Aptos"
+}
