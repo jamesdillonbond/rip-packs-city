@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 12:48 PM PT · UFC Aptos listings lane armed in pipeline_cadence_watchlist
+- `ufc-aptos-listings` (feeds /ufc/sniper and concierge UFC floors) now has a watchlist row: silence 2160 min, no-success 4320 min (the sniper's 3-day re-check window), severity info. Before this, the lane could have stopped and the board would have emptied with no alert, because the auto-arm job waits for 12 days of runs. Migration `20261126204840_audit_20261126_watchlist_ufc_aptos_listings`. The other ufc-aptos lanes reach 12 days around 11-27 or 11-28 and will be auto-armed by jobid 675.
+- Revert: `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'ufc-aptos-listings';`
+
 ### 2026-11-26 ~12:50 PM PT · 📝 docs + 🔧 concierge copy — UFC session recorded; pin-stubs-callee lesson promoted; concierge knows the binder takes an Aptos wallet and Moment pages carry a Flow / Aptos tag (Claude Code cloud; Trevor: "Keep going and doing what you can")
 - `docs/sessions/2026-11.md` (UFC entry), `docs/reference/testing-and-ci.md` (a pin that stubs a callee cannot see its bugs; planted defect passing at the wrong gate), one sentence of the concierge system prompt.
 - **Revert:** `git revert <this commit>`.
