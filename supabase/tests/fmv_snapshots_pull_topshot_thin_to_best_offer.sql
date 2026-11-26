@@ -11,8 +11,12 @@
 --   6. (2026-11-13 night) a LOW (sales-based) price is pulled only by an offer ≥ 25 % of it: $125 with a $21 offer
 --      stays $125 (was $32.80); $125 with a $40 offer is pulled ($53.18); an ASK_ONLY $125 with a $21 offer is
 --      still pulled ($32.80) -- the ask-only band kept the pull on the backtest.
+--   7. (2026-11-26) on a LOW price an offer under HALF of it: a Legendary / Ultimate edition is not pulled at all
+--      ($125 with a $40 offer stays $125, untagged -- holders accepted 0.7 % of such offers); every other tier is
+--      pulled no lower than half ($125 with $40 -> $62.50, was $53.18). From half up nothing changed, any tier
+--      ($60 with $40 -> $44.27), and a Legendary ASK_ONLY price is still pulled ($125 with $40 -> $53.18).
 -- The function DDL is VERBATIM from
--- supabase/migrations/20261114132054_audit_20261113_topshot_offer_pull_needs_a_real_offer_on_a_sold_price.sql;
+-- supabase/migrations/20261126195919_audit_20261126_topshot_offer_pull_low_offer_floor_and_legendary_skip.sql;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
@@ -21,6 +25,7 @@ CREATE TABLE public.offers (
   collection_id uuid, edition_id uuid, offer_amount_usd numeric, status text, offer_type text, expires_at timestamptz
 );
 CREATE TABLE public.sales_market (edition_id uuid);
+CREATE TABLE public.editions (id uuid, tier text);
 CREATE TABLE public.fmv_comparable_estimates (
   edition_id uuid, baseline_kind text, n_set integer, est_usd numeric, computed_at timestamptz
 );
@@ -36,6 +41,7 @@ declare
   v_bid numeric;
   v_new numeric;
   v_est numeric;
+  v_tier text;
 begin
   if new.collection_id = c_topshot
      and new.confidence in ('ASK_ONLY', 'LOW')
@@ -54,12 +60,25 @@ begin
     -- 15-day windows: LOW with the bid under 25 % of the price, the pull scored within +/-25 % on 8.3 / 0.0 /
     -- 22.2 % of next sales vs 16.7 / 29.4 / 22.2 % unpulled, WAPE 71 / 75 / 61 vs 30 / 41 / 66 (n 38);
     -- ASK_ONLY in the same band the pull still cut WAPE in every window (81->67, 219->48, 181->60), so it stays.
+    -- 2026-11-26: on a LOW price, (a) a Legendary / Ultimate edition ignores an offer under half the price
+    -- (holders accepted 0.7 % of such offers), and (b) every other tier is never pulled below half the price
+    -- (median sale with a 25-40 % bid = 0.51 of the price). ASK_ONLY unchanged.
     if v_bid is not null and v_bid > 0 and v_bid < new.fmv_usd
        and v_bid >= (case when new.confidence = 'LOW' then 0.25 else 0.10 end) * new.fmv_usd then
-      v_new := greatest(round(power(new.fmv_usd, 0.25) * power(v_bid, 0.75), 2), round(v_bid, 2), 0.01);
-      if v_new < new.fmv_usd then
-        new.fmv_usd := v_new;
-        new.algo_version := coalesce(new.algo_version, '') || '_bidpull';
+      if new.confidence = 'LOW' then
+        select e.tier::text into v_tier from public.editions e where e.id = new.edition_id;
+      end if;
+      if new.confidence = 'LOW' and v_tier in ('LEGENDARY', 'ULTIMATE') and v_bid < 0.5 * new.fmv_usd then
+        null;
+      else
+        v_new := greatest(round(power(new.fmv_usd, 0.25) * power(v_bid, 0.75), 2), round(v_bid, 2), 0.01);
+        if new.confidence = 'LOW' then
+          v_new := greatest(v_new, round(0.5 * new.fmv_usd, 2));
+        end if;
+        if v_new < new.fmv_usd then
+          new.fmv_usd := v_new;
+          new.algo_version := coalesce(new.algo_version, '') || '_bidpull';
+        end if;
       end if;
     end if;
     -- (2) an ask-only price on an edition that has NEVER sold is held to its comparable estimate, never below the bid
@@ -120,7 +139,30 @@ INSERT INTO public.offers VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-000000000009', 40.00, 'open', 'subedition', NULL),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000a', 21.00, 'open', 'subedition', NULL);
 
+-- 2026-11-26 (case 7): b9 is a RARE; bb / bf Legendary / Ultimate with an offer under half; bc Legendary and be Rare
+-- with an offer over half; bd a Legendary ask-only price that has sold.
+INSERT INTO public.editions VALUES
+  ('b0000000-0000-0000-0000-000000000009', 'RARE'),
+  ('b0000000-0000-0000-0000-00000000000b', 'LEGENDARY'),
+  ('b0000000-0000-0000-0000-00000000000c', 'LEGENDARY'),
+  ('b0000000-0000-0000-0000-00000000000d', 'LEGENDARY'),
+  ('b0000000-0000-0000-0000-00000000000e', 'RARE'),
+  ('b0000000-0000-0000-0000-00000000000f', 'ULTIMATE');
+INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-00000000000b'), ('b0000000-0000-0000-0000-00000000000c'),
+  ('b0000000-0000-0000-0000-00000000000d'), ('b0000000-0000-0000-0000-00000000000e'), ('b0000000-0000-0000-0000-00000000000f');
+INSERT INTO public.offers VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000b', 40.00, 'open', 'edition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000c', 40.00, 'open', 'edition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000d', 40.00, 'open', 'edition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000e', 40.00, 'open', 'edition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000f', 40.00, 'open', 'edition', NULL);
+
 INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, fmv_usd, algo_version) VALUES
+  ('b0000000-0000-0000-0000-00000000000b', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
+  ('b0000000-0000-0000-0000-00000000000c', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 60, 'x'),
+  ('b0000000-0000-0000-0000-00000000000d', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 125, 'x'),
+  ('b0000000-0000-0000-0000-00000000000e', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 60, 'x'),
+  ('b0000000-0000-0000-0000-00000000000f', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
   ('b0000000-0000-0000-0000-000000000001', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 100, 'x'),
   ('b0000000-0000-0000-0000-000000000002', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x'),
   ('b0000000-0000-0000-0000-000000000003', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x'),
@@ -165,13 +207,29 @@ BEGIN
   PERFORM _assert_eq(r.fmv_usd::text, '125', 'a sales-based price is not dragged to an offer under 25 % of it (the Duncan ::23 case)');
   PERFORM _assert_eq(r.algo_version, 'x', 'and is not tagged _bidpull');
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-000000000009';
-  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a sales-based price IS pulled by an offer at 32 % of it');
+  PERFORM _assert_eq(r.fmv_usd::text, '62.50', 'a sales-based price IS pulled by an offer at 32 % of it, but no lower than half (2026-11-26; was 53.18)');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000a';
   PERFORM _assert_eq(r.fmv_usd::text, '32.80', 'an ask-only price is still pulled by an offer at 17 % of it');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
 
-  RAISE NOTICE '✓ fmv_snapshots_pull_topshot_thin_to_best_offer: a hold the offer stopped says so';
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000b';
+  PERFORM _assert_eq(r.fmv_usd::text, '125', 'a Legendary sales-based price ignores an offer under half of it (the Clingan Rookie Revelation case)');
+  PERFORM _assert_eq(r.algo_version, 'x', 'and is not tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000f';
+  PERFORM _assert_eq(r.fmv_usd::text, '125', 'an Ultimate one too');
+  PERFORM _assert_eq(r.algo_version, 'x', 'untagged');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000c';
+  PERFORM _assert_eq(r.fmv_usd::text, '44.27', 'a Legendary sales-based price IS pulled by an offer at 67 % of it');
+  PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000e';
+  PERFORM _assert_eq(r.fmv_usd::text, '44.27', 'above half the floor changes nothing for another tier');
+  PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000d';
+  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price is still pulled by an offer under half of it');
+  PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
+
+  RAISE NOTICE '✓ fmv_snapshots_pull_topshot_thin_to_best_offer: a hold the offer stopped says so; a low offer does not sink a sold price';
 END $$;
 
 ROLLBACK;
