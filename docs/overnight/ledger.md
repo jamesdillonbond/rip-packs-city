@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~8:29 AM PT · 🗄 APPLIED (`20261126161848`, `20261126162015`) + 🔧 code — team Moments' slab backs show the game's FINAL (Claude Code cloud; Trevor: "Keep going and working on this")
+
+- `get_moment_game_context`: when the subject is one of the edition's own two teams (All Day "One to Remember", confirmed on nflallday.com/edition/5951; Top Shot team / All-Star editions), the result is read from the stored lines whose opponent is the OTHER team on that date — those are the subject team's players, so the W/L and score are the subject's. Exactly one game or none. 162015 moves the player_id check below that branch (Top Shot's 139 team editions carry no player_id).
+- Measured after: All Day 158 / 262, Top Shot 57 / 139 team Moments have a final; ESPN's home/away agrees on all but two neutral sites (Super Bowl LVI, 2023 All-Star Game — results right). Live prosrc md5 = file body for both; anon EXECUTE false.
+- `lib/slab-stats.ts`: `TeamGame` → a "This game" block with one FINAL chip ("W 184-175"), opponent / Playoffs / date on the detail line, ESPN box score link; no result → nothing.
+- Pin `supabase/tests/get_moment_game_context.sql` (h): Chiefs ✓, Eagles side of the same game NULL (planted either-side read reds it), Top Shot team with NULL player_id (reds on the 161848 body), N/A opponent NULL. PIN → 162015.
+- Revert: re-apply `get_moment_game_context` from `20261126032613_audit_20261125_moment_game_context_description_city.sql`, repoint the PIN, drop pin (h); `git revert` the code commit (find by message "team Moments' slab backs").
+
 ### 2026-11-26 ~8:15 AM PT · 🗄 APPLIED (`20261126161804`) — two stale zero-yield suppressions retired (Claude Code cloud; Trevor: "Apply it")
 - **What:** `DELETE FROM pipeline_zero_yield_suppressions WHERE pipeline IN ('ufc-enrichment-drain', 'pack-pull-source-rip-id-backfill')` — the DELETE held since 11-25 ~8:30 PM PT (inbox `2026-11-26T0432Z`).
 - **Each row's own re-check condition, re-measured at apply:** `ufc-enrichment-drain` ("remove the day it writes any new run") 4 runs / 114 written in 72 h, last 3:48 AM PT; `pack-pull-source-rip-id-backfill` ("remove if examined > 0") 144 runs, examined 12,976, written 12,976, last 8:11 AM PT.
