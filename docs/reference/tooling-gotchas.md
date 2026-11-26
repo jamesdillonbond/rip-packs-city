@@ -1025,6 +1025,16 @@ walk `document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT)` and cal
 and the E2E DOM Smoke render visible pages and never see this, which is why CI stays green while a
 hidden-tab QA pass sees "everything broken". The surface-qa skill carries the same recipe.
 
+⚠ **2026-11-25 ~8:15 PM PT — `visibilityState == "visible"` is NOT enough.** A Claude-in-Chrome tab read
+`visible` AND `document.hasFocus() == true` yet fired no rAF for 3 s, so every `/moment/*` page sat on
+*SCANNING THE MARKETPLACE…* with 3 unswapped `B:` templates — a Top Shot page that had rendered 30 min
+earlier included — while a `fetch` of the same URL returned the full content in 464 ms. The tell was
+**`innerWidth == 0`**: the screenshot tool reported "zero size (0x0)", and a NEW tab from `tabs_create_mcp`
+can come up zero-size too. **Probe the harness itself, not a property:** `await Promise.race([new
+Promise(r=>requestAnimationFrame(()=>r(1))), new Promise(r=>setTimeout(()=>r(0),3000))])` — a `0`, or
+`innerWidth == 0`, voids the read. Then verify from the server HTML (`fetch` + search the RSC payload),
+not the DOM.
+
 ## Driving Chromium from a Claude Code web sandbox (2026-08-22)
 
 * Playwright's own browser build is **absent** — the repo pins a newer revision than `/opt/pw-browsers`
