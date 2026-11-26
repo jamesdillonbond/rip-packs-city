@@ -340,7 +340,7 @@ describe("dbChain registry invariant", () => {
     // (3) THE LABEL. The Candy row now reaches /analytics/listings too, and
     // resolveCollectionLabel falls back to the RAW SLUG.
     const { resolveCollectionLabel } = await import("@/lib/analytics-listings-compute")
-    expect(resolveCollectionLabel("candy_mlb")).toBe("Candy MLB")
+    expect(resolveCollectionLabel("candy_mlb")).toBe("Candy")
     expect(resolveCollectionLabel("topshot")).toBe("Top Shot")
   })
 

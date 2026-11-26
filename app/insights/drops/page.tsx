@@ -19,7 +19,7 @@ const SOURCE_NAMES: Record<string, string> = {
   disney: "Disney Pinnacle",
   pinnacle_oe: "Pinnacle Open Editions",
   panini: "Panini",
-  candy: "Candy MLB",
+  candy: "Candy",
 }
 
 function usd(n: number): string {

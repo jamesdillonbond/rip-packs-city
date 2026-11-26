@@ -49,7 +49,7 @@ const ALL_COLLECTIONS: Array<{ key: string; label: string }> = [
   // analytics_* RPCs normalize with `CASE … ELSE c.slug`, so Candy is keyed
   // `candy_mlb` — the same key lib/analytics-sets-dashboard-compute.ts has
   // labelled since 2026-07-31.
-  { key: "candy_mlb", label: "Candy MLB" },
+  { key: "candy_mlb", label: "Candy" },
 ]
 
 interface TimeseriesResponse {

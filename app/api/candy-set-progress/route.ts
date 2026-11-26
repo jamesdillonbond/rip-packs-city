@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
   if (!isSolanaAddress(raw)) {
     return NextResponse.json(
       {
-        error: "Candy MLB lives on Solana — enter a Solana wallet address.",
+        error: "Candy lives on Solana — enter a Solana wallet address.",
         code: "bad_request" as const,
         retryable: false,
       },

@@ -103,7 +103,7 @@ describe("constants", () => {
       expect(label).not.toBe(key)
       expect(label).not.toMatch(/_/)
     }
-    expect(COLLECTION_LABEL.candy_mlb).toBe("Candy MLB")
+    expect(COLLECTION_LABEL.candy_mlb).toBe("Candy")
   })
 })
 

@@ -275,7 +275,7 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
     expect(screen.getByText("Recent Buy")).toBeTruthy()
     // Cross-collection labels come from the registry, not a hand map.
     expect(screen.getAllByText(/NFL All Day/i).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Candy MLB/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Candy/i).length).toBeGreaterThan(0)
     expect(screen.queryByText("candy_mlb")).toBeNull()
     // 2026-09-24: an FMV on a CLOSED market is historical and says so (pinned on
     // the fixture market in the case below). Inverted 2026-11-26: UFC is open again.

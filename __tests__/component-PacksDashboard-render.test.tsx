@@ -108,7 +108,7 @@ describe("PacksDashboard render", () => {
   it("offers no UFC panel and links Panini and Candy to their own pack boards", async () => {
     const { findByText, queryByText, container } = render(<PacksDashboard />)
     expect(await findByText(/Open the Panini pack board/)).toBeTruthy()
-    expect(await findByText(/Open the Candy MLB pack board/)).toBeTruthy()
+    expect(await findByText(/Open the Candy pack board/)).toBeTruthy()
     expect(queryByText("UFC Strike")).toBeNull()
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
     expect(hrefs).toContain("/panini-blockchain/packs")

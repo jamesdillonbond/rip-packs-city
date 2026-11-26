@@ -176,7 +176,7 @@ describe("resolveCollectionLabel", () => {
     // assert the two shapes actually resolve — a short code and the one LONG
     // slug, which is the arm that was missing and the one a future collection
     // will land on.
-    expect(resolveCollectionLabel("candy_mlb")).toBe("Candy MLB")
+    expect(resolveCollectionLabel("candy_mlb")).toBe("Candy")
     expect(resolveCollectionLabel("topshot")).toBe("Top Shot")
     // …and the fall-through stays alive on a key no registry has, so it keeps
     // exercising the raw-slug branch rather than passing against a label.

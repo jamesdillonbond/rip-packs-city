@@ -172,7 +172,7 @@ describe("GET /api/search", () => {
       label: "Mike Trout",
       href: "/players/mike-trout", // 2026-10-22: via the player hub (redirects to /candy-mlb/player/…)
       collection: "candy-mlb",
-      collectionName: "Candy MLB",
+      collectionName: "Candy",
     })
   })
 

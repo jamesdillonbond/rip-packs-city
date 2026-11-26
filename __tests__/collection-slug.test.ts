@@ -61,7 +61,7 @@ describe("candy-mlb resolves through the facade", () => {
     expect(byUrl).not.toBeNull()
     expect(byUrl!.dbSlug).toBe("candy_mlb")
     expect(byUrl!.id).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
-    expect(byUrl!.displayName).toBe("Candy MLB")
+    expect(byUrl!.displayName).toBe("Candy")
     expect(getCollectionByUuid(byUrl!.id)).toEqual(byUrl)
     expect(getCollectionByDbSlug("candy_mlb")).toEqual(byUrl)
   })

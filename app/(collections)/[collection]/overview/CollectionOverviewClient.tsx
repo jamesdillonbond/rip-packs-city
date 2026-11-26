@@ -147,12 +147,14 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   ],
   "candy-mlb": [
     {
-      title: "Built for Baseball Collectors",
-      body: "Candy MLB brings officially licensed MLB moments on-chain — Solana, under Candy Digital. RPC tracks every edition and prices it from its recent secondary sales, or from a confirmed live ask when it has none — and says which.",
+      // 2026-11-26: Candy is not one league — 401 collections across MLB, DC, NASCAR, WWE and more (the old
+      // copy said "compact catalogue … the set is small", which the brand read disproved).
+      title: "More Than Baseball",
+      body: "Candy Digital publishes officially licensed MLB cards — and DC comics, NASCAR, WWE and more — on Solana. RPC tracks every collection and prices a card from its recent secondary sales, or from a confirmed live ask when it has none — and says which.",
     },
     {
       title: "The Candy Ecosystem",
-      body: "Candy runs a compact catalogue — base and ICON series across Common and Legendary tiers — with secondary trading on Magic Eden and OpenSea. Because the set is small, RPC prices every edition from its own recent sales and confirmed asks.",
+      body: "Hundreds of collections: MLB ICONs and Gems by season, DC comic issues and packs, and smaller runs for NASCAR, WWE, Netflix and Getty Images, with secondary trading on Magic Eden and OpenSea. The grid on this page sorts them by league and brand.",
     },
     {
       title: "What Is Live Here",

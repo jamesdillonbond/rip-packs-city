@@ -59,7 +59,7 @@ describe("Trophy Room — a closed market's value is historical", () => {
   // one tab per PUBLISHED collection, from the registry.
   it("offers a tab for every published collection", () => {
     render(<TrophiesBoardClient initialRows={rows as never} initialFetchedAt={null} />)
-    for (const label of ["NBA Top Shot", "NFL All Day", "LaLiga Golazos", "Disney Pinnacle", "UFC Strike", "Candy MLB", "Panini Blockchain"]) {
+    for (const label of ["NBA Top Shot", "NFL All Day", "LaLiga Golazos", "Disney Pinnacle", "UFC Strike", "Candy", "Panini Blockchain"]) {
       expect(screen.getByRole("tab", { name: label }), label).toBeTruthy()
     }
   })

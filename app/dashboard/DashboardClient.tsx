@@ -974,7 +974,7 @@ function ProfilePageInner() {
   const hasSolanaWallet = groupedWallets.some((g) => isSolanaAddress(g.addr));
   const candyPublished = publishedCollections().some((c) => c.dbChain === "solana");
   const canAddWallet = !hasDapperWallet || (candyPublished && !hasSolanaWallet);
-  const addWalletLabel = hasDapperWallet ? "+ Add a Candy MLB (Solana) wallet" : "+ Add another wallet";
+  const addWalletLabel = hasDapperWallet ? "+ Add a Candy (Solana) wallet" : "+ Add another wallet";
   // The hero's own add-wallet form (SignInBanner) renders exactly when the
   // wallets read succeeded and returned nothing — the same condition the hero
   // branch below uses, so the two cannot drift.
@@ -1277,7 +1277,7 @@ function ProfilePageInner() {
           <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
             {hasDapperWallet
-              ? "Your Dapper wallet is saved (one per account). Enter a Solana address to add your Candy MLB collection."
+              ? "Your Dapper wallet is saved (one per account). Enter a Solana address to add your Candy collection."
               : "Add YOUR wallet by entering your Dapper username or a wallet address you own (to watch a friend\u2019s, look it up and press Follow instead) — we\u2019ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB."}
           </div>
 

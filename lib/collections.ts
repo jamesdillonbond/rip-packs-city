@@ -381,7 +381,7 @@ export const COLLECTIONS: Collection[] = [
   },
   {
     id: "candy-mlb",
-    label: "Candy MLB",
+    label: "Candy",
     shortLabel: "Candy",
     sport: "MLB",
     chain: "candy",

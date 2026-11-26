@@ -129,7 +129,7 @@ describe("BiggestSales — formatter + fallback branches", () => {
     const { container } = render(
       <BiggestSales rows={[row({ collection: "candy_mlb", marketplace: "magic_eden" })]} />,
     )
-    expect(container.textContent).toContain("Candy MLB")
+    expect(container.textContent).toContain("Candy")
     expect(container.textContent).toContain("Magic Eden")
     // ⛔ The raw keys must be ABSENT, not merely "also present" — asserting only
     // the label would pass while the slug still rendered somewhere on the row.

@@ -1638,7 +1638,7 @@ describe("DashboardClient — one Dapper wallet per account", () => {
   it("with a Dapper wallet saved and no Candy wallet: no '+ Add another wallet', only a Candy add", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ wallet_addr: DAPPER })] })
     render(<DashboardClient />)
-    const candy = await screen.findByRole("button", { name: /Add a Candy MLB \(Solana\) wallet/ })
+    const candy = await screen.findByRole("button", { name: /Add a Candy \(Solana\) wallet/ })
     expect(screen.queryByRole("button", { name: "+ Add another wallet" })).toBeNull()
     fireEvent.click(candy)
     const box = await screen.findByPlaceholderText("Solana wallet address")

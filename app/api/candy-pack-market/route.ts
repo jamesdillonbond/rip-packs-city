@@ -261,7 +261,7 @@ export async function GET(req: NextRequest) {
     let ownedError: string | null = null
     if (rawWallet) {
       if (!isSolanaAddress(rawWallet)) {
-        ownedError = "Candy MLB lives on Solana — enter a Solana wallet address."
+        ownedError = "Candy lives on Solana — enter a Solana wallet address."
       } else {
         const { data, error, count } = await boundedRead(
           (supabaseAdmin as any)

@@ -70,7 +70,7 @@ describe("FmvAccuracyTable — a successful read with sentinels among real value
     expect(byId("candy-mlb").querySelectorAll("td")[1].textContent).toBe("unavailable")
     expect(byId("candy-mlb").getAttribute("data-basis")).toBe("leg_failed")
     // The footnote explains the sentinel row, by name.
-    expect(container.textContent).toMatch(/Candy MLB: the measuring job failed/)
+    expect(container.textContent).toMatch(/Candy: the measuring job failed/)
     // and a bare 0% appears nowhere
     expect(container.textContent).not.toContain("0%")
   })

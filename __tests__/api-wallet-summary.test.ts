@@ -134,7 +134,7 @@ describe("GET /api/wallet-summary", () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toBe("chain_mismatch")
-    expect(body.message).toMatch(/Candy MLB lives on Solana/)
+    expect(body.message).toMatch(/Candy lives on Solana/)
     expect(body.total_moments).toBeUndefined()
     expect(rpc.lastArgs, "the RPC must not be asked").toBeFalsy()
     expect(res.headers.get("cache-control")).toBe("no-store")

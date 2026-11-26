@@ -721,12 +721,12 @@ describe("collection brand labels follow the registry (2026-09-24)", () => {
   })
 
   it("brands Candy MLB entity pages as Candy MLB on Solana (the live defect)", () => {
-    expect(collectionDisplayName("candy-mlb")).toBe("Candy MLB")
+    expect(collectionDisplayName("candy-mlb")).toBe("Candy")
     const tm = teamPageMetadata({ route_slug: "detroit-tigers", team_name: "Detroit Tigers" }, "candy-mlb", "detroit-tigers")
-    expect(titleText(tm.title)).toContain("| Candy MLB |")
+    expect(titleText(tm.title)).toContain("| Candy |")
     expect(titleText(tm.title)).not.toContain("| Flow |")
     const em = editionPageMetadata({ route_slug: "aaron-judge", player_name: "Aaron Judge", set_name: "2026 MLB Base Series ICONs" }, "candy-mlb")
-    expect(titleText(em.title)).toContain("| Candy MLB |")
+    expect(titleText(em.title)).toContain("| Candy |")
     const lm = collectionLayoutMetadata("candy-mlb")
     expect(titleText(lm.title)).toContain("Candy MLB")
     expect(lm.keywords).toContain("Solana blockchain")

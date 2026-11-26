@@ -80,7 +80,7 @@ const COLLECTIONS: { key: CollectionFilter; label: string }[] = [
   // below median sale, serial-named) through a 3-day freshness gate, because
   // Candy listings carry no expiry and are only deactivated on positive
   // evidence, so an ungated leg would publish asks last seen up to 51 days ago.
-  { key: "candy_mlb", label: "Candy MLB" },
+  { key: "candy_mlb", label: "Candy" },
   // Panini joined 2026-10-25 (10 editions at the time) through its own leg,
   // mv_panini_public_deals: the cheapest regular serial under FMV AND under the
   // median of recent sales, on a HIGH/MEDIUM edition FMV.

@@ -142,7 +142,7 @@ describe("coverage population follows the registry (2026-10-18)", () => {
   it("measures every PUBLISHED collection with a DB uuid except Pinnacle (per-render), and nothing unpublished", async () => {
     const { publishedCollections, COLLECTIONS } = await import("@/lib/collections")
     const labels = snapshotCollections().map((c) => c.label)
-    expect(labels).toContain("Candy MLB")
+    expect(labels).toContain("Candy")
     expect(labels).toContain("NBA Top Shot")
     expect(labels.some((l) => l.startsWith("Disney Pinnacle"))).toBe(false)
     const expected = publishedCollections().filter((c) => c.supabaseCollectionId && !c.label.startsWith("Disney Pinnacle")).map((c) => c.label)

@@ -95,7 +95,7 @@ const RECORDS: CollectionSlugInfo[] = [
   {
     id: "209ade70-32c5-4470-bc7c-4793d660f713",
     dbSlug: "candy_mlb",
-    displayName: "Candy MLB",
+    displayName: "Candy",
     urlSlug: "candy-mlb",
   },
   // 2026-09-27 — Panini WC Prizm (Trevor: "proceed with all"). The generic

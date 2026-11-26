@@ -19,7 +19,7 @@ export const COLLECTION_LABEL: Record<string, string> = {
   // lib/analytics-sets-dashboard-compute.ts has labelled since 2026-07-31.
   // resolveCollectionLabel() falls back to the RAW SLUG, so without this line
   // /analytics/listings renders a row literally labelled "candy_mlb".
-  candy_mlb: "Candy MLB",
+  candy_mlb: "Candy",
 }
 
 export interface ListingsSortOption {

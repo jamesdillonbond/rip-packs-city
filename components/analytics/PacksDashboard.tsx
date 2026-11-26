@@ -84,7 +84,7 @@ const ALL_COLLECTIONS = [
 // page points to their boards rather than drawing them as empty (2026-10-19).
 const NATIVE_PACK_BOARDS = [
   { key: "panini", label: "Panini", href: "/panini-blockchain/packs" },
-  { key: "candy", label: "Candy MLB", href: "/candy-mlb/packs" },
+  { key: "candy", label: "Candy", href: "/candy-mlb/packs" },
 ] as const
 
 const COLLECTION_LABEL: Record<string, string> = {

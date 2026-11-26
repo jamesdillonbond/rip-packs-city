@@ -196,13 +196,13 @@ describe("collectionLabel — one derived resolver replacing six copied maps", (
   it("DERIVES a collection that has no legacy arm, from its DB slug", () => {
     // The RPCs key a collection with no CASE arm by its DB slug (ELSE c.slug),
     // so this is the arm that stops the raw-slug leak — and it needed no entry.
-    expect(collectionLabel("candy_mlb")).toBe("Candy MLB")
+    expect(collectionLabel("candy_mlb")).toBe("Candy")
     expect(collectionLabel("panini_blockchain")).toBe("Panini Blockchain")
   })
 
   it("is case-insensitive on the key", () => {
     expect(collectionLabel("TOPSHOT")).toBe("Top Shot")
-    expect(collectionLabel("Candy_MLB")).toBe("Candy MLB")
+    expect(collectionLabel("Candy_MLB")).toBe("Candy")
   })
 
   it("degrades to the key itself, never to a wrong name", () => {
@@ -224,7 +224,7 @@ describe("collectionLabel — one derived resolver replacing six copied maps", (
   it("resolves through the registry, not a hardcoded entry", async () => {
     const { getCollection } = await import("@/lib/collections")
     const fromRegistry = getCollection("candy-mlb")?.label
-    expect(fromRegistry).toBe("Candy MLB")
+    expect(fromRegistry).toBe("Candy")
     expect(collectionLabel("candy_mlb")).toBe(fromRegistry)
   })
 })

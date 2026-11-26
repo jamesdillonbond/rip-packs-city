@@ -511,7 +511,7 @@ describe("concierge tools — search_across_collections", () => {
     })
     script("search_across_collections", { name: "Judge", limit: 3 })
     await POST(post("does RPC have Judge"))
-    const candy = group(toolResult(), "Candy MLB")!
+    const candy = group(toolResult(), "Candy")!
     expect(candy.results).toHaveLength(1)
     expect(candy.results[0]).toMatchObject({ player: "Aaron Judge", price: 4.5, listed_at: null })
     expect(String(candy.results[0].edition_url)).toContain("/candy-mlb/edition/aaron-judge")
@@ -528,7 +528,7 @@ describe("concierge tools — search_across_collections", () => {
     await POST(post("does RPC have Judge"))
     const r = toolResult()
     expect(r.status).toBe("partial")
-    expect(r.failedCollections).toContain("Candy MLB")
+    expect(r.failedCollections).toContain("Candy")
     expect(group(r, "Candy MLB")).toBeUndefined()
   })
 
@@ -541,7 +541,7 @@ describe("concierge tools — search_across_collections", () => {
     })
     script("search_across_collections", { name: "Judge", limit: 3 })
     await POST(post("does RPC have Judge"))
-    expect(toolResult().failedCollections).toContain("Candy MLB")
+    expect(toolResult().failedCollections).toContain("Candy")
   })
 
   // INVERTED 2026-11-26 (was "UFC's closed market is reported as closed"): UFC Strike

@@ -29,7 +29,7 @@ export const COLLECTION_LABEL: Record<string, string> = {
   // so a label is required or the set-detail page renders the raw "candy_mlb"
   // slug in its title / meta / JSON-LD / badge. NOT added to SET_COLLECTIONS —
   // that would add a dashboard filter chip, a separate product decision.
-  candy_mlb: "Candy MLB",
+  candy_mlb: "Candy",
 }
 
 export const COLLECTION_COLOR: Record<string, string> = {
