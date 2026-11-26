@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~12:50 PM PT · 📝 docs + 🔧 concierge copy — UFC session recorded; pin-stubs-callee lesson promoted; concierge knows the binder takes an Aptos wallet and Moment pages carry a Flow / Aptos tag (Claude Code cloud; Trevor: "Keep going and doing what you can")
+- `docs/sessions/2026-11.md` (UFC entry), `docs/reference/testing-and-ci.md` (a pin that stubs a callee cannot see its bugs; planted defect passing at the wrong gate), one sentence of the concierge system prompt.
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-11-26 ~12:55 PM PT · 🔧 FIX (CI) — `main` red since the Panini `?property=` ship on ONE job: component statement coverage 90.84 % vs the 90.85 % ratchet; two tests added (chat session; Trevor: "Keep going")
 
 - First red on `0736ad9` (another session's ship; every later CI run inherited it, incl. the offer-pull commits). Added to `__tests__/panini-scope.test.tsx`: storage that throws on read is no scope and the control still renders (`readAsk`'s catch); a tab with rows for one league shows no control until a league is chosen. Local full component run: 420 files / 5,287 tests, 90.85 % before the second test. ⚠ The margin is one or two statements — the next untested component line reds it again.
