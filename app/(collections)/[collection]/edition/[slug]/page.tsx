@@ -43,7 +43,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import InteractiveSlab from "@/components/InteractiveSlab"
 import { finishFromBadges } from "@/lib/slab-3d"
 import { slabStatsFromContext } from "@/lib/slab-stats"
-import { fetchSlabStats, type SlabStatsRead } from "@/lib/moment-detail/slab-stats-fetch"
+import { fetchSlabStats, fetchCardSlabStats, type SlabStatsRead, type CardSlabStatsRead } from "@/lib/moment-detail/slab-stats-fetch"
 import { tierColorVar } from "@/lib/moment-detail-format"
 import { ENTITY_HERO_SIZES } from "@/lib/hero-srcset"
 import { proxyIpfsImageUrl, proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -649,8 +649,10 @@ export default async function EditionPage(
   // edition's game and that season, where a feed exists (lib/moment-detail/slab-stats-fetch gates
   // the collections). Defaults to a FAILED read, so a throw renders a back with no stats, never "0".
   let slabStatsRes: SlabStatsRead = { ok: false, error: "not read" }
+  // A Panini / Candy card: the season line for the season the card is from (no game on a card).
+  let cardSlabRes: CardSlabStatsRead = { ok: false, error: "not read" }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes, ufcFloorRes, slabStatsRes] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams, comparableRes, ufcFloorRes, slabStatsRes, cardSlabRes] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -690,6 +692,7 @@ export default async function EditionPage(
       ? fetchUfcAptosEditionFloor(detail.id)
       : Promise.resolve({ floor: null, ok: true }),
     fetchSlabStats({ id: detail.id, collection_slug: coll.dbSlug, game_date: null, date_from_db: true }),
+    fetchCardSlabStats({ id: detail.id, collection_slug: coll.dbSlug, set_name: detail.set_name, external_id: detail.external_id, player_names: [detail.player_page_name, detail.player_name] }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -969,7 +972,7 @@ export default async function EditionPage(
             subtitle={[detail.tier, detail.series_label].filter((x): x is string => !!x && x.trim() !== "").join(" · ") || null}
             serialLine={null}
             finish={finishFromBadges([])}
-            stats={slabStatsRes.ok ? slabStatsFromContext(slabStatsRes.ctx) : null}
+            stats={(slabStatsRes.ok ? slabStatsFromContext(slabStatsRes.ctx) : null) ?? (cardSlabRes.ok ? cardSlabRes.stats : null)}
             badges={detail.badges ?? []}
             rows={[
               detail.set_name ? { label: "Set", value: detail.set_name } : null,

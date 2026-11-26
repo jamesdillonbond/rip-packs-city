@@ -76,7 +76,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import InteractiveSlab from "@/components/InteractiveSlab"
 import { finishFromBadges } from "@/lib/slab-3d"
 import { slabStatsFromContext } from "@/lib/slab-stats"
-import { fetchSlabStats } from "@/lib/moment-detail/slab-stats-fetch"
+import { fetchSlabStats, fetchCardSlabStats } from "@/lib/moment-detail/slab-stats-fetch"
 import { proxyIpfsUrl, proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { joinMetaParts, metaField } from "@/lib/format"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
@@ -601,7 +601,7 @@ export default async function MomentPage(
   // serials table that had rendered fine from the other. The badges are now
   // derived from the single read below (mapNotableTagsToSpecialSerials).
   const isCandyColl = e.collection_slug === "candy_mlb"
-  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes, printingAskRes, slabStatsRes] = await Promise.all([
+  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes, printingAskRes, slabStatsRes, cardSlabRes] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -634,12 +634,14 @@ export default async function MomentPage(
       : Promise.resolve<PrintingAskStamp>({ at: null, ok: true }),
     // 2026-11-25: the interactive slab's back — the game line + that season (lib/slab-stats).
     fetchSlabStats({ id: e.id, collection_slug: e.collection_slug, game_date: e.game_date }),
+    // 2026-11-26: a Candy card's back — the season line for the season the card is from.
+    fetchCardSlabStats({ id: e.id, collection_slug: e.collection_slug, set_name: e.set_name, player_names: [e.player_name] }),
   ])
   const highOffer = highOfferRes.data
   const parallels = parallelsRes.rows
   const badges = badgesRes.rows
   // A failed read shows no stats on the slab (no claim either way); see lib/moment-detail/slab-stats-fetch.ts.
-  const slabStats = slabStatsRes.ok ? slabStatsFromContext(slabStatsRes.ctx) : null
+  const slabStats = (slabStatsRes.ok ? slabStatsFromContext(slabStatsRes.ctx) : null) ?? (cardSlabRes.ok ? cardSlabRes.stats : null)
   const momentBestOffer = momentBestOfferRes.data
   const notableSerials = notableSerialsRes.rows
   const specialSerials: SpecialSerialRow[] =

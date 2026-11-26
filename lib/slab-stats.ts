@@ -13,6 +13,8 @@
 import { isZeroLike, seasonLabel, teamSlugLabel } from "@/lib/player-page-season-stats"
 
 export type EspnLeague = "nba" | "wnba" | "nfl"
+/** A card's league: the Moment leagues plus MLB (Candy MLB, Panini baseball). Cards have a season line only — no game. */
+export type CardLeague = EspnLeague | "mlb"
 
 export interface StatChip {
   label: string
@@ -171,6 +173,23 @@ const BASKETBALL_GAME: Pick[] = [
   { name: "blocks", label: "BLK" },
 ]
 
+const MLB_BATTING_SEASON: Pick[] = [
+  { name: "avg", label: "AVG", keepZero: true },
+  { name: "homeRuns", label: "HR", keepZero: true },
+  { name: "RBIs", label: "RBI", keepZero: true },
+  { name: "OPS", label: "OPS" },
+  { name: "stolenBases", label: "SB" },
+]
+const MLB_PITCHING_SEASON: Pick[] = [
+  { name: "wins", label: "W", keepZero: true },
+  { name: "ERA", label: "ERA", keepZero: true },
+  { name: "strikeouts", label: "K", keepZero: true },
+  { name: "WHIP", label: "WHIP" },
+  { name: "saves", label: "SV" },
+]
+/** A season with fewer at-bats than this is a pitcher's (or a cup of coffee): the pitching line leads. */
+const MLB_BATTER_MIN_AB = 50
+
 const BASKETBALL_SEASON: Pick[] = [
   { name: "avgPoints", label: "PPG", keepZero: true },
   { name: "avgRebounds", label: "RPG", keepZero: true },
@@ -328,7 +347,7 @@ export function markAboveAverage(game: SlabStatBlock | null, season: SlabStatBlo
   }
 }
 
-export function seasonBlock(league: EspnLeague, season: number, rows: SeasonLine[] | null | undefined): SlabStatBlock | null {
+export function seasonBlock(league: CardLeague, season: number, rows: SeasonLine[] | null | undefined): SlabStatBlock | null {
   const lines = (rows ?? []).filter((r) => r && Array.isArray(r.names) && Array.isArray(r.values) && r.names.length === r.values.length)
   if (lines.length === 0) return null
   // A traded season: ESPN sends one line per team plus a total. Use the total; name both teams.
@@ -342,7 +361,21 @@ export function seasonBlock(league: EspnLeague, season: number, rows: SeasonLine
   let chips: StatChip[] = []
   let gp: string | null = null
   let teams: string[] = []
-  if (league === "nfl") {
+  if (league === "mlb") {
+    // ESPN files a season's batting under "career-batting" (one line per season). A pitcher's
+    // batting line is a handful of at-bats; the pitching line leads unless he really hit.
+    const bat = pick("career-batting")
+    const pit = pick("pitching")
+    const ab = bat ? num(valueOf(bat.names, bat.values, "atBats")) : null
+    const useBat = bat != null && (pit == null || (ab != null && ab >= MLB_BATTER_MIN_AB))
+    const line = useBat ? bat : pit
+    if (line) {
+      chips = chipsFrom(line.names, line.values, useBat ? MLB_BATTING_SEASON : MLB_PITCHING_SEASON)
+      gp = valueOf(line.names, line.values, "gamesPlayed")
+      teams = teamsIn(line.category)
+      if (teams.length === 0 && line.team_slug) teams = [teamSlugLabel(line.team_slug) as string]
+    }
+  } else if (league === "nfl") {
     const cats = ["passing", "rushing", "receiving", "defensive"].map((c) => pick(c)).filter(Boolean) as SeasonLine[]
     chips = footballSeasonChips(cats)
     gp = cats.map((r) => valueOf(r.names, r.values, "gamesPlayed")).find((v) => v != null && !isZeroLike(v)) ?? null
@@ -399,4 +432,47 @@ export function slabStatsFromContext(ctx: MomentGameContext | null | undefined):
   const game = league === "nfl" ? gameBlock(league, ctx.game) : markAboveAverage(gameBlock(league, ctx.game), season)
   if (!game && !season) return null
   return { game, season }
+}
+
+/**
+ * The season a CARD belongs to, from its set name — a card has no game date. "BC 2021-22 Donruss"
+ * is the NBA's 2021-22 season (ESPN 2022); "2022 Leadoff ICONs" is MLB 2022; an NFL "2021 Prizm" is
+ * 2021; the WNBA is a calendar year. An NBA set with one year ("2024 Prizm") could be either season,
+ * so it is null — never a guess. No year, null.
+ */
+export function cardSeason(league: CardLeague, setName: string | null | undefined): number | null {
+  const t = String(setName ?? "")
+  const range = /\b((?:19|20)\d{2})\s*[-–/]\s*(\d{2}|(?:19|20)\d{2})\b/.exec(t)
+  if (range) {
+    const a = Number(range[1])
+    const b = Number(range[2])
+    // "2021-22" / "2021-2022" / "1999-00" — the second year must follow the first, or it is not a season.
+    const follows = range[2].length === 2 ? b === (a + 1) % 100 : b === a + 1
+    if (!follows) return null
+    if (league === "nba") return a + 1
+    if (league === "nfl") return a
+    return null // a two-year label on a calendar-year league is not a season we can name
+  }
+  const one = /\b((?:19|20)\d{2})\b/.exec(t)
+  if (!one) return null
+  if (league === "nba") return null
+  return Number(one[1])
+}
+
+/**
+ * The back of a CARD slab (Panini, Candy): that card's season line, when the player has one for
+ * the season the card is from. No fallback to another season — on a legend's card, a namesake's
+ * current season is the wrong person (docs/reference/player-identity.md, Panini crosswalk caveat).
+ */
+export function cardSlabStats(league: CardLeague | null, setName: string | null | undefined, rows: Array<SeasonLine & { season: number; season_type?: number }> | null | undefined): SlabStats | null {
+  if (!league) return null
+  const season = cardSeason(league, setName)
+  if (season == null) return null
+  const lines = (rows ?? []).filter((r) => r.season === season && (r.season_type == null || r.season_type === 2))
+  const block = seasonBlock(league, season, lines)
+  return block ? { game: null, season: block } : null
+}
+
+export function asCardLeague(v: unknown): CardLeague | null {
+  return v === "mlb" ? "mlb" : asEspnLeague(v)
 }

@@ -13,7 +13,8 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
-import { asEspnLeague, momentSeason, type MomentGameContext, type SeasonLine } from "@/lib/slab-stats"
+import { asCardLeague, asEspnLeague, cardSlabStats, momentSeason, type MomentGameContext, type SeasonLine, type SlabStats } from "@/lib/slab-stats"
+import { marketCapKey } from "@/lib/player-recent-games"
 
 type RpcClient = {
   rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>
@@ -102,4 +103,78 @@ async function readSlabStats(
     ok: true,
     ctx: { league: res.league, espn_league: league, season, moment_game_date: edition.game_date, season_rows: rows, game: null },
   }
+}
+
+// ── Cards (2026-11-26: the slab on every collection) ────────────────────────────────────────────
+// A Panini or Candy card has no game, so its back carries the season line for the season the card
+// is from (lib/slab-stats cardSeason). Candy MLB players are keyed through player_identities
+// (get_player_season_stats, by the edition's player_id); Panini players through the one-person
+// panini_espn_crosswalk by name slug (get_panini_player_season_stats — the player hub's read).
+// Same three states as above: ok:false = a read failed; stats null = nothing to show.
+
+export const CARD_SLAB_STATS_COLLECTIONS = new Set(["panini_blockchain", "candy_mlb"])
+
+export type CardSlabStatsRead = { ok: true; stats: SlabStats | null } | { ok: false; error: string }
+
+export type CardSlabStatsEdition = {
+  id: string
+  collection_slug: string | null
+  set_name: string | null
+  /** editions.external_id — a Panini card's product (`packcard-<set_id>_…`), whose name carries the season. */
+  external_id?: string | null
+  /** The names this card's player goes by (Panini's label, the linked player's name) — slugged for the crosswalk. */
+  player_names: Array<string | null | undefined>
+}
+
+type SeasonStatsPayload = {
+  league?: string | null
+  espn_league?: string | null
+  rows?: Array<SeasonLine & { season: number; season_type?: number }>
+} | null
+
+export async function fetchCardSlabStats(
+  card: CardSlabStatsEdition,
+  client: RpcClient = supabaseAdmin as unknown as RpcClient,
+  timeoutMs = 4_000,
+): Promise<CardSlabStatsRead> {
+  try {
+    return await withBoardBudget(readCardSlabStats(card, client), "card slab stats", timeoutMs, "edition-page/")
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+async function readCardSlabStats(card: CardSlabStatsEdition, client: RpcClient): Promise<CardSlabStatsRead> {
+  if (!card.collection_slug || !CARD_SLAB_STATS_COLLECTIONS.has(card.collection_slug)) return { ok: true, stats: null }
+  let payload: SeasonStatsPayload
+  let seasonSource: string | null = card.set_name
+  if (card.collection_slug === "panini_blockchain") {
+    const slugs = Array.from(new Set(card.player_names.map((n) => (n ? marketCapKey(n) : "")).filter((x) => x.length > 0)))
+    if (slugs.length === 0) return { ok: true, stats: null }
+    // The season is in the PRODUCT's name ("2021-22 Panini NFT Noir Basketball"); the card's own set
+    // name is usually just "Base Prizms Silver". A failed product read is a failed read.
+    const setId = /^packcard-(\d+)_/.exec(card.external_id ?? "")?.[1] ?? null
+    const [r, prod] = await Promise.all([
+      client.rpc("get_panini_player_season_stats", { p_slugs: slugs, p_seasons: 20 }),
+      setId
+        ? client.from("panini_products").select("name").eq("set_id", Number(setId)).limit(1).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+    if (r.error) return { ok: false, error: r.error.message ?? "get_panini_player_season_stats failed" }
+    if (prod.error) return { ok: false, error: prod.error.message ?? "panini_products read failed" }
+    payload = r.data as SeasonStatsPayload
+    seasonSource = (prod.data as { name?: string | null } | null)?.name ?? card.set_name
+  } else {
+    const ed = await client.from("editions").select("player_id").eq("id", card.id).limit(1).maybeSingle()
+    if (ed.error) return { ok: false, error: ed.error.message ?? "editions read failed" }
+    const playerId = (ed.data as { player_id?: string | null } | null)?.player_id ?? null
+    if (!playerId) return { ok: true, stats: null }
+    const r = await client.rpc("get_player_season_stats", { p_player_id: playerId, p_seasons: 20 })
+    if (r.error) return { ok: false, error: r.error.message ?? "get_player_season_stats failed" }
+    payload = r.data as SeasonStatsPayload
+  }
+  if (!payload) return { ok: true, stats: null }
+  // A WNBA player is keyed under the nba identity league; her seasons are calendar years.
+  const league = payload.espn_league === "wnba" ? "wnba" : asCardLeague(payload.league)
+  return { ok: true, stats: cardSlabStats(league, seasonSource, payload.rows ?? []) }
 }
