@@ -8,8 +8,9 @@
 // and on a phone tilt by tilting the phone. It is RPC's own slab, not a copy of
 // Top Shot's cube; the face is the Moment's official media, unchanged.
 //
-// Off by default: a viewer opts in with ?slab=1 (remembered; ?slab=0 turns it
-// off), or NEXT_PUBLIC_MOMENT_SLAB_3D=1 turns it on for everyone. When off, the
+// On for everyone since 2026-11-25 (Trevor, "Yes do it all"): a viewer turns it
+// off with ?slab=0 (remembered; ?slab=1 turns it back on), and
+// NEXT_PUBLIC_MOMENT_SLAB_3D=0 is the kill switch for everyone. When off, the
 // front face renders exactly the box the page rendered before — same border,
 // same square, same media — and nothing listens for input.
 //
@@ -63,7 +64,9 @@ function subscribeFlag(): () => void {
   }
   return () => {};
 }
-const serverFlag = () => false;
+// The server renders the default (on, unless the kill switch is set); a viewer's own
+// ?slab=0 opt-out applies right after hydration.
+const serverFlag = () => slabEnabled({ envDefault: process.env.NEXT_PUBLIC_MOMENT_SLAB_3D, queryValue: null, storedValue: null });
 
 // One physics step is tuned for a 60 Hz frame.
 const FRAME_MS = 1000 / 60;

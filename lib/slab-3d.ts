@@ -8,13 +8,14 @@
 
 /** The query parameter that turns the slab on (`?slab=1`) or off (`?slab=0`) for this browser. */
 export const SLAB_QUERY_PARAM = "slab"
-/** localStorage key that remembers a `?slab=1` opt-in across page views. */
+/** localStorage key that remembers a `?slab=1` / `?slab=0` choice across page views. */
 export const SLAB_STORAGE_KEY = "rpc:slab3d"
 
 /**
- * Whether the interactive slab is on. A build-time default (NEXT_PUBLIC_MOMENT_SLAB_3D)
- * turns it on for everyone; otherwise a viewer opts in with `?slab=1`, which is
- * remembered. `?slab=0` always wins, so a viewer can turn it off again.
+ * Whether the interactive slab is on. On for everyone since 2026-11-25 (Trevor, "Yes do it
+ * all"); a viewer turns it off with `?slab=0`, which is remembered, and back on with
+ * `?slab=1`. NEXT_PUBLIC_MOMENT_SLAB_3D=0 is the kill switch that turns it off for everyone
+ * who has not opted in.
  */
 export function slabEnabled(input: {
   envDefault: string | undefined
@@ -25,7 +26,7 @@ export function slabEnabled(input: {
   if (input.queryValue === "1") return true
   if (input.storedValue === "0") return false
   if (input.storedValue === "1") return true
-  return input.envDefault === "1"
+  return input.envDefault !== "0"
 }
 
 /** Angle in degrees folded into [0, 360). */

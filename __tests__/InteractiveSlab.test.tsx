@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
 import InteractiveSlab from "@/components/InteractiveSlab"
 
-// CONTRACT (2026-11-25): the slab is opt-in. Off (the server render, and any
-// browser that never opted in) it is the same tier-bordered square the hero was
-// — the media and nothing else, no back face, no controls. On (?slab=1) the back
-// face and the Flip control exist, and the back carries only what was passed.
+// CONTRACT (2026-11-25, on for everyone since that evening): with nothing said, the
+// server render and every browser get the slab — the back face and the Flip control
+// exist, and the back carries only what was passed. Off (?slab=0, a remembered
+// opt-out, or the kill switch NEXT_PUBLIC_MOMENT_SLAB_3D=0) it is the same
+// tier-bordered square the hero was — the media and nothing else, no back face, no
+// controls.
 
 function slab() {
   return (
@@ -27,12 +29,30 @@ function slab() {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllEnvs()
   window.localStorage.clear()
   window.history.replaceState(null, "", "/")
 })
 
 describe("InteractiveSlab", () => {
-  it("server-renders the plain hero: media, no back face, no controls", () => {
+  it("server-renders the slab for everyone: media, back face, Flip control", () => {
+    const html = renderToStaticMarkup(slab())
+    expect(html).toContain('aria-label="media"')
+    expect(html).toContain("RIP PACKS CITY")
+    expect(html).toContain("Flip")
+    expect(html).toContain("#1 / 99")
+  })
+
+  it("shows the slab in a browser that never said anything", () => {
+    const { getByText, getByRole } = render(slab())
+    expect(getByRole("img")).toBeTruthy()
+    expect(getByText("Flip")).toBeTruthy()
+    expect(getByText("#1 / 99")).toBeTruthy()
+    expect(window.localStorage.getItem("rpc:slab3d")).toBeNull()
+  })
+
+  it("server-renders the plain hero under the kill switch: media, no back face, no controls", () => {
+    vi.stubEnv("NEXT_PUBLIC_MOMENT_SLAB_3D", "0")
     const html = renderToStaticMarkup(slab())
     expect(html).toContain('aria-label="media"')
     expect(html).not.toContain("RIP PACKS CITY")
@@ -40,7 +60,8 @@ describe("InteractiveSlab", () => {
     expect(html).not.toContain("#1 / 99")
   })
 
-  it("stays plain in a browser that never opted in", () => {
+  it("stays plain in a browser that turned it off before", () => {
+    window.localStorage.setItem("rpc:slab3d", "0")
     const { queryByText, getByRole } = render(slab())
     expect(getByRole("img")).toBeTruthy()
     expect(queryByText("Flip")).toBeNull()
@@ -79,7 +100,7 @@ describe("InteractiveSlab", () => {
 })
 
 // ── interaction: drag, fling, flip, keys, tilt ───────────────────────────────
-import { vi, beforeEach } from "vitest"
+import { beforeEach } from "vitest"
 import { act } from "@testing-library/react"
 
 function mockMedia(matches: Record<string, boolean>) {

@@ -10,20 +10,23 @@ import {
 } from "@/lib/slab-3d"
 
 describe("slabEnabled", () => {
-  it("is off with no env default, no query and nothing stored", () => {
-    expect(slabEnabled({ envDefault: undefined, queryValue: null, storedValue: null })).toBe(false)
-  })
-  it("turns on from ?slab=1 and from a remembered opt-in", () => {
-    expect(slabEnabled({ envDefault: undefined, queryValue: "1", storedValue: null })).toBe(true)
-    expect(slabEnabled({ envDefault: undefined, queryValue: null, storedValue: "1" })).toBe(true)
-  })
-  it("lets ?slab=0 and a remembered opt-out beat the env default", () => {
-    expect(slabEnabled({ envDefault: "1", queryValue: "0", storedValue: "1" })).toBe(false)
-    expect(slabEnabled({ envDefault: "1", queryValue: null, storedValue: "0" })).toBe(false)
-  })
-  it("follows the env default when the viewer said nothing", () => {
+  it("is on for everyone when the viewer said nothing and no kill switch is set", () => {
+    expect(slabEnabled({ envDefault: undefined, queryValue: null, storedValue: null })).toBe(true)
+    expect(slabEnabled({ envDefault: "", queryValue: null, storedValue: null })).toBe(true)
     expect(slabEnabled({ envDefault: "1", queryValue: null, storedValue: null })).toBe(true)
-    expect(slabEnabled({ envDefault: "true", queryValue: null, storedValue: null })).toBe(false)
+  })
+  it("turns off for everyone with the kill switch NEXT_PUBLIC_MOMENT_SLAB_3D=0", () => {
+    expect(slabEnabled({ envDefault: "0", queryValue: null, storedValue: null })).toBe(false)
+  })
+  it("lets a viewer turn it off with ?slab=0 and remembers that", () => {
+    expect(slabEnabled({ envDefault: undefined, queryValue: "0", storedValue: null })).toBe(false)
+    expect(slabEnabled({ envDefault: undefined, queryValue: null, storedValue: "0" })).toBe(false)
+    expect(slabEnabled({ envDefault: undefined, queryValue: "0", storedValue: "1" })).toBe(false)
+  })
+  it("lets a viewer's own ?slab=1 beat the kill switch", () => {
+    expect(slabEnabled({ envDefault: "0", queryValue: "1", storedValue: null })).toBe(true)
+    expect(slabEnabled({ envDefault: "0", queryValue: null, storedValue: "1" })).toBe(true)
+    expect(slabEnabled({ envDefault: undefined, queryValue: "1", storedValue: "0" })).toBe(true)
   })
 })
 

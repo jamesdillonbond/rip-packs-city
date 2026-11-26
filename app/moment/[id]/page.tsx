@@ -854,9 +854,9 @@ export default async function MomentPage(
         }}
         className="rpc-moment-hero"
       >
-        {/* 2026-11-25: the hero is an InteractiveSlab — drag / flip / tilt, opt-in
-            via ?slab=1 (or NEXT_PUBLIC_MOMENT_SLAB_3D=1). Off, it renders the same
-            tier-bordered square as before. */}
+        {/* 2026-11-25: the hero is an InteractiveSlab — drag / flip / tilt, on for
+            everyone (?slab=0 turns it off; NEXT_PUBLIC_MOMENT_SLAB_3D=0 is the kill
+            switch). Off, it renders the same tier-bordered square as before. */}
         <InteractiveSlab
           frameColor={tierColor}
           title={subject}
