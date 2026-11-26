@@ -15,6 +15,20 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-25. The interactive Moment slab's back: the game a Moment is from (exact date, US date
+    // first — a back-to-back's UTC date is the previous night's game), no nearest-day fallback, no stats for an
+    // All Day play without both teams (melts, draft picks), ESPN's season numbering.
+    fn: "get_moment_game_context",
+    test: "supabase/tests/get_moment_game_context.sql",
+    migration: "supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql",
+  },
+  {
+    // Added 2026-11-25. ESPN's season number for a game date (NBA by the year it ends, NFL by the year it starts).
+    fn: "moment_gamelog_season",
+    test: "supabase/tests/get_moment_game_context.sql",
+    migration: "supabase/migrations/20261126025114_audit_20261125_moment_game_context_reissue_for_pins.sql",
+  },
+  {
     // pg_cron 446 `6,36 * * * *` via reconcile_saved_wallets_wmc_fmv. A second writer of
     // wmc.fmv_usd/fmv_confidence beside refresh_wmc_fmv_changed: it copies edition_fmv_current,
     // which lags the newest snapshot by up to ~2 h. Pins the #248 NOT EXISTS on rwfc_applied that

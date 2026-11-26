@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:30 PM PT · 🗄 APPLIED (`20261126025114`, record-only) + 📝 pin + docs — get_moment_game_context pinned; ESPN game-log lane documented (Claude Code cloud; Trevor's 3-hour "keep going")
+
+- `20261126025114_audit_20261125_moment_game_context_reissue_for_pins`: RECORD-ONLY re-issue of `moment_gamelog_season` and `get_moment_game_context` (prosrc md5 487c7ab7… / de5c42ba… before = after; anon EXECUTE false after). The earlier lane migrations were lower case, which the pin extractor and the newest-defining-migration guard do not see.
+- Pin `supabase/tests/get_moment_game_context.sql` (13 assertions: US date wins a back-to-back, UTC-dated Moment resolves, no nearest-day fallback, All Day melt → NULL, Super Bowl → season 2024, box lane exact date, out-of-scope → NULL), registered in PINS twice. Planted defects (UTC-first order; melt guard removed) each red with the named assertion. DB-invariant SQL suite green in preflight.
+- Docs: `docs/reference/apis-and-cadence.md` "ESPN per-athlete game log → the Moment slab's game line" (lane, date conventions measured per collection, All Day non-game plays, page side); session entry `docs/sessions/2026-11.md`.
+- Revert: nothing in the DB to revert (bodies unchanged); `git revert` the commit removes pin + docs.
+
 ### 2026-11-25 ~7:05 PM PT · 🔧 SHIPPED (code) — Moment slab: game stats that beat the season average are marked; "ESPN box score" link on the back (Claude Code cloud; Trevor's 3-hour "keep going")
 
 - `lib/slab-stats.ts`: `markAboveAverage` flags basketball PTS / REB / AST above that season's PPG / RPG / APG (never shooting lines, never NFL); `espnGameUrl` builds espn.com/<league>/game/_/gameId/<id> only from a numeric ESPN event id. `components/InteractiveSlab.tsx`: ▲ + accent colour with screen-reader text "(above season average)"; the link shows beside Flip only while the back faces the viewer. Tests added (incl. Lillard 28 PTS / 9 AST marked, 2 REB not). Preflight green incl. component coverage.
