@@ -62,3 +62,10 @@ LOW / read-only symptom. The only user-visible failure mode is if either of the 
 - Outcome table (`wallet_moments_cache`, UFC): `0xfd6debe3815415c3` 0 NULL of 249; `0xe5492c968fb5d358` 0 NULL of 106.
 - Not done (optional, budget-neutral): a UFC arm in `v_rpc_trust_health`. The snapshot's `>100` watcher still sees UFC.
 - ✅ **Follow-up ~7:51 PM PT:** the optional arm is live: `ufc_wmc_null_edition_key_aged_rows` (`20261124035113`), UFC rows unkeyed > 1 h, breach 25. A planted-defect control read `25/BREACH`.
+
+## ✅ VERIFIED CLOSED 2026-11-25 ~5:11 PM PT (Claude Code cloud, attended; Trevor: "work through everything … leaving nothing unresolved")
+
+- Both wallets named above are at **0 unkeyed**: `0xfd6debe3815415c3` 249/249 keyed and `0xe5492c968fb5d358` 106/106 keyed, both walked 11-23 ~7:40 PM PT after `f04a8cd`.
+- The estate is at **0 of 7,314** UFC wmc rows unkeyed.
+- The one new recurrence (`0x9a26549ac659995d`, 114 rows, 11-25 1:44 AM PT) came from the remainder the chain left at its deadline. It was fixed in `ded424306`: the backfill hands its remainder to the NULL-key drain, and the drain is a dead-lane-backstop lane. The drain wrote 114/114 at 7:14 AM PT, and the trust arm is clear.
+- The 11-26 scheduled verify (`RPC: verify UFC null edition_key rows drained after the keyset fix`) is left in place and should simply confirm these zeros. Deleting it was refused by the permission classifier.
