@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:05 AM PT · 🗄 APPLIED (`20261126150605`) — ts-sold-floor-clear moved off the Atlas drain's minutes (Claude Code cloud, autonomous pass)
+- **Found:** the remaining `ts-sold-floor-clear` failures (`deadlock detected`, 8:25 AM + 12:45 PM PT 11-24, 4:25 / 6:25 / 9:15 PM PT 11-25) all fall on ODD minutes, where `rpc-ts-sold-floor-clear` (5,15,25,35,45,55) starts in the same second as `rpc-atlas-market-drain` (`1-59/2`, avg 13 s, p95 29 s). Both update `topshot_atlas_market_events` rows in different orders (Postgres deadlock detail, 11-26 logs).
+- **Fix:** jobid 825 schedule `5,10,15,25,30,35,45,50,55` → `4,10,14,24,30,34,44,50,54` (same 9 ticks/h, max gap 10 min vs the watchlist's 25; command md5 unchanged `5415d28b…`); watchlist note updated. Load neutral: minute 4 = 36 s/h vs 5 = 55, 44 = 35 vs 45 = 98 (pg_cron seconds started per hour, 24 h).
+- **Rejected:** serialising on the drain's advisory lock (the drain try-locks and would SKIP ~6 of 30 ticks/h — a slower market feed to cure ~3 self-healing failures/day); `SKIP LOCKED` in the floor arm (a skipped sold listing stays open after its floor clears and can be re-read as the floor with nothing to clear it).
+- **Verify:** `ts-sold-floor-clear` runs at :04/:14/…; no `deadlock detected` naming `close_sold_topshot_listings_and_floors` over the next days.
+- **Revert:** `SELECT cron.alter_job(825, schedule := '5,10,15,25,30,35,45,50,55 * * * *');` and restore the watchlist note's "at 5,10,15,25,30,35,45,50,55:".
+
 ### 2026-11-26 ~7:10 AM PT · 📝 DOCS — X draft for the interactive Moment slab (Claude Code cloud; Trevor: "Keep going")
 
 - `docs/social/posts/2026-11-26/`: main post (262 / 280, no link) + 2/2 link reply (utm `slab_1126`) + `slab-spin.mp4` captured from the live Giannis #11/509 page. Draft only; Trevor posts. No prod change.
