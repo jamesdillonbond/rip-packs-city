@@ -70,3 +70,13 @@ export function aptosSaleVenue(source: string | null | undefined, marketplace: s
   const venue = m === "rarible" ? "Rarible" : m === "tradeport" ? "Tradeport" : null
   return venue ? `Aptos · ${venue}` : "Aptos"
 }
+
+/**
+ * Empty-state copy for the UFC binder's main moment table (2026-11-26). That table lists FLOW holdings only;
+ * Aptos holdings render in their own "On Aptos" panel above it. The generic "No moments found for this wallet on
+ * this collection." sat directly under a linked collector's 1,855 Aptos Moments (RRX69, live 2026-11-26) — a false
+ * "you hold none" claim. This says what the table covers and promises nothing about the Aptos panel, which is
+ * absent for wallets RPC has not linked yet.
+ */
+export const UFC_FLOW_TABLE_EMPTY =
+  "No UFC Strike moments found on Flow for this wallet. This table lists Flow holdings only — UFC Strike moved to Aptos."

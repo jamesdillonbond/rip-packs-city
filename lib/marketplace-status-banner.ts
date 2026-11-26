@@ -19,8 +19,10 @@ export function bannerCopy(slug: string, status: string, notes: string | null): 
         title: "UFC Strike now trades on Aptos",
         // 2026-11-25: was "Everything below is historical Flow data" — no longer true once edition pages
         // carried Aptos sales (aptos_indexer_v1) and the live Rarible ask ("Lowest ask · Aptos").
+        // 2026-11-26: dropped "RPC prices are paused for UFC…" — false on the binder, which values UFC holdings
+        // (Flow and Aptos) at current FMV per Trevor's 2026-11-15 decision.
         body:
-          "UFC Strike moved to the Aptos blockchain; Flow trading closed in May 2026. Sales and asks marked Aptos are from Rarible on Aptos; older sales are historical Flow data. RPC prices are paused for UFC until the Aptos market is fully tracked.",
+          "UFC Strike moved to the Aptos blockchain; Flow trading closed in May 2026. Sales and asks marked Aptos are from Rarible on Aptos; older sales are historical Flow data.",
         accent: "var(--rpc-red)",
         background: "rgba(224,58,47,0.08)",
         border: "rgba(224,58,47,0.35)",

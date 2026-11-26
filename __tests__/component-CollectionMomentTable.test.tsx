@@ -249,6 +249,17 @@ describe("CollectionMomentTable", () => {
     expect(container.textContent).toContain("No moments found for this wallet on this collection.")
   })
 
+  // 2026-11-26: the UFC binder lists FLOW holdings in this table and Aptos holdings in their own panel above it.
+  // The generic "No moments found for this wallet on this collection." sat under a linked collector's 1,855 Aptos
+  // Moments — a false "you hold none". UFC says what the table covers and promises nothing about the Aptos panel.
+  it.each([false, true])("UFC (isMobile=%s): an empty Flow table says Flow only, never 'none on this collection'", (isMobile) => {
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ collectionSlug: "ufc", isMobile, filteredRows: [], rowsCount: 0, hasSearched: true })} />
+    )
+    expect(container.textContent).toContain("No UFC Strike moments found on Flow for this wallet.")
+    expect(container.textContent).not.toContain("found for this wallet on this collection")
+  })
+
   // 2026-11-08: Candy moved every collectible to new MoonPay wallets in October, so a
   // pre-October address now finds nothing. The empty state explains that and asks for
   // the NEW address — on Candy only, and never on a non-empty result.

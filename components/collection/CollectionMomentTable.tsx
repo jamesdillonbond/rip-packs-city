@@ -10,6 +10,7 @@
 // data-fetch/filter/sort state and passes it down. The FMV-alert form state
 // (five useState pairs, used nowhere else) moved INTO this component.
 import CandyWalletMovedNote from "@/components/collection/CandyWalletMovedNote"
+import { isUfcAptosBinder, UFC_FLOW_TABLE_EMPTY } from "@/lib/ufc-aptos"
 import { Fragment, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -319,7 +320,7 @@ export default function CollectionMomentTable(props: {
               // collector holding 500 moments that they hold none.
               <div className="rpc-table-empty">
                 {rows.length === 0
-                  ? "No " + unitNoun + " found for this wallet on this collection."
+                  ? (isUfcAptosBinder(collectionSlug) ? UFC_FLOW_TABLE_EMPTY : "No " + unitNoun + " found for this wallet on this collection.")
                   : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                 {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
               </div>
@@ -633,7 +634,7 @@ export default function CollectionMomentTable(props: {
                 <tr>
                   <td colSpan={15} className="rpc-table-empty">
                     {rows.length === 0
-                      ? "No " + unitNoun + " found for this wallet on this collection."
+                      ? (isUfcAptosBinder(collectionSlug) ? UFC_FLOW_TABLE_EMPTY : "No " + unitNoun + " found for this wallet on this collection.")
                       : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                     {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
                   </td>
