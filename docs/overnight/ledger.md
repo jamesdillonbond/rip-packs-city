@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:40 AM PT · 🔧 SHIPPED (UI) — /ufc/sniper still empty: the default-on "Deals after fees" gate hid all 465 Aptos asks; asks-board rows skip it too (Claude Code cloud; follow-up to ~11:20 AM)
+- Rendered DOM after the 11:20 fix read "465 listings are hidden by the Deals after fees filter … Those listings sit below FMV" — false for an asks board. `filterSniperDeals` now exempts `isAsksBoardRow` rows from that gate as well (planted defect reds the pin).
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-11-26 ~10:55 AM PT · 🗄 APPLIED (`20261126185403`) — Top Shot Atlas sale twins up to 2 h apart retired: 231 duplicate sales removed, all archived (Cowork; Trevor: "push and take care of any work that needs cowork")
 
 - **Why:** 231 Top Shot sales were stored twice, an `atlas` row (no tx hash) plus the on-chain row for the same sale, 10–93 min apart. The ±10-min rule in `retire_topshot_atlas_sale_twins` (pg_cron 716) caught none. One inflated the 2026 rookie-class total by a $19 sale.
