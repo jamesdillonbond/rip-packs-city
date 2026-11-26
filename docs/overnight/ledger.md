@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~3:20 PM PT · 🔧 SHIPPED (concierge copy) + 📝 docs — the concierge says "sealed pack", never "unopened" / "held", and knows the binder's pack filters; binder Packs thread closed out (Claude Code cloud; Trevor: "work through everything … update any relevant documentation before I archive this thread")
+
+- `app/api/support-chat/route.ts`: one rule line (pack wording + the Sealed / Opened / Sold filters, Winners / Losers = packs paid for). `docs/strategy/features/wallet-and-portfolio.md`: the 11-26 section + two decisions on record. CI green on every commit of the thread; schema_migrations carries `20261126200712` / `20261126220235` / `20261126221321`, each with its committed file. No scheduled task was created in this thread. **Revert:** `git revert` the commit "concierge: sealed-pack wording; docs: binder pack filters".
+
 ### 2026-11-26 ~2:55 PM PT · 🔧 SHIPPED (copy) — an opened pack with no pack NFT no longer carries a "Sealed pack — …" hover note on the binder's Opened tab (Claude Code cloud; found on the live check of the ~2:45 PM ship)
 
 - The note is for sealed rows (no distribution recorded until opened or resold); reconstructed rips on the Opened tab carried it too. Now only `status = held` rows get it. Test in `component-WalletPacksView.test.tsx`. **Revert:** `git revert` the commit "binder packs: Sealed-pack note on sealed rows only".
