@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~1:12 PM PT · 🔧 SHIPPED — **The Candy section is labelled "Candy", not "Candy MLB" (URL unchanged)** (Cowork cloud; Trevor: "Do it all" — default taken, his to overrule)
+
+- **Why:** the section holds 401 collections across MLB, DC, NASCAR, WWE, Netflix and more, and DC outsold MLB over 90 days on record; a DC comic's breadcrumb read "Candy MLB › DC" and its page title "| Candy MLB |".
+- **What:** registry `label` and `collection-slug` `displayName` → "Candy" (drives nav, breadcrumbs, switcher, page titles, trophy tabs, concierge collection names, chain-mismatch messages); the hardcoded collection labels on Top Sales, Below FMV, the analytics dashboards, drops and the add-wallet button; overview copy rewritten (it said "compact catalogue … the set is small"). **Not changed:** the URL `/candy-mlb`, the DB slug `candy_mlb`, the "Candy MLB ICONs" board (`/insights/candy-mlb`, which IS the MLB board), SEO descriptions that name it among collections, and the concierge's prose.
+- **Revert:** `git revert` the code commit (find by message "candy: the section is labelled Candy"). No DB change.
+
 ### 2026-11-26 ~12:45 PM PT · 🗄 APPLIED (`20261126200712`) + 🔧 SHIPPED — **binder Packs filters (search, sort, tier, winners / losers); "Unopened" packs read "Sealed" site-wide** (Claude Code cloud; Trevor: "Can we add more filters within the packs section within my binder?" — picked all four; then "We should also change unopened packs to sealed packs")
 
 - **DB:** `get_wallet_pack_history` v38 — `p_search` / `p_tier` / `p_outcome` / `p_sort`, all DEFAULT NULL, applied before the page so the count, the page and `tab_totals` are one population; `tab_totals` gains `tab_packs` + `tiers`. Signature changed: the 5-arg overload was DROPPED, new ACL anon=false / authenticated=false / service_role=true (verified). Applied ~12:07 PM PT as a one-edit DO block asserting the v37 md5 before and `084fb900…` after. Warm, Trevor's wallet, 25-row page: Sealed 311 → 438 ms, Opened (2,578) 648 → 696 ms, Sold 481 → 525 ms. Pin V38-1..8.
