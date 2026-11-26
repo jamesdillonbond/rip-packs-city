@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:00 PM PT · 🔧 SHIPPED (script + workflow step) — UFC Aptos listings lane lands: `scripts/ufc-aptos-listings.mjs` as step 4 of `ufc-aptos-sales-ingest.yml` (Claude Code cloud; Trevor: "Yes, connect to the repo and push to main")
+
+- Why. `ufc_aptos_listings` + `v_ufc_aptos_edition_floor` shipped 11-16 (`20261116043121`) but the script and its workflow step never reached main, so the table held 0 rows and the cursor was NULL. Re-measured on chain tonight: Rarible is the only UFC venue on Aptos (UFC's issuer exposes only mint/burn/transfer; Tradeport dormant since 09-08), and Rarible had 5 purchases across ALL Aptos collections from 09-13 to 11-25, the last on 10-22. Asks are UFC's only live price evidence; the UFC store wallet listed 55 Moments 10-19..11-13.
+- Change vs the 11-16 draft: a token the indexer returns NO ownership row for is kept (counted `owner_unknown`, re-read first next run) instead of deleted as sold; paged reads are ordered by primary key (the `paginated-range-requires-order` ratchet flagged the draft).
+- Proof: `npm run preflight` 5/5 green. Listing query re-tested live on v8.10B..8.23B (1 UFC listing since ~11-19, consistent with the store wallet's activity). First apply is the next scheduled tick; read `pipeline_runs` `ufc-aptos-listings` and `select count(*) from ufc_aptos_listings`. The backfill from v3.18B drains over several runs (180 s scan budget each).
+- Revert: delete the workflow step and `scripts/ufc-aptos-listings.mjs`; `truncate public.ufc_aptos_listings; update ufc_aptos_ingest_state set listings_scanned_through_version = null where id = 1;`
+
 ### 2026-11-25 ~7:50 PM PT · 🗄 APPLIED (`20261126034736`) — Sentinel "Cadence Collapse" WARN cleared: `allday-drop-windows` gets the cadence bridge its 11-24 cadence cut owed (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Sentinel 7:04 PM PT WARN read `allday-drop-windows` at 17 % of baseline (48/day vs 288). It is the planned cut in `20261125050221` (job 623: dead Studio walk every 5 min → `refresh_allday_drop_windows_from_atlas()` every 30 min), which did not carry the `cadence_exempt_lanes` bridge the rule requires. Lane healthy: 46/46 runs ok since the change, 3,201 source rows each; Pipeline Silence (60 min) still watches it.
