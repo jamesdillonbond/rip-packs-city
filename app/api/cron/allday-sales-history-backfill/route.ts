@@ -9,7 +9,7 @@ import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
 import { normalizeFlowEventAddress } from "@/lib/address"
 // The one copy of the edition-data script: this route's private copy never type-checked (2026-11-15).
-import { GET_EDITION_DATA_SCRIPT } from "@/lib/chains/flow/allday-edition-onchain"
+import { GET_EDITION_DATA_SCRIPT, allDayPlayIsPlaceholder } from "@/lib/chains/flow/allday-edition-onchain"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NFL All Day sales-history backfill — closes the native pre-indexer gap.
@@ -307,7 +307,9 @@ function buildOnChainEditionRow(editionID: string, data: Record<string, string>,
   const seriesID = Number(data.seriesID)
   const setIdOnchain = Number(data.setID)
   const playIdOnchain = Number(data.playID)
-  const gameDate = parseGameDate(data.dateOfMoment)
+  // A placeholder play (minted before the play existed) has no game yet — see allDayPlayIsPlaceholder.
+  const placeholder = allDayPlayIsPlaceholder(data)
+  const gameDate = placeholder ? null : parseGameDate(data.dateOfMoment)
   const composedName = playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
   return {
     external_id: editionID,
@@ -324,8 +326,8 @@ function buildOnChainEditionRow(editionID: string, data: Record<string, string>,
     play_id_onchain: Number.isFinite(playIdOnchain) ? playIdOnchain : null,
     play_type: (data.playType ?? "").trim() || null,
     game_date: gameDate,
-    home_team: (data.homeTeamName ?? "").trim() || null,
-    away_team: (data.awayTeamName ?? "").trim() || null,
+    home_team: placeholder ? null : (data.homeTeamName ?? "").trim() || null,
+    away_team: placeholder ? null : (data.awayTeamName ?? "").trim() || null,
     updated_at: now,
   }
 }

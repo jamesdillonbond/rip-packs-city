@@ -10,7 +10,7 @@ import { decodeV1SaleTx, decodeV1MultiSaleTx, type V1MultiDecodeResult } from "@
 import crypto from "crypto"
 import { normalizeFlowEventAddress } from "@/lib/address"
 // The one copy of the edition-data script: this route's private copy never type-checked (2026-11-15).
-import { GET_EDITION_DATA_SCRIPT } from "@/lib/chains/flow/allday-edition-onchain"
+import { GET_EDITION_DATA_SCRIPT, allDayPlayIsPlaceholder } from "@/lib/chains/flow/allday-edition-onchain"
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
@@ -329,7 +329,9 @@ function buildOnChainEditionRow(
   const seriesID = Number(data.seriesID)
   const setIdOnchain = Number(data.setID)
   const playIdOnchain = Number(data.playID)
-  const gameDate = parseGameDate(data.dateOfMoment)
+  // A placeholder play (minted before the play existed) has no game yet — see allDayPlayIsPlaceholder.
+  const placeholder = allDayPlayIsPlaceholder(data)
+  const gameDate = placeholder ? null : parseGameDate(data.dateOfMoment)
   const composedName =
     playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
 
@@ -348,8 +350,8 @@ function buildOnChainEditionRow(
     play_id_onchain: Number.isFinite(playIdOnchain) ? playIdOnchain : null,
     play_type: (data.playType ?? "").trim() || null,
     game_date: gameDate,
-    home_team: (data.homeTeamName ?? "").trim() || null,
-    away_team: (data.awayTeamName ?? "").trim() || null,
+    home_team: placeholder ? null : (data.homeTeamName ?? "").trim() || null,
+    away_team: placeholder ? null : (data.awayTeamName ?? "").trim() || null,
     updated_at: now,
   }
 }

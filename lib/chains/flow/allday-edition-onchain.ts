@@ -146,6 +146,7 @@ access(all) fun main(editionID: UInt64): {String: String}? {
   result["dateOfMoment"] = meta["gameDate"] ?? ""
   result["awayTeamName"] = meta["awayTeamName"] ?? ""
   result["homeTeamName"] = meta["homeTeamName"] ?? ""
+  result["playDescription"] = meta["description"] ?? ""
   result["setName"] = AllDay.getSetData(id: ed.setID).name
   result["seriesName"] = AllDay.getSeriesData(id: ed.seriesID).name
   return result
@@ -282,6 +283,27 @@ function normalizeTier(raw: string | undefined | null): string | null {
   return null
 }
 
+// 2026-11-25 — Dapper mints some All Day plays BEFORE the play exists. Their chain metadata is a
+// placeholder that is never updated (the real play is filled in only on nflallday.com):
+//   * 2025 season: description "…will have a key play added during the upcoming 2025-26 season…",
+//     gameDate = the opener / draft day, empty scores, homeTeamName = awayTeamName = the player's team
+//     (Trevor Lawrence play 4181: chain 2025-09-07 "Jaguars vs Jaguars"; real: @ Bengals, 2025-09-14).
+//   * 2024 Rookie Debut / Rookie Marquee: a pre-draft blurb, "Invalid date", and a game the player's
+//     team is not in (every one read "New England Patriots vs Indianapolis Colts").
+// Storing those as the game published false dates and opponents on 500+ editions (repaired from All
+// Day's own records by audit_20261125_allday_placeholder_game_repair / _2). A placeholder play has
+// NO game yet, so its game fields are written NULL, never the filler.
+export function allDayPlayIsPlaceholder(data: Record<string, string | null | undefined>): boolean {
+  const desc = String(data.playDescription ?? "")
+  if (/will have a key play added|key play (?:will be )?added|a play will be added|upcoming 20\d\d-\d\d season/i.test(desc)) return true
+  const home = String(data.homeTeamName ?? "").trim()
+  const away = String(data.awayTeamName ?? "").trim()
+  const team = String(data.teamName ?? "").trim()
+  if (home && away && home === away) return true
+  if (home && away && team && team !== home && team !== away) return true
+  return false
+}
+
 // Build an `editions` upsert row from a GET_EDITION_DATA_SCRIPT result, so a
 // just-resolved edition that the catalog never seeded exists before
 // promote_unmapped_sales tries to join nft_edition_map → editions.
@@ -304,7 +326,8 @@ export function buildOnChainEditionRow(
   const setIdOnchain = Number(data.setID)
   const playIdOnchain = Number(data.playID)
   // The chain gives MM/DD/YYYY; parseGameDate normalises it and drops sentinel dates.
-  const gameDate = parseGameDate(data.dateOfMoment)
+  const placeholder = allDayPlayIsPlaceholder(data)
+  const gameDate = placeholder ? null : parseGameDate(data.dateOfMoment)
   const composedName =
     playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
 
@@ -323,8 +346,8 @@ export function buildOnChainEditionRow(
     play_id_onchain: Number.isFinite(playIdOnchain) ? playIdOnchain : null,
     play_type: (data.playType ?? "").trim() || null,
     game_date: gameDate,
-    home_team: (data.homeTeamName ?? "").trim() || null,
-    away_team: (data.awayTeamName ?? "").trim() || null,
+    home_team: placeholder ? null : (data.homeTeamName ?? "").trim() || null,
+    away_team: placeholder ? null : (data.awayTeamName ?? "").trim() || null,
     updated_at: now,
   }
 }

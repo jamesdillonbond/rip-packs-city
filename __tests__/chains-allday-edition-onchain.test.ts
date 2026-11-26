@@ -243,8 +243,10 @@ describe("buildOnChainEditionRow", () => {
         playID: "88",
         playType: "Pass",
         dateOfMoment: "2024-09-08T20:00:00Z",
-        homeTeamName: "KC",
-        awayTeamName: "BAL",
+        // Real chain metadata uses full team names (verified on mainnet 2026-11-25); a placeholder
+        // play whose team is not in the game writes no game, so the fixture names match.
+        homeTeamName: "Kansas City Chiefs",
+        awayTeamName: "Baltimore Ravens",
       },
       NOW,
     )
@@ -262,8 +264,8 @@ describe("buildOnChainEditionRow", () => {
     expect(row.play_id_onchain).toBe(88)
     expect(row.play_type).toBe("Pass")
     expect(row.game_date).toBe("2024-09-08")
-    expect(row.home_team).toBe("KC")
-    expect(row.away_team).toBe("BAL")
+    expect(row.home_team).toBe("Kansas City Chiefs")
+    expect(row.away_team).toBe("Baltimore Ravens")
     expect(row.updated_at).toBe(NOW)
   })
 
