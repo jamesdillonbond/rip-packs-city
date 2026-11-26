@@ -13,6 +13,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~8:28 AM PT · 🗄 APPLIED (`20261126162832`) — populate_wmc_image's Pinnacle branch locks only rows it can fill (Claude Code cloud; Trevor: "leaving nothing unresolved")
+- **Found:** `20261126105906` (SKIP LOCKED) left the Pinnacle NULL-only path locking `LIMIT p_limit` rows BEFORE the `pinnacle_catalog` join, the shape database.md's 11-11 rule forbids (it holds rows it never updates and re-reads an unfillable head).
+- **Fix:** join + `thumbnail_url IS NOT NULL` first, then LIMIT, then `FOR UPDATE OF wmc SKIP LOCKED`, the same shape as the editions path (`pinnacle_catalog.render_id` is the PK, so no duplicates). Plan: Limit → LockRows → Nested Loop on `idx_wmc_image_url_null` + `pinnacle_catalog_pkey`. Live: 0 Pinnacle NULL rows today, so behaviour is unchanged. md5 `25a8d575…` → `af22e560…` = file; anon/authenticated EXECUTE false; a test call on Pinnacle returned 0.
+- **Revert:** run only the CREATE OR REPLACE statement of `20261126105906`.
+
+### 2026-11-26 ~8:25 AM PT · 🗄 APPLIED (`20261126162522`) — `golazos_offers` cursor-stall suppression made permanent by decision (Claude Code cloud; Trevor: "work through everything … leaving nothing unresolved")
+- **Why:** the decision this row waited on since 08-28 is already in the route header and known-issues.md: Golazos has NO DapperOffersV2 offers (07-28 recon), so "do not schedule it". Each bounded lapse paged HIGH (08-27 ~27 h; 11-26 3:09 AM PT). Now `expires_at` NULL, like the retired lanes' rows (topshot_listings, ufc_listings), with a reason that says to remove it the day the indexer is scheduled.
+- **Not done:** deleting `event_cursor` 'golazos_offers'. The route reads it with `.single()`, which errors on zero rows, so a future re-test would fail. A header note in `app/api/golazos-offers-indexer/route.ts` now says to delete the SUPPRESSION when wiring, never the cursor.
+- **Verified:** guard on cursor = 159452130 passed; alert absent; both suppression-drift arms `[]`.
+- **Revert:** `UPDATE public.pipeline_alert_suppression SET expires_at = '2027-02-24 14:03:59.216876+00' WHERE pipeline = 'golazos_offers';`
+
 ### 2026-11-26 ~8:34 AM PT · 🗄 APPLIED (`20261126162202`, `20261126162521`) + 🔧 script — UFC Aptos wallet links by MOMENT IDENTITY: reaches Aug–Oct 2025 migrants without mainnet26 history or Dune (Claude Code cloud; Trevor: "Keep going")
 
 - **Why.** ~73 % of UFC Aptos holdings are with wallets that migrated Aug–Oct 2025 (mainnet26). Those nodes are gone and the Dune path waits for 12-14. But UFC's Aptos `issuer::mint_for` carries each Moment's serial and edition name, and serials survived the migration. So the Aptos wallet UFC minted a saved user's known Flow Moments to is that user's wallet. No Flow history is needed.
