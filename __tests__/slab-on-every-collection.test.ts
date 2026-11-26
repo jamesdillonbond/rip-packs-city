@@ -36,6 +36,8 @@ describe("the slab on every collection", () => {
     expect(b).toContain("/api/public/pinnacle-image/")
     expect(b).toMatch(/label: "Variant"/)
     expect(b).toMatch(/label: "Minted"/)
+    expect(b).toMatch(/label: "Floor ask"/)
+    expect(b).toMatch(/pctListed != null \? \{ label: "Listed"/)
   })
   it("neither back carries FMV confidence, and the pin back never says Moment", () => {
     for (const b of [slabBlock(EDITION), slabBlock(PIN)]) expect(b).not.toMatch(/confidence/i)

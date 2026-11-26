@@ -285,6 +285,9 @@ export default async function PinnacleMomentPage({
               metaField(ed.edition_type) ? { label: "Edition", value: metaField(ed.edition_type) as string } : null,
               ed.total_minted != null ? { label: "Minted", value: fmtInt(ed.total_minted) } : null,
               fmv != null ? { label: "FMV", value: fmtUsd(fmv) } : null,
+              // the live market, as the page's own cards read it (no row on a failed listings read)
+              floor != null ? { label: "Floor ask", value: fmtUsd(floor) } : null,
+              pctListed != null ? { label: "Listed", value: `${pctListed < 0.1 ? "<0.1" : pctListed.toFixed(pctListed < 10 ? 1 : 0)}%` } : null,
             ].filter((x): x is { label: string; value: string } => x != null && x.value !== "")}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
