@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:48 PM PT · 📝 DOCS — Pinnacle packs vs capsules section in `docs/reference/packs.md` + session entry; `d11b77b` verified live (Claude Code cloud; thread archived)
+
+- 5:45 PM PT `pinnacle-catalog-floor-refresh`: ok, `minted_chain_editions` 2,983, `minted_raised` 42 / 42 candidates, no errors → 0 Pinnacle renders below the chain's `numberMinted` (was 42 / 436 pins at ~5:15 PM PT).
+- Revert: docs only — `git revert` this commit.
+
 ### 2026-11-25 ~6:40 PM PT · 🔧 SHIPPED (code) + 📝 STAGED (migration, awaiting Trevor) — Moment slab back shows the player's stats: that season, and the game the Moment is from (Claude Code cloud; Trevor: "The back of the slab should show their stats that season and anything else relevant")
 
 - Code: `lib/slab-stats.ts` (pure: game + season chips, NBA/WNBA PTS·REB·AST·FG·3PT and PPG·RPG·APG·FG%·3P%; NFL chips named by RPC because ESPN's labels repeat YDS; traded seasons use the total line; all-zero lines render nothing), `lib/moment-detail/slab-stats-fetch.ts` (one 4 s budget; three states), `components/InteractiveSlab.tsx` (two stat blocks, serial beside the name, back scales to fit — 320 px measured 93 %). Tests: `__tests__/slab-stats.test.ts` + slab render test. Preflight green incl. component coverage.
