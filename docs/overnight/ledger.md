@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:50 AM PT · 🗄 APPLIED (`20261126193845`) + 🔧 SHIPPED — **A page per Panini league and brand (`/panini-blockchain/property/<slug>`), each brand's own words, sitemap** (Cowork cloud; Trevor: "Do it all")
+
+- **DB (applied ~11:40 AM PT):** `panini_property_set_ids(slug)` and `get_panini_property_page(slug, limit)` — the row, totals and product list from the newest `panini_product_rollup` run, most valuable cards and biggest 90-day sales merged from each product's own rollup lists, and top subjects by FMV total (NBA, the largest: 119k buffers / 0.38 s, once per 30-min ISR window). NULL = no such slug; no product page yet = `products: []` (the page 404s). anon EXECUTE false on both (`has_function_privilege`).
+- **Code:** `app/(collections)/[collection]/property/[slug]` (layout gate + page, `productPages` collections only), `components/entity/PaniniPropertyBody.tsx`, readers in `lib/panini/properties.ts`. Overview tiles and products-index group headings now link the page; product pages say "Top Characters / Artists / Drivers" where the brand is not a league; 14 pages added to the sitemap (`getPaniniProductPaths`). The word "property" is in the URL only.
+- **Revert:** `git revert` the commit titled "panini: a page per league and brand"; then `DROP FUNCTION public.get_panini_property_page(text, integer); DROP FUNCTION public.panini_property_set_ids(text);`
+
 ### 2026-11-26 ~11:41 AM PT · 🗄 APPLIED (`20261126191332`, `20261126191951`) + pg_cron + 🔧 code — UFC Strike slab backs show the FIGHT (Claude Code cloud; Trevor: "Keep going")
 
 - **The back:** "This fight":
