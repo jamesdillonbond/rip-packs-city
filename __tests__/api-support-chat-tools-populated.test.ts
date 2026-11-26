@@ -345,6 +345,38 @@ describe("concierge tools — explain_fmv", () => {
     expect(toolResult().sales_count_30d).toBe(0)
   })
 
+  // 2026-11-25: fmv_snapshots.floor_price_usd is the LOWEST SALE on a sales-priced row (only ASK_ONLY rows
+  // carry an ask). "Floor price is $1.00" was said for Shaedon Sharpe 91:3100 while its cheapest listing
+  // was $2.90 — a past $1 offer fill stated as a buy-now price.
+  it("⛔ a sales-priced row's floor_price_usd is never called the floor — it is the lowest recent sale", async () => {
+    install({
+      editions: { data: [{ id: "ed-s", player_name: "Shaedon Sharpe", set_name: "Base", tier: "COMMON", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd" }], error: null },
+      fmv_snapshots: { data: [{ fmv_usd: 2.9, confidence: "MEDIUM", wap_usd: 2.12, floor_price_usd: 1, computed_at: new Date().toISOString(), sales_count_30d: 21, days_since_sale: 2, ask_proxy_fmv: null, algo_version: "1.8.3" }], error: null },
+    })
+    script("explain_fmv", { editionKey: "91:3100" })
+    await POST(post("why is this priced like that"))
+    const r = toolResult()
+    expect(String(r.explanation)).not.toMatch(/floor price is/i)
+    expect(String(r.explanation)).toContain("lowest recent sale was $1.00")
+    expect(r).not.toHaveProperty("floor_price_usd")
+    expect(r.lowest_recent_sale_usd).toBe(1)
+    expect(r).not.toHaveProperty("ask_when_priced_usd")
+  })
+
+  it("an ASK_ONLY row's floor_price_usd is the ask at pricing time, and says so", async () => {
+    install({
+      editions: { data: [{ id: "ed-a", player_name: "Dame", set_name: "Base", tier: "RARE", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd" }], error: null },
+      fmv_snapshots: { data: [{ fmv_usd: 9, confidence: "ASK_ONLY", wap_usd: 9, floor_price_usd: 10, computed_at: new Date().toISOString(), sales_count_30d: 0, days_since_sale: 60, ask_proxy_fmv: 9, algo_version: "1.8.3" }], error: null },
+    })
+    script("explain_fmv", { editionKey: "3:48" })
+    await POST(post("why is this priced like that"))
+    const r = toolResult()
+    expect(String(r.explanation)).toContain("cheapest listing when this was priced was $10.00")
+    expect(String(r.explanation)).not.toContain("lowest recent sale")
+    expect(r.ask_when_priced_usd).toBe(10)
+    expect(r).not.toHaveProperty("lowest_recent_sale_usd")
+  })
+
   it("returns not_found when the edition key resolves to nothing", async () => {
     install({ editions: { data: null, error: null } })
     script("explain_fmv", { editionKey: "9:99" })

@@ -3729,8 +3729,16 @@ async function executeToolInner(
         : wap > 0
           ? `based on a 30-day average sales price of $${wap.toFixed(2)} ${salesNote}`
           : "with no 30-day average sale price on record";
+      // ⛔ 2026-11-25: fmv_snapshots.floor_price_usd is NOT a live floor (schema-truth.md). fmv-recalc
+      // writes the cheapest ASK only on ASK_ONLY rows; on every sales-priced row it is the LOWEST SALE in
+      // the pricing window (`Math.min(...prices)`). "Floor price is $1.00" was said for Shaedon Sharpe
+      // 91:3100 while its cheapest listing was $2.90 — a past $1 offer fill stated as a buy-now price.
+      // Name the number by the row's own basis, and point at the live listings for the current floor.
+      const floorIsAsk = snapshot.confidence === "ASK_ONLY";
       const floorSentence = floor > 0
-        ? ` Floor price is $${floor.toFixed(2)}.`
+        ? floorIsAsk
+          ? ` The cheapest listing when this was priced was $${floor.toFixed(2)} (get_edition_listings reads the current one).`
+          : ` The lowest recent sale was $${floor.toFixed(2)} — a past sale, not the current floor (get_edition_listings reads the live listings).`
         : salesCountUnknown
           ? " This snapshot carries no floor — get_edition_listings reads the current Panini ask."
           : " This snapshot carries no floor price.";
@@ -3765,7 +3773,11 @@ async function executeToolInner(
         // "estimated from asking prices" when the list is not empty; never quote algo_version itself.
         price_adjustments: priceRuleNotes(snapshot.algo_version),
         wap_usd: snapshot.wap_usd,
-        floor_price_usd: snapshot.floor_price_usd,
+        // Named by what it IS (see floorSentence): never hand the model a bare "floor_price_usd" that
+        // it will repeat as the live floor.
+        ...(floorIsAsk
+          ? { ask_when_priced_usd: snapshot.floor_price_usd ?? null }
+          : { lowest_recent_sale_usd: snapshot.floor_price_usd ?? null }),
         computed_at: snapshot.computed_at,
         ...metadataFieldsFor(meta, editionKey, effectiveCollectionUuid),
         badges_note: BADGES_NOTE,
