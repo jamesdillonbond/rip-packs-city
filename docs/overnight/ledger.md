@@ -24,6 +24,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - Verified: five rolled-back inserts on prod priced as intended; 259 of 1,869 current LOW `_bidpull` rows re-stamped (78 Legendary / Ultimate back to the pre-pull price, 181 to half of it), 259 / 259 applied; Clingan $37.08 → $96.04. Pin re-pinned with case 7 (two planted defects caught); DB suite 320 files green.
 - Falsifier: Legendary LOW within ±25 % under 74.8 on two consecutive weekly reads → revert.
 - **Revert:** values — `UPDATE public.fmv_snapshots fs SET fmv_usd = b.old_fmv_usd, algo_version = b.old_algo_version FROM public.audit_20261126_topshot_offer_pull_restamp_backup b WHERE fs.id = b.snapshot_id AND fs.fmv_usd = b.new_fmv_usd;` rule — re-apply the function body of `20261114132054` and repoint the pin.
+- 12:35 PM PT follow-up: `docs/cowork-skills/rpc-data/SKILL.md` + re-packed `rpc-data.skill` carry the new `_bidpull` reading (floor at half, Legendary skip, how to invert). CI on `65f6746` is red on ONE job that this change does not touch — component statement coverage 90.84 % vs 90.85 %, first red on `0736ad9` (the Panini `?property=` ship, another session). **Revert:** `git revert` the commit (message "rpc-data skill: offer pull floor").
 
 ### 2026-11-26 ~12:05 PM PT · 🔧 SHIPPED — **One league / brand scope across the Panini tabs (`?property=`): Market, Packs, Sets, Sniper, Collection; Analytics says it is not split** (Cowork cloud; Trevor: "Do it all")
 
