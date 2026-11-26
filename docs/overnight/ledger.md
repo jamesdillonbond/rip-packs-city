@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:55 PM PT · 🔧 SHIPPED (code) — Moment slab back: readable in the light theme; above-average highlight no longer dimmed by grey tiers (Claude Code cloud; Trevor's 3-hour "keep going")
+
+- Found in live QA (Giannis #10/25, Fandom tier): the above-average marker used the tier colour, so on a grey tier the marked numbers read DIMMER than the rest. Now `--rpc-success-text` (the binder's "up" colour; green dark / dark green light).
+- Found rendering with the real token CSS: the back's gradient had a hard-coded near-black middle, so the light theme put dark text on black. Now mixed from `--rpc-surface` and `--rpc-text-primary`. Tier/finish-coloured TEXT (serial, "This game", finish chip) is mixed 72 % toward `--rpc-text-primary` so it keeps contrast in both themes; borders keep the pure colour. Rendered dark + light at 390 px. Preflight green incl. component coverage.
+- Revert: `git revert` the commit "moment slab: light-theme back, success-colour highlight".
+
 ### 2026-11-25 ~7:30 PM PT · 🗄 APPLIED (`20261126025114`, record-only) + 📝 pin + docs — get_moment_game_context pinned; ESPN game-log lane documented (Claude Code cloud; Trevor's 3-hour "keep going")
 
 - `20261126025114_audit_20261125_moment_game_context_reissue_for_pins`: RECORD-ONLY re-issue of `moment_gamelog_season` and `get_moment_game_context` (prosrc md5 487c7ab7… / de5c42ba… before = after; anon EXECUTE false after). The earlier lane migrations were lower case, which the pin extractor and the newest-defining-migration guard do not see.
