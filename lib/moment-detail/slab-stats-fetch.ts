@@ -1,11 +1,10 @@
 // lib/moment-detail/slab-stats-fetch.ts — the player stats on the back of the Moment slab.
 //
 // 2026-11-25. Reads public.get_moment_game_context(edition) — the game line plus that season's
-// lines in one call. Until that function exists in the database (its migration is staged in
-// docs/proposals/20261126013000_audit_20261125_moment_game_lines-STAGED.sql, awaiting Trevor's apply), PostgREST
-// answers PGRST202 "function not found" and this falls back to the season lines alone, through
-// get_player_season_stats — so the back shows the season now and the game line the moment the
-// migration lands, with no code change.
+// lines in one call (supabase/migrations/20261126020013_audit_20261125_moment_game_lines.sql,
+// applied 2026-11-25 ~6:00 PM PT). If PostgREST ever answers PGRST202 "function not found" (a
+// rollback of that migration), this falls back to the season lines alone through
+// get_player_season_stats rather than losing the block.
 //
 // Three states, kept apart:
 //   ok:false            → a read failed: the slab shows no stats (no claim either way)
