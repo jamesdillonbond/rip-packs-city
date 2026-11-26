@@ -51,6 +51,7 @@ export default function PaniniProductBody({
   packs,
   topPlayers,
   marketCap,
+  property = null,
 }: {
   collection: string
   collectionLabel: string
@@ -60,11 +61,13 @@ export default function PaniniProductBody({
   topPlayers?: { ok: boolean; players: PaniniProductPlayer[] }
   /** Market cap (2026-11-23, the series page's tile); absent = not read. */
   marketCap?: { ok: boolean; cap: PaniniProductMarketCap | null }
+  /** The league / brand this product is made under (2026-11-26) — a breadcrumb step; absent = not read or unplaced. */
+  property?: { name: string; href: string } | null
 }) {
   const unpriced = p.editions - p.priced_editions
   return (
     <div data-testid="panini-product">
-      <Breadcrumbs items={[{ name: collectionLabel, href: `/${collection}/overview` }, { name: "Products", href: `/${collection}/product` }, { name: p.name }]} />
+      <Breadcrumbs items={[{ name: collectionLabel, href: `/${collection}/overview` }, { name: "Products", href: `/${collection}/product` }, ...(property ? [{ name: property.name, href: property.href }] : []), { name: p.name }]} />
 
       <header style={{ marginTop: 8 }}>
         <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>

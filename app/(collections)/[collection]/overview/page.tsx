@@ -13,6 +13,7 @@ import { Suspense } from "react";
 import { CollectionMarketCapTile } from "@/components/entity/MarketCapTile";
 import { getCollectionByUrlSlug } from "@/lib/collection-slug";
 import { readCollectionStatsForPage } from "@/lib/collection-stats/read";
+import PaniniPropertyGrid from "@/components/collection/PaniniPropertyGrid";
 
 export default async function OverviewPage({
   params,
@@ -36,6 +37,13 @@ export default async function OverviewPage({
   // seeds null: the client then renders exactly what it renders today (its own
   // read, its own three-way honesty), and ISR never caches a claim out of a
   // failure (#33) because null IS the absence.
+  // 2026-11-26: "What Panini covers" — leagues and entertainment brands, a server slot like the market cap
+  // tile (a failed read renders nothing; the client keeps its Products link).
+  const coverageSlot = collection === "panini-blockchain" ? (
+    <Suspense fallback={null}>
+      <PaniniPropertyGrid collection={collection} />
+    </Suspense>
+  ) : null;
   let initialStats: Record<string, unknown> | null = null;
   const seed = await readCollectionStatsForPage(collection);
   if (seed.ok) initialStats = seed.stats;
@@ -44,6 +52,7 @@ export default async function OverviewPage({
     <CollectionOverviewClient
       collection={collection}
       marketCapSlot={marketCapSlot}
+      coverageSlot={coverageSlot}
       initialStats={initialStats as never}
     />
   );

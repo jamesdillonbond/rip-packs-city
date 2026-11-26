@@ -227,11 +227,14 @@ function tierColor(tier: string | null | undefined, collection: string) {
 export default function CollectionOverviewClient({
   collection,
   marketCapSlot = null,
+  coverageSlot = null,
   initialStats = null,
 }: {
   collection: string
   /** Server-rendered market-cap tile (page.tsx), already wrapped in Suspense. */
   marketCapSlot?: React.ReactNode
+  /** Panini's "What Panini covers" grid (2026-11-26), server-rendered; null for every other collection. */
+  coverageSlot?: React.ReactNode
   /**
    * Server-seeded stats for the FIRST frame (page.tsx, review E2 2026-10-13).
    * Null when the server read failed or was skipped — then the band loads
@@ -892,6 +895,8 @@ export default function CollectionOverviewClient({
           </Link>
         </section>
       )}
+
+      {coverageSlot}
 
       {isPanini && (
         <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>

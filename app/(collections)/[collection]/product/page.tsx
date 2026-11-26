@@ -1,6 +1,6 @@
 // app/(collections)/[collection]/product/page.tsx
 //
-// Panini products index (2026-10-25): every product page, by sport. Only collections with the registry's
+// Panini products index (2026-10-25): every product page, by league / brand (2026-11-26; by sport before). Only collections with the registry's
 // `productPages` switch have it. A failed read renders "couldn't load", never an empty list.
 
 import type { Metadata } from "next"
@@ -10,6 +10,7 @@ import { getCollection } from "@/lib/collections"
 import { collectionDisplayName, collectionOgUrl, NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 import { listPaniniProducts } from "@/lib/panini/product"
 import PaniniProductIndex from "@/components/entity/PaniniProductIndex"
+import { fetchPaniniPropertyBoard } from "@/lib/panini/properties"
 
 export const revalidate = 1800
 
@@ -40,10 +41,11 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
 export default async function PaniniProductIndexPage(props: Props) {
   const { collection } = await props.params
   if (!enabled(collection)) notFound()
-  const rows = await listPaniniProducts().catch(() => null)
+  // 2026-11-26: the league / brand grouping; a failed read leaves the index grouped by sport, as before.
+  const [rows, properties] = await Promise.all([listPaniniProducts().catch(() => null), fetchPaniniPropertyBoard()])
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 48px" }}>
-      <PaniniProductIndex collection={collection} collectionLabel={collectionDisplayName(collection)} rows={rows} />
+      <PaniniProductIndex collection={collection} collectionLabel={collectionDisplayName(collection)} rows={rows} board={properties.ok ? properties.board : null} />
     </div>
   )
 }

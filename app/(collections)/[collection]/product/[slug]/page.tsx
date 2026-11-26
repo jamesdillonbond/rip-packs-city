@@ -5,6 +5,7 @@
 // failed read, says it couldn't load. Data: lib/panini/product.ts (panini_product_rollup, hourly).
 
 import type { Metadata } from "next"
+import { fetchPaniniPropertyBoard, paniniPropertyHref } from "@/lib/panini/properties"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
@@ -53,11 +54,16 @@ export default async function PaniniProductPage(props: Props) {
   if (!res.ok) return <PaniniProductUnavailable collection={collection} />
   if (!res.product) notFound()
   const ids = res.product.product_set_ids.length ? res.product.product_set_ids : [res.product.product_set_id]
-  const [packs, topPlayers, marketCap] = await Promise.all([
+  const [packs, topPlayers, marketCap, properties] = await Promise.all([
     fetchPaniniProductPacks(ids).catch(() => ({ packs: null, productName: null })),
     readPaniniProductTopPlayers(res.product.slug),
     readPaniniProductMarketCap(res.product.slug),
+    fetchPaniniPropertyBoard(),
   ])
+  // 2026-11-26: the league / brand breadcrumb step; a failed read or an unplaced product simply has none.
+  const propertySlug = properties.ok ? properties.board.productProperty[res.product.slug] : undefined
+  const propertyRow = properties.ok && propertySlug ? properties.board.properties.find((x) => x.slug === propertySlug) : undefined
+  const property = propertyRow ? { name: propertyRow.name, href: paniniPropertyHref(collection, propertyRow.slug) } : null
   // CollectionPage + BreadcrumbList (+ ItemList of the top editions), the shape the
   // series pages publish (2026-11-06: the 68 product pages were the one indexable
   // entity route with no structured data). route_slug = external_id, as the body's
@@ -72,7 +78,7 @@ export default async function PaniniProductPage(props: Props) {
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 48px" }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
-      <PaniniProductBody collection={collection} collectionLabel={collectionDisplayName(collection)} product={res.product} packs={packs} topPlayers={topPlayers} marketCap={marketCap} />
+      <PaniniProductBody collection={collection} collectionLabel={collectionDisplayName(collection)} product={res.product} packs={packs} topPlayers={topPlayers} marketCap={marketCap} property={property} />
     </div>
   )
 }

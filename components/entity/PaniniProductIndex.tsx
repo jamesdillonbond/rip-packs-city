@@ -1,7 +1,9 @@
 // components/entity/PaniniProductIndex.tsx
 //
-// The Panini products index (/panini-blockchain/product, 2026-10-25) — every product page, grouped by sport,
-// biggest first. Data: listPaniniProducts() (panini_product_rollup, newest run). Pure props for testing.
+// The Panini products index (/panini-blockchain/product, 2026-10-25) — every product page, biggest first.
+// 2026-11-26: grouped by league / brand under two headings, Leagues and Entertainment (lib/panini/properties.ts;
+// ⛔ the word "property" never renders), each group an anchor the overview grid links to. Without the board
+// (the read failed, or an older caller) it groups by Panini's sport exactly as before. Data: listPaniniProducts() (panini_product_rollup, newest run). Pure props for testing.
 // Counts are editions RPC has SEEN (listing-gated); sales are ON RECORD and lag; no FMV tier anywhere.
 
 import Link from "next/link"
@@ -12,6 +14,7 @@ import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { paniniProductHref } from "@/lib/panini/product-url"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
+import { PANINI_PROPERTY_HEADINGS, seasonSpan, type PaniniPropertyBoard } from "@/lib/panini/properties"
 
 export interface PaniniProductIndexRow {
   name: string
@@ -34,21 +37,48 @@ export default function PaniniProductIndex({
   collection,
   collectionLabel,
   rows,
+  board = null,
 }: {
   collection: string
   collectionLabel: string
   /** null = the read failed. */
   rows: PaniniProductIndexRow[] | null
+  /** League / brand grouping (2026-11-26); null or absent = group by Panini's sport, as before. */
+  board?: PaniniPropertyBoard | null
 }) {
-  const groups = new Map<string, PaniniProductIndexRow[]>()
-  for (const r of rows ?? []) {
-    const k = r.sport ?? "Other"
-    if (!groups.has(k)) groups.set(k, [])
-    groups.get(k)!.push(r)
+  const bySize = (list: PaniniProductIndexRow[]) => [...list].sort((a, b) => b.editions - a.editions || a.name.localeCompare(b.name))
+  const total = (list: readonly PaniniProductIndexRow[]) => list.reduce((n, r) => n + r.editions, 0)
+  type Group = { key: string; id?: string; title: string; note: string | null; heading: string | null; list: PaniniProductIndexRow[] }
+  let ordered: Group[]
+  if (board && board.properties.length > 0) {
+    const byProperty = new Map<string, PaniniProductIndexRow[]>()
+    const other: PaniniProductIndexRow[] = []
+    for (const r of rows ?? []) {
+      const k = board.productProperty[r.slug]
+      if (!k || !board.properties.some((p) => p.slug === k)) { other.push(r); continue }
+      if (!byProperty.has(k)) byProperty.set(k, [])
+      byProperty.get(k)!.push(r)
+    }
+    ordered = []
+    for (const h of PANINI_PROPERTY_HEADINGS) {
+      const inHeading = board.properties
+        .filter((p) => p.heading === h.key && byProperty.has(p.slug))
+        .map((p) => ({ key: p.slug, id: p.slug, title: p.name, note: seasonSpan(p), heading: h.label, list: bySize(byProperty.get(p.slug)!) }))
+        .sort((a, b) => total(b.list) - total(a.list))
+      ordered.push(...inHeading)
+    }
+    if (other.length > 0) ordered.push({ key: "other", title: "Other", note: null, heading: null, list: bySize(other) })
+  } else {
+    const groups = new Map<string, PaniniProductIndexRow[]>()
+    for (const r of rows ?? []) {
+      const k = r.sport ?? "Other"
+      if (!groups.has(k)) groups.set(k, [])
+      groups.get(k)!.push(r)
+    }
+    ordered = [...groups.entries()]
+      .map(([sport, list]) => ({ key: sport, title: paniniSportLabel(sport), note: null, heading: null, list: bySize(list) }))
+      .sort((a, b) => total(b.list) - total(a.list))
   }
-  const ordered = [...groups.entries()]
-    .map(([sport, list]) => [sport, [...list].sort((a, b) => b.editions - a.editions || a.name.localeCompare(b.name))] as const)
-    .sort((a, b) => b[1].reduce((n, r) => n + r.editions, 0) - a[1].reduce((n, r) => n + r.editions, 0))
   return (
     <div data-testid="panini-product-index">
       <Breadcrumbs items={[{ name: collectionLabel, href: `/${collection}/overview` }, { name: "Products" }]} />
@@ -68,12 +98,17 @@ export default function PaniniProductIndex({
           No product has been counted yet — the list refreshes hourly.
         </div>
       ) : (
-        ordered.map(([sport, list]) => (
-          <section key={sport} className="rpc-card" style={{ padding: 18, marginTop: 14 }}>
+        ordered.map(({ key, id, title, note, heading, list }, i) => (
+          <div key={key}>
+          {heading && heading !== (ordered[i - 1]?.heading ?? null) ? (
+            <div data-testid="panini-product-index-heading" className="rpc-label" style={{ marginTop: 22 }}>{heading}</div>
+          ) : null}
+          <section id={id} className="rpc-card" style={{ padding: 18, marginTop: 14, scrollMarginTop: 80 }}>
             <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 10px" }}>
-              {paniniSportLabel(sport)}
+              {title}
             </h2>
-            <div className="rpc-scroll-x" {...scrollRegion("Products in this sport")}>
+            {note ? <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "-6px 0 10px" }}>{note}</div> : null}
+            <div className="rpc-scroll-x" {...scrollRegion("Products in this group")}>
               <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>
                 <thead>
                   <tr>
@@ -102,6 +137,7 @@ export default function PaniniProductIndex({
               </table>
             </div>
           </section>
+          </div>
         ))
       )}
       <div className="rpc-mono" style={{ marginTop: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
