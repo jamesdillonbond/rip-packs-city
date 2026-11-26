@@ -13,6 +13,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:22 PM PT · 🗄 APPLIED (`20261126011522`) + 🔧 SHIPPED (code) — trade room: a submitted swap is recorded the moment it is sent, so a room whose tab closed can still be sealed from the chain (Claude Code cloud; Trevor: "work through everything you can in this thread")
+
+- **Why.** This was trading.md Open 6 item 1, the last open item from the 11-24 security review. A room only learned its tx id at the client's `sealed` call, after the seal was read. A tab closed in between left it `signing` forever: cancel refused, and unsealable with no id. The SealUnconfirmed message also pointed at a "Check the chain" button that is not rendered on a signing room.
+- **What.**
+  - `trade_rooms.submitted_tx_id` (hex64 CHECK).
+  - `SendSwapOpts.onSubmitted` fires right after `fcl.mutate` returns. It is fire-and-forget, wrapped, and never touches signing.
+  - The new `submitted` action records the id while the room is `signing` (member only, 400 on a malformed id, 409 when not signing).
+  - `verify` seals a `signing` or `cancelled` room from it only when every Moment landed AND `assertSealTx` (11-24's script + arguments check) proves it is this room's trade. A refusal leaves the room untouched, and verify still answers 200.
+  - A signing room with a submitted swap shows the flowscan link and "Check the chain", and never "Sign and send".
+- **Proof.**
+  - New route test covering not-signing 409, bad id 400, recorded, not landed, landed-but-wrong-tx and sealed. New wallet test covering the id reported before the seal read, on an unconfirmed seal, and with a throwing recorder. New component test for the panel.
+  - Planted defects: skipping `assertSealTx` → red; skipping the landed check → red.
+  - `npm run preflight`: 8 steps, 0 failed.
+- **Revert.** `git revert` this commit; `ALTER TABLE public.trade_rooms DROP COLUMN submitted_tx_id;`.
+
 ### 2026-11-25 ~5:20 PM PT · 🔧 SHIPPED (code) — Pinnacle catalog `total_minted` now follows the contract's own `Edition.numberMinted` (raise-only, both the daily and 6-hourly catalog runs); Atlas's `numMinted` ran below the chain on 42 renders / 436 pins (Claude Code cloud; Trevor: "Keep going")
 
 - Measured ~5:15 PM PT: Flow script `Pinnacle.getEdition(id).numberMinted` for 33 trailing editions equals RPC's `pinnacle_mint_events` count on every one (e.g. 2932 OEV1-WDMG-MICK-S2: chain 707, Atlas/catalog 699; 2278 SEV1-TRIV-MICK-S1: 2,400 vs 2,396). Atlas is the source that is low, and not by lag: 12 of the 42 trailing renders had no mint in 14+ days, and Mugs Vol.1 (closed 11-23) still read 7,473 vs 7,503. The 11:45 AM run of `f8d351a` (Atlas-only raise) did raise 5 of 5 candidates as built; this closes the rest.
