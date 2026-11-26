@@ -13,6 +13,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~10:55 AM PT · 🗄 APPLIED (`20261126184303`) + pg_cron 936/937 + 🔧 code — Panini SOCCER cards get their competition-season line on the slab back; a set name naming two seasons gives none (Claude Code cloud; Trevor: "Yes do it all")
+
+- **What it shows:** a soccer card's back has the player's line in the competition and season its PRODUCT is from. A "2022 … FIFA World Cup" card shows his 2022 World Cup (Messi: G 7 · A 3 · GS 7). A "2022-23 … LaLiga" card shows his 2022-23 LALIGA season. Keepers show CS · SV · GA · GS. Mapped products: LaLiga, Serie A, Ligue 1 (incl. Foot FR stickers), the men's World Cup. Not mapped: qualifiers ("Road to"), "Saga", women's, and competition-less products.
+- **Lane (pg_net → ESPN athlete stats):**
+  - A discovery request per crosswalked soccer athlete (1,245) lists every team of his career.
+  - Then one `?league=&team=` request per team × competition his cards need.
+  - ESPN answers an unknown pair with the athlete's default pair, so the drain stores an answer only when ESPN's own filters name the pair asked for; otherwise `mismatch`, nothing stored.
+  - Schedule: dispatch `*/3` (≤60), drain `2-59/3`, pipeline `panini-soccer-season-lines` (watchlist, info).
+  - Backfill: ~8k requests, about 7 hours.
+- **Verified:**
+  - Pin `supabase/tests/espn_soccer_athlete_stats_drain.sql` passes locally; planted defect (mismatch guard removed) → red.
+  - 4 functions registered in the drift guard. Applied body equals the file; anon EXECUTE false.
+  - First scheduled ticks (jobs 936/937): 120 discovery answers ok, 0 errors.
+- **Reader** `get_panini_card_soccer_line(slugs, external_id)` is NULL for an ambiguous player or a competition-less product. The site treats a missing reader as no soccer line, not a failed read.
+- **Also:** `cardSeason` returns nothing when a set name names two different seasons ("2020-21 NFT NBA Entertainment - BC 2021-22 Prizm …").
+- **Revert:** the SQL revert block at the top of the migration file (unschedule 936/937, drop 5 functions + 2 tables, delete the watchlist row); `git revert` the code commit (message "soccer card slab lines").
+
 ### 2026-11-26 ~10:55 AM PT · 🔒 SHIPPED — `?token=` server-secret form removed from every API route (header-only); three 11-25 dated reads closed or re-dated (Claude Code cloud, scheduled routine `trig_01Qei47zESZXJXBihtV2WuUZ`, set by Trevor 11-25)
 - **`?token=` removal:** a week of the proxy `[auth:query-token]` instrument (Vercel `query-token` 11-21..11-26) found 0 real callers. The one line was the 11-24 positive control. No pg_cron command carries `token=`. About 60 route sites in app/api + `lib/studio-sales-history.ts` now accept only the header (Bearer, or `x-ingest-token` where that was already accepted; `/api/pinnacle-ingest` and `/api/tier-backfill` lost their query-only lane). Email-link routes (subscribe/unsubscribe, subscribe/verify, email/confirm) unchanged. New ratchet `__tests__/query-token-secret-retired-ratchet.test.ts` (tree walk, ban at 0, planted-defect proven). About 56 test files: the query-accept tests were inverted to 401, never deleted; happy paths moved to the header. Preflight 6/6 green. **Not done:** the page `app/admin/flowty-errors` (`?token=` + cookie; the `/api/`-only instrument never measured it) and the edge-function `?token=` branches. Both are listed in focus.md.
 - **Reads (no change):** job 901 retirement closed (11-26 snapshots 58/58 filled, $239,880 / 8,577 packs vs 11-25 $236,323 / 8,612). Job 926 ran 73 s, so the 600 s path is still unexercised and stays open. fmv-recalc `:08` even−odd gap went from +17.7 s to −8.1 s (even n 9), so job 924 is confirmed as the even-hour layer.
