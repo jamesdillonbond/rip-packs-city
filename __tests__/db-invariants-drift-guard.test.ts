@@ -196,9 +196,10 @@ const PINS = [
   },
   {
     // Added 2026-11-22. The fmv-recalc hot lane compares a snapshot to when the newest sale was INGESTED, not only sold.
+    // 2026-11-26: also re-prices a HIGH / MEDIUM edition once >= 3 unseen ordinary sales sit > 30 % from it.
     fn: "fmv_recalc_hot_editions",
     test: "supabase/tests/fmv_recalc_hot_editions.sql",
-    migration: "supabase/migrations/20261123041110_audit_20261122_fmv_hot_lane_compares_snapshot_to_sale_ingest_time.sql",
+    migration: "supabase/migrations/20261126162440_audit_20261126_fmv_hot_lane_reprices_drifted_high_medium.sql",
   },
   {
     // Added 2026-10-11. The rip re-key lane also moves the rip's topshot_pack_rip_attribution copy (realized EV reads it alone).
