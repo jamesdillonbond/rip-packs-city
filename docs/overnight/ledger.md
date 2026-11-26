@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 3:43 PM PT — League chips on Panini Premiums; Candy serial premiums names each sale's brand
+
+**Panini Premiums** (`/insights/panini-premiums`): a League row ("NBA · 12") on both tabs, narrowing in memory by the product id each row carries; it replaces the Sport row (NBA and WNBA are one sport, two leagues) and falls back to Sport when the league index read fails. **Candy serial premiums**: the 200-sale table mixes brands (187 MLB, 13 DC today) — each row now names its brand and an "In this list" line links each brand's page; a failed lookup names none. No DB change. **Trophies board not touched**: 16 of 267 trophy slots are Panini and none are Candy — a League row there would be chrome.
+
+**Revert:** revert the commit "insights: league chips on Panini premiums" (by message).
+
 ### 2026-11-26 · 3:40 PM PT — Candy Binder brand filter no longer times out; Candy Market keeps the brand in the address
 
 Rendered QA of this afternoon's work found two defects. **(1)** The Candy Binder's brand pick answered **500 after 30 s** for a 125k-card wallet (`get_candy_wallet_cards_for_property`: 93.9 s, 12.9M buffers — it priced every held card, then applied the brand). Rewritten brand-first, price once per distinct edition held: **78.6k buffers; the same API call now answers 200 in 1.7 s warm (7 s cold), 16,856 DC cards.** Same signature and rows — md5 of the json identical before/after on 2 wallets × 6 sort/offset pairs. Migration `20261126233213`. **(2)** `MarketClient` wrote `?property=` for Panini only, so a Candy brand pick filtered the list and dropped out of the address; now both. Test proven with the defect planted.
