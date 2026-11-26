@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~3:25 PM PT · 🗄 DATA — **Panini soccer season lines: scheduled check; Messi 2022 World Cup request queued by hand** (scheduled check, cloud)
+
+- **What:** one row inserted into `espn_soccer_athlete_fetches` (`45843` · `fifa.world` · team `202`) with its `net.http_get`, so the drain could fetch it now instead of ~3 h from now. The drain stored 6 World Cup lines; 2022 reads G 7 · A 3 (correct). Live `/panini-blockchain/edition/packcard-1733_331242_8797896_8` serves "2022 World Cup · Argentina · 7 G · 3 A" server-side.
+- **Backfill status 3:21 PM PT:** ok 2,167 · mismatch 3,340 · error 1 (ESPN 500 "queue full") · 3,225 lines; ~3,800 requests still unfetched at 60 per 3 min → done ~6:30 PM PT. `espn_soccer_card_needs()` is the full need SET (1,391 pairs), not a remaining count, so it stays flat by design. Nothing to fix.
+- **Revert:** none needed (the dispatch would have made the same request); to undo: `delete from espn_soccer_athlete_lines where espn_id='45843' and league_slug='fifa.world'; delete from espn_soccer_athlete_fetches where espn_id='45843' and league_slug='fifa.world';`
+
 ### 2026-11-26 ~3:20 PM PT · 🔧 SHIPPED — **Candy Sets tab: "Every Candy collection you hold", with brand chips** (Cowork cloud; Trevor: "Do it all")
 
 - **Why:** the Sets tab tracked one set (the 2026 MLB Base Series), so a brand filter there had one option. The fix is the missing content: a second panel listing every Candy collection the wallet holds a card of — different cards owned of those RPC has catalogued, cards held, and its brand — with League / brand chips (exact: the whole list is on the client). On a 125,407-card wallet: 222 of 398 collections.
