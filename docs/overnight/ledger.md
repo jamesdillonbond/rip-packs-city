@@ -13,6 +13,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:35 PM PT · 🔧 SHIPPED (script fix + edition page) — UFC Aptos listings lane fixed after its first run failed; UFC edition pages show "Lowest ask · Aptos" (Claude Code cloud; Trevor: "push to main. Fix any issues you encountered")
+
+- **Failure.** The first run of `ufc-aptos-listings` (dispatch 45751763245, 7:59 PM PT) died with `gave up …/graphql`: the indexer 408s at OFFSET 0 on a window where the filter matches nothing, because it scans the whole 40M-version range. The 11-16 draft started at UFC's first mint (v3.18B), 4B versions before Rarible existed on Aptos. Cursor stayed NULL; nothing was written.
+- **Fix (`scripts/ufc-aptos-listings.mjs`):**
+  - The scan starts at Rarible's package publish (first account tx v7,142,108,457, 2026-09-09).
+  - It uses keyset paging (the sales lane's 11-15 pattern).
+  - A 408 halves the window and retries the same start; the floor is 1M versions, below which it throws. The window grows back after each success.
+  - Proof: a local run with the DB stubbed scanned v7.14B → head (28 windows, 0 timeouts, 687 Rarible listing transfers) in 87 s, anonymous.
+- **Edition page:** for UFC editions, a "Lowest ask · Aptos" tile shows the cheapest single-Moment Rarible ask from `v_ufc_aptos_edition_floor`. It also shows the listed count (linked to the Rarible collection page; per-token links 404), the APT amount and the check age.
+  - New fetcher `lib/ufc-aptos-floor.ts` has three states: a failed read renders nothing and defaults to failed on UFC; no listing renders nothing (never "none listed"); a listing renders the floor.
+  - The tile is shown while FMV still reads as closed: it is a live ask, not an FMV.
+  - `__tests__/lib-ufc-aptos-floor.test.ts` has 8 cases. Planting a defect (failed read → ok:true) turns it red.
+- Proof: `npm run preflight` green. After deploy: dispatch the UFC Aptos workflow (apply), then read `pipeline_runs` `ufc-aptos-listings`, `count(*) from ufc_aptos_listings`, and a UFC edition page with a listing.
+- Revert: `git revert` the code commit. The data half is `truncate public.ufc_aptos_listings; update ufc_aptos_ingest_state set listings_scanned_through_version = null where id = 1;`
+
 ### 2026-11-25 ~8:40 PM PT · ✅ SHIPPED (code) — Panini cards inside the one Portfolio FMV: dashboard, public profile, Value / 30D, weekly email (Cowork cloud; Trevor: "Yes it should be. Connect to the repo and get all of this done")
 
 - Linked Panini usernames' newest `panini_portfolio_daily` value joins Total Assets / Portfolio FMV / Collections (dashboard + public profile via new `/api/public/profile/<u>/panini`), a third stacked band on Value / 30D, and the weekly email's Estimated value (like-for-like week rule). Shared reader `lib/panini/linked-value.ts`. A failed read adds nothing and is said. Share card unchanged (wallet-scoped).
