@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~12:22 PM PT · 🔧 SHIPPED — every UFC Moment page says whether THAT Moment lives on Flow or Aptos (Claude Code cloud; Trevor: "Keep going")
+- New `/api/ufc/moment-chain?edition=&serial=` asks the Aptos indexer whether that edition + serial was minted on Aptos (serials survived the burn-and-mint): Aptos → tag + Rarible and explorer links ("held by UFC Strike store" when it is); mapped but absent → Flow; unmapped → nothing; a failed read → 5xx and nothing rendered. The Aptos owner is never returned — on a Flow Moment page it would publish the Flow→Aptos owner link RPC keeps internal. Replaces the static "This Flow moment is no longer tradeable" note, which was false for every migrated Moment.
+- Also settled: rrx69's 11-26 morning binder value $6,936.71 vs the cache's $4,906.27 is the Aptos-ask FMV cap; the live binder now reads the same $4,906.27 (1,855 Moments).
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-11-26 ~12:00 PM PT · 🗄 APPLIED (`20261126195919`, re-stamp `20261126200155`) — **Top Shot offer pull: a Legendary / Ultimate sales-based price ignores an offer under half of it; every other tier is never pulled below half** (chat session; Trevor: "Yes", then "Connect to the repo and get everything done")
 
 - Asked why Donovan Clingan — Rookie Revelation (Legendary /75) read $37.08 against $95–98 sales: a $27 offer (28 % of the price) pulled it. Legendary holders accepted 16 of 2,408 top offers placed under half the price (09-10 → 11-11); with a 25–40 % offer the median sale is 0.51 of the price (n 205). Backtest, LOW, 10-01 → 11-26, n 2,325: within ±25 % 66.4 → 67.1, WAPE 0.217 → 0.209; Legendary n 103: 74.8 → 80.6. ASK_ONLY unchanged. Evidence: Project docs `claude/fmv-offer-pull-low-bid-research-2026-11-26.md`, `claude/fmv-offer-pull-collector-behavior-2026-11-26.md`; status `claude/handoff-2026-11-26-offer-pull-floor-shipped.md`.
