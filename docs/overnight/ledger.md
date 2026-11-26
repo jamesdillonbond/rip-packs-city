@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~3:11 PM PT · 🗄 APPLIED (`20261126231111` + `20261126231112`) — **the Legendary ask-based skip window is 180 days, not 365** (chat session; Trevor chose 180 after the backtest)
+
+- **What changed:** the 2:10 PM rule (a Legendary / Ultimate ask-based price ignores an open offer under half of it while the edition has a recent sale) keeps its fix for the day-30 drop, but "recent" is now 180 days. I had picked 365 without a backtest; the read (Legendary / Ultimate sales 09-08 → 11-26, offer under half standing, within ±25 % of the sale, pulled vs not pulled): 31–90 d 39.5 vs 18.4 (n 76) · 91–180 d 39.7 vs 23.8 (n 63) · 181–365 d 45.5 vs 3.0 (n 33, unpulled ~2.7× the sale).
+- **Rows:** 98 of the 329 lifted at 2:10 PM (last sale over 180 days old) went back to their pulled price; 231 stay lifted (+~$28,200). `reverted_at` marks the 98 in `audit_20261126_topshot_offer_pull_restamp_ask_only_backup`. Wallet cache: all 329 had caught up at the 2:59 PM tick; the 98 follow at 3:59 PM.
+- **Verified live:** an ASK_ONLY Legendary row inserted and rolled back came out unpulled and untagged ($2,969.08 in, $2,969.08 out).
+- **Revert:** rule — re-apply the function body of `20261126221042` (prosrc md5 `5ce29e6c08abfbe8e8d78ec51ac5e36d`) for 365 days, or of `20261126212338` (`adb6c97a13bdffc07f19f1c8214c7b6d`) for no ask-based skip; rows — the statements in the two re-stamp migration headers.
+
 ### 2026-11-26 ~3:13 PM PT · 🔧 SHIPPED — **Panini squeeze board: League chips; Candy squeeze: the set picker is grouped by brand** (Cowork cloud; Trevor: "Do it all")
 
 - **Panini squeeze (`/insights/panini-squeeze`):** League chips beside the Rookies toggle, with row counts. The whole board is on the client, so narrowing is exact; a row is placed by the product id in its card key (`external_id` added to the board's default read — a stored board snapshot from before this deploy has no key, so the chips appear once it refreshes). A failed chip read shows none and filters nothing.
