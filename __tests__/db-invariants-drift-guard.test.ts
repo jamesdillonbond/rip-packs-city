@@ -179,7 +179,8 @@ const PINS = [
     test: "supabase/tests/fmv_snapshots_pull_topshot_thin_to_best_offer.sql",
     // 2026-11-26: on a LOW price a Legendary / Ultimate ignores an offer under half of it; other tiers floor at half.
     // 2026-11-26 (afternoon): the same rule, and every step it takes is written to fmv_offer_pull_log.
-    migration: "supabase/migrations/20261126212338_audit_20261126_topshot_offer_pull_log.sql",
+    // 2026-11-26 (2:10 PM): the Legendary / Ultimate skip also covers ASK_ONLY while a sale is inside 365 days.
+    migration: "supabase/migrations/20261126221042_audit_20261126_topshot_offer_pull_legendary_skip_covers_ask_only.sql",
   },
   {
     // Added 2026-11-13. All Day _compcap: the comparable cut never lands below the best open offer.

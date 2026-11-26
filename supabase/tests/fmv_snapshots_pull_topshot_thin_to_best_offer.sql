@@ -14,12 +14,16 @@
 --   7. (2026-11-26) on a LOW price an offer under HALF of it: a Legendary / Ultimate edition is not pulled at all
 --      ($125 with a $40 offer stays $125, untagged -- holders accepted 0.7 % of such offers); every other tier is
 --      pulled no lower than half ($125 with $40 -> $62.50, was $53.18). From half up nothing changed, any tier
---      ($60 with $40 -> $44.27), and a Legendary ASK_ONLY price is still pulled ($125 with $40 -> $53.18).
+--      ($60 with $40 -> $44.27).
+--   9. (2026-11-26 afternoon) the Legendary / Ultimate skip also holds on an ASK_ONLY price while the edition has
+--      a market sale inside 365 days ($125 with a $40 offer stays $125, untagged) -- the engine re-labels a listed
+--      edition ASK_ONLY 30 days after its last sale and the skip used to lapse there. Last sale older than 365
+--      days, or never sold: still pulled ($53.18).
 --   8. (2026-11-26) every price the pull step acted on or skipped leaves one public.fmv_offer_pull_log row with
 --      the PRE-pull price, the offer and the outcome ('pulled' | 'floored' | 'skipped'); a price the step never
 --      considered leaves none; and a log write that fails does not fail the price.
 -- The function DDL is VERBATIM from
--- supabase/migrations/20261126212338_audit_20261126_topshot_offer_pull_log.sql;
+-- supabase/migrations/20261126221042_audit_20261126_topshot_offer_pull_legendary_skip_covers_ask_only.sql;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift. Runs in a rolled-back transaction.
 
 BEGIN;
@@ -27,7 +31,7 @@ BEGIN;
 CREATE TABLE public.offers (
   collection_id uuid, edition_id uuid, offer_amount_usd numeric, status text, offer_type text, expires_at timestamptz
 );
-CREATE TABLE public.sales_market (edition_id uuid);
+CREATE TABLE public.sales_market (edition_id uuid, sold_at timestamptz DEFAULT now());
 CREATE TABLE public.editions (id uuid, tier text);
 CREATE TABLE public.fmv_comparable_estimates (
   edition_id uuid, baseline_kind text, n_set integer, est_usd numeric, computed_at timestamptz
@@ -74,13 +78,20 @@ begin
     -- 2026-11-26: on a LOW price, (a) a Legendary / Ultimate edition ignores an offer under half the price
     -- (holders accepted 0.7 % of such offers), and (b) every other tier is never pulled below half the price
     -- (median sale with a 25-40 % bid = 0.51 of the price). ASK_ONLY unchanged.
+    -- 2026-11-26 (afternoon, Trevor: "we need to fix that"): the Legendary / Ultimate skip also covers an
+    -- ASK_ONLY price while the edition has a market sale inside 365 days. The engine re-labels a listed
+    -- edition ASK_ONLY 30 days after its last sale, so the skip used to lapse on day 30 and the price fell
+    -- back to the offer (Clingan Rookie Revelation: $96 -> $37 with no new sale and no new offer).
     if v_bid is not null and v_bid > 0 and v_bid < new.fmv_usd
        and v_bid >= (case when new.confidence = 'LOW' then 0.25 else 0.10 end) * new.fmv_usd then
       v_pre := new.fmv_usd;
-      if new.confidence = 'LOW' then
-        select e.tier::text into v_tier from public.editions e where e.id = new.edition_id;
-      end if;
-      if new.confidence = 'LOW' and v_tier in ('LEGENDARY', 'ULTIMATE') and v_bid < 0.5 * new.fmv_usd then
+      select e.tier::text into v_tier from public.editions e where e.id = new.edition_id;
+      if v_tier in ('LEGENDARY', 'ULTIMATE') and v_bid < 0.5 * new.fmv_usd
+         and (new.confidence = 'LOW'
+              or exists (select 1 from public.sales_market s
+                          where s.edition_id = new.edition_id
+                            and s.sold_at > now() - interval '365 days'))
+      then
         v_outcome := 'skipped';
       else
         v_new := greatest(round(power(new.fmv_usd, 0.25) * power(v_bid, 0.75), 2), round(v_bid, 2), 0.01);
@@ -183,6 +194,13 @@ INSERT INTO public.offers VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000e', 40.00, 'open', 'edition', NULL),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-00000000000f', 40.00, 'open', 'edition', NULL);
 
+INSERT INTO public.editions VALUES
+  ('b0000000-0000-0000-0000-0000000000c1', 'LEGENDARY'), ('b0000000-0000-0000-0000-0000000000c2', 'ULTIMATE');
+INSERT INTO public.sales_market VALUES ('b0000000-0000-0000-0000-0000000000c1', now() - interval '400 days');
+INSERT INTO public.offers VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-0000000000c1', 40.00, 'open', 'edition', NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'b0000000-0000-0000-0000-0000000000c2', 40.00, 'open', 'edition', NULL);
+
 INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, fmv_usd, algo_version) VALUES
   ('b0000000-0000-0000-0000-00000000000b', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
   ('b0000000-0000-0000-0000-00000000000c', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 60, 'x'),
@@ -198,7 +216,9 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, fmv_usd
   ('b0000000-0000-0000-0000-000000000007', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 90, 'x'),
   ('b0000000-0000-0000-0000-000000000008', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
   ('b0000000-0000-0000-0000-000000000009', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LOW', 125, 'x'),
-  ('b0000000-0000-0000-0000-00000000000a', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 125, 'x');
+  ('b0000000-0000-0000-0000-00000000000a', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 125, 'x'),
+  ('b0000000-0000-0000-0000-0000000000c1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 125, 'x'),
+  ('b0000000-0000-0000-0000-0000000000c2', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'ASK_ONLY', 125, 'x');
 
 DO $$
 DECLARE r record;
@@ -251,14 +271,21 @@ BEGIN
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000e';
   PERFORM _assert_eq(r.fmv_usd::text, '44.27', 'above half the floor changes nothing for another tier');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
+  -- case 9: bd sold inside 365 days; c1 last sold 400 days ago; c2 never sold (no estimate).
   SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-00000000000d';
-  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price is still pulled by an offer under half of it');
+  PERFORM _assert_eq(r.fmv_usd::text, '125', 'a Legendary ASK-ONLY price with a sale inside 365 days ignores an offer under half of it (the day-30 relabel)');
+  PERFORM _assert_eq(r.algo_version, 'x', 'and is not tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-0000000000c1';
+  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price whose last sale is over 365 days old is still pulled');
+  PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
+  SELECT * INTO r FROM public.fmv_snapshots WHERE edition_id = 'b0000000-0000-0000-0000-0000000000c2';
+  PERFORM _assert_eq(r.fmv_usd::text, '53.18', 'a Legendary ASK-ONLY price that has never sold is still pulled');
   PERFORM _assert_eq(r.algo_version, 'x_bidpull', 'tagged _bidpull');
 
-  -- case 8: the log. b2 b5 ba bc bd be pulled, b9 floored, bb bf skipped; b1 (offer under the gate) and b8 leave none.
-  PERFORM _assert_eq((SELECT count(*)::text FROM public.fmv_offer_pull_log), '9', 'one log row per price the step acted on or skipped');
+  -- case 8: the log. b2 b5 ba bc be c1 c2 pulled, b9 floored, bb bd bf skipped; b1 (offer under the gate) and b8 leave none.
+  PERFORM _assert_eq((SELECT count(*)::text FROM public.fmv_offer_pull_log), '11', 'one log row per price the step acted on or skipped');
   PERFORM _assert_eq((SELECT string_agg(outcome || ':' || n, ' ' ORDER BY outcome) FROM (SELECT outcome, count(*) n FROM public.fmv_offer_pull_log GROUP BY 1) z),
-    'floored:1 pulled:6 skipped:2', 'outcomes');
+    'floored:1 pulled:7 skipped:3', 'outcomes');
   PERFORM _assert_eq((SELECT pre_fmv_usd || '|' || bid_usd || '|' || fmv_usd || '|' || tier FROM public.fmv_offer_pull_log WHERE edition_id = 'b0000000-0000-0000-0000-000000000009'),
     '125|40.00|62.50|RARE', 'a floored row keeps the PRE-pull price (it cannot be rebuilt from the published one)');
   PERFORM _assert_eq((SELECT outcome || '|' || pre_fmv_usd || '|' || fmv_usd FROM public.fmv_offer_pull_log WHERE edition_id = 'b0000000-0000-0000-0000-00000000000b'),
