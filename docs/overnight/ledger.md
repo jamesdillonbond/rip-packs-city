@@ -19,6 +19,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Watch:** tomorrow's 7:17 AM PT `refresh-conflated-editions` row should be `ok=true` with `lanes_failed` empty.
 - **Revert:** re-apply the `CREATE OR REPLACE` from `20260802205000_audit_20260802_snapshot_remap_topshot_base_keyed_parallel_sales.sql`, and repoint the pin and the drift-guard entry at it.
 
+### 2026-11-26 ~9:45 AM PT · 📝 docs — surface-QA checklist notes the artifact-helpers vitest test can't run in the device-bridge VM (Cowork cloud, scheduled surface-QA; Trevor: "Do it all")
+- **Why:** this week's QA spent calls discovering the helper test won't run from the laptop VM — the repo's Windows `node_modules` can't load vitest's native rolldown binding under the Linux bridge, and the VM overlay is near-full. The `.mjs` failure-handling audit (reported `0 blind`) is the real local gate; CI runs the vitest test per-commit.
+- **What:** one-line note added to Part 1(c) of `docs/cowork-skills/rpc-surface-qa/references/surface-checklist.md`. Docs-only, no deploy.
+- **Revert:** `git revert <this sha>` (post-2026-08-03, resolves), or drop the added paragraph.
+
 ### 2026-11-26 ~9:15 AM PT · 🔧 SHIPPED (UI copy) — UFC binder: the Flow table no longer says "No moments found for this wallet on this collection" under a collector's Aptos holdings; banner drops "RPC prices are paused" (Claude Code cloud; Trevor: "Keep going")
 
 - **Found by a rendered-DOM check** of /ufc/collection?wallet=0xaf78…fe85 (RRX69, linked by Moment identity this morning). The "On Aptos · Current FMV $6,936.71 · 1,855 moments" panel renders, with no page errors.

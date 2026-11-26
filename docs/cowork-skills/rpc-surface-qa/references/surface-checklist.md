@@ -33,6 +33,8 @@ stale (e.g. an item marked OPEN that has since shipped). Flag genuine drift.
 must report 0 blind, and the helper test must pass. A non-Supabase reader (the two Vercel deploy
 readers) must throw on a missing list, never default to `[]`.
 
+⚠ **The helper test is not runnable from the device-bridge VM** (`__tests__/artifact-helpers-do-not-render-failure-as-empty.test.ts`): the laptop's Windows `node_modules` can't load vitest's native rolldown binding under the Linux bridge, and the VM overlay is usually near-full. Treat the audit's `0 blind` as the local gate and let CI run the vitest test per-commit — don't burn calls retrying `npx jest`/`vitest` in the VM.
+
 **(d) Brand** — RPC red `#E03A2F` accent, uppercase letter-spaced display headers, monospace
 numbers. Chart.js/canvas hex literals are the documented allowed exception.
 
