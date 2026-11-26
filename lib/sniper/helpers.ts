@@ -238,7 +238,7 @@ export function sniperHasChasers(deals: Pick<SniperDeal, "isChaser">[]): boolean
 
 /**
  * A row from an ASKS board (2026-11-26: UFC Strike on Aptos lists every live ask, not deals below FMV).
- * Such a row claims no bargain, so the deal-only gates — "below FMV" and "verified FMV only" — do not
+ * Such a row claims no bargain, so the deal-only gates — "below FMV", "verified FMV only" and "deals after fees" — do not
  * apply to it: on UFC they emptied the board (FMV is capped at the live ask, so no ask is below it).
  */
 export function isAsksBoardRow(d: Pick<SniperDeal, "source">): boolean {
@@ -265,7 +265,7 @@ export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpt
         return false;
     }
     if (showVerifiedOnly && !asksRow && !isVerifiedDeal(d)) return false;
-    if (opts.afterFeesOnly && isUnderWaterAfterFees(d)) return false;
+    if (opts.afterFeesOnly && !asksRow && isUnderWaterAfterFees(d)) return false;
     if (ownedFilter !== "all") {
       const owned = isDealOwned(d, ownedIds ?? new Set());
       if (ownedFilter === "owned" && !owned) return false;

@@ -114,13 +114,13 @@ describe("UFC sniper copy", () => {
 })
 
 describe("the board's client filter keeps asks-board rows", () => {
-  it("an Aptos ask above FMV on a STALE FMV survives the below-FMV and verified-only gates; a deal row does not", async () => {
+  it("an Aptos ask above FMV on a STALE FMV survives the below-FMV, verified-only and after-fees gates; a deal row does not", async () => {
     const { filterSniperDeals } = await import("@/lib/sniper/helpers")
-    const base = { discount: -25, confidence: "stale", playerName: "P", setName: "S", teamName: "" }
+    const base = { discount: -25, confidence: "stale", playerName: "P", setName: "S", teamName: "", netOfFees: { feePct: 5, netIfResold: 7.6, netMarginUsd: -2.4, netMarginPct: -24, flipsNegative: true } }
     const out = filterSniperDeals([
       { ...base, flowId: "a", source: "ufc_aptos" },
       { ...base, flowId: "b", source: "topshot" },
-    ] as never, { showVerifiedOnly: true })
+    ] as never, { showVerifiedOnly: true, afterFeesOnly: true })
     expect(out.map((d) => d.flowId)).toEqual(["a"])
   })
 })
