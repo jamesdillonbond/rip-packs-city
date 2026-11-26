@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:30 AM PT · 🔧 SHIPPED — UFC binder searches an Aptos wallet directly (read live from the Aptos indexer); time stamps of the three UFC entries below corrected to commit times (Claude Code cloud; Trevor: "Keep going")
+- `/api/ufc/aptos-holdings?aptos=<64-hex>` reads that account's UFC Strike tokens live (UFC collections only, ≤30 indexer pages, `capped` past that; a failed page is a 5xx, never a shorter list). The binder accepts an Aptos wallet for UFC: no Flow read, the Aptos Moments fill the one table and the value tile, and empty copy names only that account. For collectors RPC cannot link to a Flow address (Aptos-native, or not matched yet).
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-11-26 ~11:25 AM PT · 🗄 APPLIED (`20261126185023`) + 🔧 SHIPPED — **Panini grouped by league and brand: taxonomy table, "What Panini covers" grid on the overview, products index under Leagues / Entertainment, breadcrumb step** (Cowork cloud; Trevor: "Keep going and start putting this into action")
 
 - **DB (applied ~10:50 AM PT):** `publisher_properties` (publisher, slug; 16 Panini rows; RLS on, service-role reads), `panini_products.property_slug` filled on 174 of 176 ids (the other 2 carry no name) by `panini_property_slug(name, last_grid_sport)` (name first, so soccer splits into World Cup / LaLiga / Serie A / French football / NWSL / other; then Panini's grid sport), kept current by BEFORE trigger `panini_products_fill_property_trg` (never overwrites a hand-set value), and `get_panini_property_board()` (newest `panini_product_rollup` run: 14 groups with a product page, 75 product pages placed, 0 unplaced). anon EXECUTE false on all three functions and no anon SELECT on the table (read with `has_function_privilege` / `has_table_privilege`).
@@ -39,7 +43,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Also checked:** the `ingest-topshot-challenges` stale suppression is gone, and the split-player merge was applied 11-23.
 - **Revert:** docs only; to cancel a check, disable its scheduled task in claude.ai.
 
-### 2026-11-26 ~11:40 AM PT · 🔧 SHIPPED (UI) — /ufc/sniper still empty: the default-on "Deals after fees" gate hid all 465 Aptos asks; asks-board rows skip it too (Claude Code cloud; follow-up to ~11:20 AM)
+### 2026-11-26 ~10:56 AM PT · 🔧 SHIPPED (UI) — /ufc/sniper still empty: the default-on "Deals after fees" gate hid all 465 Aptos asks; asks-board rows skip it too (Claude Code cloud; follow-up to ~10:48 AM)
 - Rendered DOM after the 11:20 fix read "465 listings are hidden by the Deals after fees filter … Those listings sit below FMV" — false for an asks board. `filterSniperDeals` now exempts `isAsksBoardRow` rows from that gate as well (planted defect reds the pin).
 - **Revert:** `git revert <this commit>`.
 
@@ -73,7 +77,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Revert:** `git revert` the code commit after this entry (find it by the message "query-token retired"). There is no DB half.
 - **CI follow-up (~11:15 AM PT):** `7f3b7e11c` reddened CI `Unit tests — merge + coverage ratchet`: statements were 91.79 % against a 91.8 % floor, because the removed query lanes were covered lines. Fixed with real coverage and the threshold left unchanged: `__tests__/lib-candy-edition-floor-and-market-history.test.ts` covers three Candy edition-page reads that had no test, and each read keeps three states (failed → ok:false, never "no listing"/"no history"). Revert: delete that test file.
 
-### 2026-11-26 ~11:20 AM PT · 🔧 SHIPPED (UI) — /ufc/sniper showed "no deals" over 465 live Aptos asks: the client's below-FMV and verified-only gates now skip asks-board rows (Claude Code cloud; follow-up to the UFC chain-agnostic ship)
+### 2026-11-26 ~10:48 AM PT · 🔧 SHIPPED (UI) — /ufc/sniper showed "no deals" over 465 live Aptos asks: the client's below-FMV and verified-only gates now skip asks-board rows (Claude Code cloud; follow-up to the UFC chain-agnostic ship)
 - Found by rendered DOM after deploy: the feed returned 465 asks, `filterSniperDeals` dropped every one (UFC FMV is capped at the live ask, so none is below it, and capped snapshots are STALE). `isAsksBoardRow` (source `ufc_aptos`) exempts those rows from both gates only; every other collection's filter is unchanged (pinned).
 - **Revert:** `git revert <this commit>`.
 
