@@ -287,7 +287,8 @@ export default async function PinnacleMomentPage({
               fmv != null ? { label: "FMV", value: fmtUsd(fmv) } : null,
               // the live market, as the page's own cards read it (no row on a failed listings read)
               floor != null ? { label: "Floor ask", value: fmtUsd(floor) } : null,
-              pctListed != null ? { label: "Listed", value: `${pctListed < 0.1 ? "<0.1" : pctListed.toFixed(pctListed < 10 ? 1 : 0)}%` } : null,
+              // none listed is "0%", never "<0.1%" (the page's own line only renders when some are)
+              pctListed != null ? { label: "Listed", value: `${pctListed === 0 ? "0" : pctListed < 0.1 ? "<0.1" : pctListed.toFixed(pctListed < 10 ? 1 : 0)}%` } : null,
             ].filter((x): x is { label: string; value: string } => x != null && x.value !== "")}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}

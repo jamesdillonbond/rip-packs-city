@@ -38,6 +38,8 @@ describe("the slab on every collection", () => {
     expect(b).toMatch(/label: "Minted"/)
     expect(b).toMatch(/label: "Floor ask"/)
     expect(b).toMatch(/pctListed != null \? \{ label: "Listed"/)
+    // 0 listed reads "0%" — a live 1-of-1 with none listed rendered "<0.1%" (11-26)
+    expect(b).toMatch(/pctListed === 0 \? "0"/)
   })
   it("neither back carries FMV confidence, and the pin back never says Moment", () => {
     for (const b of [slabBlock(EDITION), slabBlock(PIN)]) expect(b).not.toMatch(/confidence/i)
