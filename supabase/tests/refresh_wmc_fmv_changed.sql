@@ -63,6 +63,12 @@
 --   back), a confidence-only move, and a late-committed snapshot inside the overlap.
 --   Each added case was proven red against the 08-30 body (planted defects, 11-14).
 
+-- ⚠ RE-PINNED 2026-11-25 onto supabase/migrations/20261126033441_audit_20261125_rwfc_route_budget_keeps_fixed_headroom.sql.
+-- One change: the loop deadline keeps a FIXED 20 s of headroom as well as 40 % (the route's
+-- 30 s PostgREST cap had 12 s, and a chunk can wait 8 s on row locks). No assertion below
+-- depended on the budget, so none was re-pinned; one was ADDED at the end (budget headroom),
+-- proven red against the 11-14 body.
+
 BEGIN;
 
 CREATE TYPE public.fmv_confidence AS ENUM ('HIGH', 'MEDIUM', 'LOW', 'ASK_ONLY', 'SALES_ONLY', 'STALE', 'NO_DATA');
@@ -125,7 +131,7 @@ DECLARE
   v_overlap    constant interval := interval '5 minutes';
 BEGIN
   -- Two callers run this same non-reentrant drain: pg_cron jobid 303 (`7-57/10`, median 240 s)
-  -- and app/api/wmc-fmv-populate/route.ts (every 5 min, ~18 s budget). The route's tick one
+  -- and app/api/wmc-fmv-populate/route.ts (every 5 min, ~10 s budget). The route's tick one
   -- minute after jobid 303 used to block on wmc row locks and die -- 83 of 84 lock timeouts in
   -- 48 h landed on :08/:18/:28/:38/:48/:58. Skip instead of blocking; the other instance is
   -- draining the same rwfc_state cursor, so nothing is lost.
@@ -142,7 +148,13 @@ BEGIN
   IF v_timeout_ms IS NULL OR v_timeout_ms = 0 THEN
     v_budget := interval '300 seconds';
   ELSE
-    v_budget := GREATEST(make_interval(secs => (v_timeout_ms / 1000.0) * 0.6),
+    -- 2026-11-25: 40 % headroom alone is 12 s under the route's 30 s service_role cap, and
+    -- one chunk can wait 8 s on wmc row locks (authenticator lock_timeout) on top of its own
+    -- work: successful route runs reached 20-28 s against the 18 s deadline, and 5 of them
+    -- in 11 h overshot to the 30 s kill (57014, the whole tick rolled back). Keep a FIXED
+    -- 20 s as well: 30 s -> 10 s budget; 600 s (cron_heavy, jobid 303) -> 360 s, unchanged.
+    v_budget := GREATEST(LEAST(make_interval(secs => (v_timeout_ms / 1000.0) * 0.6),
+                               make_interval(secs => (v_timeout_ms / 1000.0) - 20)),
                          interval '5 seconds');
   END IF;
   v_deadline := clock_timestamp() + v_budget;
@@ -441,4 +453,24 @@ SELECT _assert_eq(
   'on the All Day holder it belongs to');
 
 SELECT '✓ refresh_wmc_fmv_changed invariants pass' AS result;
+-- ── 2026-11-25: the deadline leaves room for one chunk's overshoot ─────────
+-- The deadline is checked only BETWEEN chunks, and one chunk can wait lock_timeout (8 s)
+-- before working. Under the route's 30 s statement_timeout the budget must leave >= 20 s,
+-- or a slow chunk past the deadline hits the 30 s kill and rolls the whole tick back.
+-- The budget expression is evaluated here with the same inputs the function reads; a
+-- body that drops the fixed headroom (60 % alone = 18 s) fails the prosrc check below.
+SELECT _assert_eq(
+  (position('(v_timeout_ms / 1000.0) - 20' IN (SELECT prosrc FROM pg_proc
+     WHERE oid = 'public.refresh_wmc_fmv_changed(integer,integer)'::regprocedure)) > 0)::text,
+  'true',
+  'the budget keeps a fixed 20 s of headroom below statement_timeout');
+SELECT _assert_eq(
+  extract(epoch FROM GREATEST(LEAST(make_interval(secs => 30 * 0.6), make_interval(secs => 30 - 20)),
+                              interval '5 seconds'))::int::text, '10',
+  'service_role 30 s -> 10 s budget');
+SELECT _assert_eq(
+  extract(epoch FROM GREATEST(LEAST(make_interval(secs => 600 * 0.6), make_interval(secs => 600 - 20)),
+                              interval '5 seconds'))::int::text, '360',
+  'cron_heavy 600 s -> 360 s budget, unchanged');
+
 ROLLBACK;

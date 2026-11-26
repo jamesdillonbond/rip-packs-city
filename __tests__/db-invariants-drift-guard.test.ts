@@ -2851,8 +2851,10 @@ const PINS = [
     // ⚠ RE-POINTED 2026-11-14 (#248): the drop compares against rwfc_applied (what the
     // lane last pushed) because purge_fmv_snapshots_today erases the pre-cursor price;
     // confidence travels with the price; the cursor stops 5 min behind its run start.
+    // ⚠ RE-POINTED 2026-11-25: the loop deadline keeps a fixed 20 s of headroom below
+    // statement_timeout (route 30 s -> 10 s budget; jobid 303 600 s -> 360 s unchanged).
     migration:
-      "supabase/migrations/20261114171317_audit_20261114_rwfc_drops_only_what_it_applied.sql",
+      "supabase/migrations/20261126033441_audit_20261125_rwfc_route_budget_keeps_fixed_headroom.sql",
   },
   {
     // pg_cron `28 */6 * * *`. An INSTRUMENT — it feeds the
