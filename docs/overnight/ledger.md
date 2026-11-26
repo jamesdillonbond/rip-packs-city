@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:30 PM PT · 🔧 SHIPPED (code) — Binder Packs tab: the Unopened Market cell stacks Ask / Rip EV / Last one per line instead of one long line that ran the table off the right edge (Claude Code cloud; Trevor: "Keep going and work through everything you can in this thread")
+
+- Found while checking `6b6ee57` live in Trevor's signed-in Chrome (Binder → Packs, about 780 px wide). The stat strips render as intended, and Net P&L is still withheld on thin coverage. But the pack table's Market column was a single nowrap "Ask $16.00 · Rip EV $5.11 · Last $1…" line, cut off at the window edge. The cell now splits `packMarketLabel`'s text at " · ", one nowrap line per part. The label function and its tests are unchanged.
+- Test: `component-WalletPacksView` "Market cell stacks Ask / Rip EV / Last one per line".
+- Revert: `git revert` the code commit.
+
 ### 2026-11-25 ~5:12 PM PT · 🗄 APPLIED (`20261126011043`) — dropped the pack-gap audit scratch objects (`audit_20261124_gwph_v34` A/B function, `audit_20261124_pack_gap_census` table) (Claude Code cloud; Trevor: "work through everything … leaving nothing left unresolved")
 - Neither had a caller or anon/authenticated access; v34's literal body is committed as `20261125054434` and the live function is v36 (`20261125151148`). Verified after the apply: 0 functions and 0 tables left with either name.
 - Closing read on the last opened-pack value gap: the 44 Top Shot/All Day opened packs whose pulls are all named but not all priced are honest blanks. Every unpriced pull is an edition with no FMV because it has no sale in the window and no listing (new 2026 WNBA/rookie parallels; All Day 4685's last sale was 2026-01-13). Nothing to fix.
