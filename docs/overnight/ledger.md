@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:05 PM PT · 🔧 SHIPPED (code) — Moment slab: game stats that beat the season average are marked; "ESPN box score" link on the back (Claude Code cloud; Trevor's 3-hour "keep going")
+
+- `lib/slab-stats.ts`: `markAboveAverage` flags basketball PTS / REB / AST above that season's PPG / RPG / APG (never shooting lines, never NFL); `espnGameUrl` builds espn.com/<league>/game/_/gameId/<id> only from a numeric ESPN event id. `components/InteractiveSlab.tsx`: ▲ + accent colour with screen-reader text "(above season average)"; the link shows beside Flip only while the back faces the viewer. Tests added (incl. Lillard 28 PTS / 9 AST marked, 2 REB not). Preflight green incl. component coverage.
+- Lane check at 6:35 PM PT: every tick ok, 0 request errors, 0 fetched player-seasons with no matching game, cron runs ~1 s each.
+- Revert: `git revert` the commit "moment slab: above-average markers + ESPN box score link".
+
 ### 2026-11-25 ~6:35 PM PT · 🗄 APPLIED (`20261126021525`, `20261126021927`) + 🔧 SHIPPED (code) — Moment slab: badges on the back; game-line lane at 48/tick; All Day non-game plays show no stats (Claude Code cloud; Trevor: "Keep going and proceeding on this, and anything relevant, for the next 3 hours")
 
 - `20261126021525_audit_20261125_moment_gamelog_dispatch_48`: per-tick batch 24 → 48 after two clean ticks (48/48 ok, drains 874 / 554 ms). Backfill ~2.5 days → ~21 h.
