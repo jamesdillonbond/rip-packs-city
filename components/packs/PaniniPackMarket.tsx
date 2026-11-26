@@ -20,6 +20,8 @@
 //     stats and says EV is NOT MODELED; it never renders an EV figure, a "—" that
 //     could read as "worthless", or the EV-legs table
 
+import PaniniScopeBar, { usePaniniScope } from "@/components/collection/PaniniScopeBar"
+import { countByProperty, propertyOfSetId } from "@/lib/panini/scope"
 import { useEffect, useState } from "react"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
@@ -34,6 +36,8 @@ export interface PaniniPackProduct {
   name: string | null
   /** Panini's product (collection) name, e.g. "2026 Panini NFT Prizm WNBA". */
   productName?: string | null
+  /** Panini set id (2026-11-26) — what the league / brand scope places the pack by; null when unknown. */
+  productSetId?: number | null
   sport?: string | null
   /** True only when the pack-EV model prices this pack's product (today: WC Prizm). */
   evModeled?: boolean
@@ -318,6 +322,8 @@ export default function PaniniPackMarket() {
   // Sport filter (2026-10-03): the secondary pack listings brought in ~350 pack pages across five
   // sports; one undifferentiated list stopped being readable. "" = all sports.
   const [sport, setSport] = useState("")
+  // 2026-11-26: the league / brand scope shared by every Panini tab (replaces the sport chips when it loads).
+  const scope = usePaniniScope()
 
   useEffect(() => {
     let cancelled = false
@@ -360,7 +366,11 @@ export default function PaniniPackMarket() {
     if (sp) sportCounts.set(sp, (sportCounts.get(sp) ?? 0) + 1)
   }
   const sports = [...sportCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-  const shown = sport ? data.products.filter((p) => sportKey(p.sport) === sport) : data.products
+  const scoped = scope.slug !== "" && !!scope.index
+  const scopeCounts = countByProperty(scope.index, data.products, (p) => p.productSetId)
+  const shown = data.products.filter(
+    (p) => (!sport || sportKey(p.sport) === sport) && (!scoped || propertyOfSetId(scope.index, p.productSetId) === scope.slug),
+  )
 
   return (
     <div>
@@ -387,7 +397,8 @@ export default function PaniniPackMarket() {
         </div>
       ) : (
         <>
-          {sports.length > 1 ? (
+          <PaniniScopeBar scope={scope} counts={scopeCounts} total={data.products.length} />
+          {sports.length > 1 && !scope.index ? (
             <div role="group" aria-label="Filter packs by sport" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
               {[["", data.products.length] as [string, number], ...sports].map(([key, n]) => (
                 <button
@@ -408,9 +419,12 @@ export default function PaniniPackMarket() {
               ))}
             </div>
           ) : null}
-          {sport ? (
-            <div style={{ marginTop: 8 }}>
-              <Note>Showing {shown.length} of {data.products.length} packs.</Note>
+          {sport || scoped ? (
+            <div style={{ marginTop: 8 }} data-testid="panini-packs-filtered">
+              <Note>
+                Showing {shown.length} of {data.products.length} packs{scoped && scope.name ? ` · ${scope.name}` : ""}.
+                {shown.length === 0 ? " No pack RPC tracks sits under this one right now." : ""}
+              </Note>
             </div>
           ) : null}
           {shown.map((p) => <ProductCard key={p.id} p={p} staleAfterHours={data.stale_after_hours} />)}

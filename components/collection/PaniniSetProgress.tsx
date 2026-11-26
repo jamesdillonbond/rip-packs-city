@@ -17,6 +17,8 @@
 //     "0 of 499"
 //   · a failed read is "couldn't load", never an empty table
 
+import PaniniScopeBar, { usePaniniScope } from "@/components/collection/PaniniScopeBar"
+import { countByProperty, propertyOfSetId } from "@/lib/panini/scope"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
@@ -219,7 +221,30 @@ export default function PaniniSetProgress() {
 }
 
 function ProductPicker({ data, onPick }: { data: PaniniSetProgressResponse; onPick: (setId: string) => void }) {
-  const products = data.products ?? []
+  // 2026-11-26: the league / brand scope shared by every Panini tab narrows the picker; the product being
+  // shown always stays in the list, so a scope never hides what the page is about.
+  const scope = usePaniniScope()
+  const every = data.products ?? []
+  const scoped = scope.slug !== "" && !!scope.index
+  const products = scoped
+    ? every.filter((p) => propertyOfSetId(scope.index, p.setId) === scope.slug || p.setId === data.product?.setId)
+    : every
+  const scopeCounts = countByProperty(scope.index, every, (p) => p.setId)
+  if (every.length === 0) return null
+  return (
+    <>
+      <PaniniScopeBar scope={scope} counts={scopeCounts} total={every.length} />
+      {scoped && scope.name && data.product && propertyOfSetId(scope.index, data.product.setId) !== scope.slug ? (
+        <div role="status" data-testid="panini-sets-scope-hint" style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 8 }}>
+          This product is not a {scope.name} product. Pick one below to see {scope.name} sets.
+        </div>
+      ) : null}
+      <ProductSelect data={data} products={products} onPick={onPick} />
+    </>
+  )
+}
+
+function ProductSelect({ data, products, onPick }: { data: PaniniSetProgressResponse; products: PaniniProductRow[]; onPick: (setId: string) => void }) {
   if (products.length === 0) return null
   const showHeld = data.username !== null && data.userSeen === true
   const groups = new Map<string, PaniniProductRow[]>()

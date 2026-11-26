@@ -25,6 +25,8 @@
 //     not $0
 //   · a failed read is "couldn't load", never an empty grid
 
+import PaniniScopeBar, { usePaniniScope } from "@/components/collection/PaniniScopeBar"
+import { countByProperty, paniniSetIdOf } from "@/lib/panini/scope"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import MomentMedia from "@/components/MomentMedia"
@@ -400,7 +402,16 @@ function CardBrowser({ cards, total, username }: { cards: PaniniOwnerCard[]; tot
   const [filter, setFilter] = useState<PaniniCardFilter>(EMPTY_PANINI_CARD_FILTER)
   const [sort, setSort] = useState<PaniniCardSort>("fmv_desc")
   const sports = useMemo(() => paniniCardSports(cards), [cards])
-  const view = useMemo(() => filterSortPaniniCards(cards, filter, sort), [cards, filter, sort])
+  // 2026-11-26: the league / brand scope shared by every Panini tab; cards carry their Panini set id in the sku.
+  const scope = usePaniniScope()
+  const scopeCounts = useMemo(() => countByProperty(scope.index, cards, (c) => paniniSetIdOf(c.sku)), [scope.index, cards])
+  const scopeSetIds = useMemo(() => {
+    if (!scope.slug || !scope.index) return null
+    const ids = new Set<number>()
+    for (const [k, v] of Object.entries(scope.index.setProperty)) if (v === scope.slug) ids.add(Number(k))
+    return ids
+  }, [scope.slug, scope.index])
+  const view = useMemo(() => filterSortPaniniCards(cards, { ...filter, setIds: scopeSetIds }, sort), [cards, filter, sort, scopeSetIds])
   const filtered = view.length !== cards.length
   const partial = cards.length < total
 
@@ -423,6 +434,7 @@ function CardBrowser({ cards, total, username }: { cards: PaniniOwnerCard[]; tot
   if (cards.length === 0) return null
   return (
     <div data-testid="panini-collection-browser">
+      <PaniniScopeBar scope={scope} counts={scopeCounts} total={cards.length} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
         <label style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }} htmlFor="panini-card-search">Search player or card</label>
         <input
@@ -433,7 +445,7 @@ function CardBrowser({ cards, total, username }: { cards: PaniniOwnerCard[]; tot
           onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
           style={{ ...controlStyle, flex: "1 1 180px", minWidth: 0 }}
         />
-        {sports.length > 1 ? (
+        {sports.length > 1 && !scope.index ? (
           <select aria-label="Sport" value={filter.sport} onChange={(e) => setFilter((f) => ({ ...f, sport: e.target.value }))} style={controlStyle}>
             <option value="">Every sport</option>
             {sports.map((s) => <option key={s} value={s}>{s}</option>)}

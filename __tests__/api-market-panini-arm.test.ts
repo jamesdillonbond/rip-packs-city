@@ -226,3 +226,45 @@ describe("GET /api/market — Panini arm", () => {
     expect(body.diagnostics.source).toBe("candy_market_board")
   })
 })
+
+// 2026-11-26: the league / brand scope (?property=<slug>). The slug resolves to Panini set ids
+// (panini_property_set_ids); the board is narrowed at the source and the exact set id re-checked on the rows.
+describe("GET /api/market — Panini league / brand scope", () => {
+  const rows = () => ({
+    ...board(),
+    panini_market_board: {
+      data: [
+        { external_id: "packcard-2332_1_2_3", player_name: "Lionel Messi", set_name: "Base", tier: "RARE", circulation_count: 10, thumbnail_url: null, low_ask_usd: 400, listed_count: 3, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 500, confidence: "MEDIUM", discount_pct: 20 },
+        // LIKE's `_` is a wildcard, so a longer set id sharing the prefix can come back; it must not be shown.
+        { external_id: "packcard-23329_1_2_3", player_name: "Not World Cup", set_name: "Base", tier: "RARE", circulation_count: 10, thumbnail_url: null, low_ask_usd: 5, listed_count: 1, ask_confirmed_at: "2026-09-25T20:00:00Z", fmv_usd: 6, confidence: "MEDIUM", discount_pct: 10 },
+      ],
+      error: null,
+    },
+  })
+  it("keeps only rows whose set id is in the league", async () => {
+    install({ ...rows(), "rpc:panini_property_set_ids": { data: [2332], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=${PANINI}&property=fifa-world-cup`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.listings.map((l: { playerName: string }) => l.playerName)).toEqual(["Lionel Messi"])
+  })
+  it("an unknown or malformed league is a 400, never the whole board under its name", async () => {
+    install({ ...rows(), "rpc:panini_property_set_ids": { data: [], error: null } })
+    const unknown = await GET(req(`https://t/api/market?collectionId=${PANINI}&property=no-such-league`))
+    expect(unknown.status).toBe(400)
+    expect(await unknown.json()).not.toHaveProperty("listings")
+    const malformed = await GET(req(`https://t/api/market?collectionId=${PANINI}&property=${encodeURIComponent("nba;drop")}`))
+    expect(malformed.status).toBe(400)
+  })
+  it("a failed lookup is an error, never an unscoped board", async () => {
+    install({ ...rows(), "rpc:panini_property_set_ids": { data: null, error: { message: "boom", code: "57014" } } })
+    const res = await GET(req(`https://t/api/market?collectionId=${PANINI}&property=nba`))
+    expect(res.status).toBe(503)
+    expect(await res.json()).not.toHaveProperty("listings")
+  })
+  it("another collection ignores the parameter (it has no such scope)", async () => {
+    install({ ...rows(), candy_market_board: { data: [], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=209ade70-32c5-4470-bc7c-4793d660f713&property=nba`))
+    expect(res.status).toBe(200)
+  })
+})

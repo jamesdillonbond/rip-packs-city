@@ -13,6 +13,7 @@
 //     exports an empty FMV cell, never 0
 //   · a filter that matches nothing is "no loaded card matches", not "no cards"
 
+import { paniniSetIdOf } from "@/lib/panini/scope"
 import { textIncludes } from "@/lib/filter-match"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
 import type { PaniniOwnerCard } from "@/lib/panini/owner-cards"
@@ -30,6 +31,8 @@ export const PANINI_CARD_SORTS: { key: PaniniCardSort; label: string }[] = [
 export interface PaniniCardFilter {
   query: string
   sport: string // "" = every sport
+  /** League / brand scope (2026-11-26): keep only cards whose Panini set id is in this set. null/absent = every card. */
+  setIds?: ReadonlySet<number> | null
   listedOnly: boolean
   specialOnly: boolean
 }
@@ -61,6 +64,10 @@ export function filterSortPaniniCards(cards: PaniniOwnerCard[], f: PaniniCardFil
     if (f.listedOnly && listedAsk(c) == null) return false
     if (f.specialOnly && c.flags.length === 0) return false
     if (f.sport && (!c.sport || paniniSportLabel(c.sport) !== f.sport)) return false
+    if (f.setIds) {
+      const id = paniniSetIdOf(c.sku)
+      if (id === null || !f.setIds.has(id)) return false
+    }
     if (q && !textIncludes(c.playerName, q) && !textIncludes(c.setName, q)) return false
     return true
   })

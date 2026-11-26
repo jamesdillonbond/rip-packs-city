@@ -34,6 +34,7 @@
 import { pinnacleListThumb } from "@/lib/pinnacle/image-url"
 import { postgrestOrIlike } from "@/lib/postgrest-or-ilike"
 import { paniniAssetUrl } from "@/lib/panini/assets"
+import { cleanScopeSlug, paniniSetIdOf } from "@/lib/panini/scope"
 import { fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -812,6 +813,8 @@ async function fetchPaniniMarketListings(
   filters: {
     tier: string; maxPrice: number; sortBy: string; limit: number
     sets: string[]; seriesList: string[]; player: string; minPrice: number
+    // 2026-11-26: the league / brand scope (?property=) as Panini set ids; null = every product.
+    paniniSetIds?: number[] | null
   }
 ): Promise<any[] | null> {
   const window = Math.max(filters.limit, 500)
@@ -832,6 +835,10 @@ async function fetchPaniniMarketListings(
     let f = q
     if (filters.tier && filters.tier !== "all") f = f.eq("tier", filters.tier.toUpperCase())
     if (filters.maxPrice > 0) f = f.lte("low_ask_usd", filters.maxPrice)
+    // The scope is narrowed AT THE SOURCE (register #129: never by filtering the truncated window). A card
+    // key is `packcard-<setId>_…`; LIKE's `_` is a one-character wildcard, so the exact set id is re-checked
+    // on the rows below (paniniSetIdOf) — an over-match can cost a row of window, never a wrong row shown.
+    if (filters.paniniSetIds) f = f.or(filters.paniniSetIds.map((id) => `external_id.like.packcard-${id}_*`).join(","))
     return applyBrowseFilters(f, { set: "set_name", player: "player_name", price: "low_ask_usd" }, filters)
   }
   const order = (q: any) => {
@@ -880,7 +887,12 @@ async function fetchPaniniMarketListings(
     // null, NOT []: an empty array would read as "the Panini market is empty".
     return null
   }
-  const rows = exactSetMatch(data ?? [], filters.sets, "set_name")
+  const scopeIds = filters.paniniSetIds ? new Set(filters.paniniSetIds) : null
+  const rows = exactSetMatch(data ?? [], filters.sets, "set_name").filter((r: { external_id?: string | null }) => {
+    if (!scopeIds) return true
+    const id = paniniSetIdOf(r.external_id)
+    return id !== null && scopeIds.has(id)
+  })
   return rows.map((r: any) => ({
     id: `${PANINI_COLLECTION_ID_FOR_DISPATCH}:${r.external_id}`,
     flow_id: null,
@@ -940,6 +952,8 @@ async function fetchModernListings(
     // its output is an already-truncated window, so that would turn "filter
     // ignored" into a confident "no listings in this set".
     sets: string[]; seriesList: string[]; player: string; minPrice: number
+    // Panini only (2026-11-26): the league / brand scope as set ids; null = every product.
+    paniniSetIds?: number[] | null
   }
 ): Promise<any[] | null> {
   // The three TABLE arms fetch a window and page in code, so an empty player
@@ -950,6 +964,7 @@ async function fetchModernListings(
     return withAccentFallback(filters.player, (player) => fetchPaniniMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
       sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
+      paniniSetIds: filters.paniniSetIds ?? null,
     }), nameOf, Math.max(filters.limit, 500)) // the arm's window (see withAccentFallback)
   }
   if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
@@ -1099,6 +1114,23 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // ── Panini league / brand scope (2026-11-26) ──────────────────────────────
+  // `?property=<slug>` narrows the Panini board to that league's or brand's products. An unknown slug is a
+  // 400, never the whole board under the league's name (a fallback that swaps the SUBJECT); a failed lookup
+  // is a 503. Ignored for every other collection (they have no such scope).
+  let paniniSetIds: number[] | null = null
+  const propertyRaw = (sp.get("property") || "").trim()
+  if (propertyRaw && collectionId === PANINI_COLLECTION_ID_FOR_DISPATCH) {
+    const slug = cleanScopeSlug(propertyRaw)
+    if (!slug) return NextResponse.json({ error: "unknown league or brand", code: "bad_request", retryable: false }, { status: 400 })
+    const scopeDb = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<unknown> }
+    const ids = await boundedRead(scopeDb.rpc("panini_property_set_ids", { p_slug: slug }), "api/market/panini_property_set_ids")
+    if (ids.error) return apiErrorResponse(ids.error, "api/market", "The market is unavailable right now.")
+    const list = (Array.isArray(ids.data) ? ids.data : []).map(Number).filter((n: number) => Number.isSafeInteger(n))
+    if (list.length === 0) return NextResponse.json({ error: "unknown league or brand", code: "bad_request", retryable: false }, { status: 400 })
+    paniniSetIds = list
+  }
+
   // ── Filters ─────────────────────────────────────────────────────────────
   const tierRaw = sp.get("tier") || ""
   const tiers = tierRaw
@@ -1201,6 +1233,7 @@ export async function GET(req: NextRequest) {
       if (franchise.degraded) console.log("[/api/market] franchise labels unavailable — filtering by the picked labels only")
       const runArms = (playerQuery: string) => Promise.all(tierList.map((tier) => fetchModernListings(collectionId, {
         tier,
+        paniniSetIds,
         teams: franchise.labels,
         badges,
         hasBadges,

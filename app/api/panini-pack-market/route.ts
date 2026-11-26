@@ -134,6 +134,8 @@ export async function GET() {
         label: packLabel(packType),
         name: d?.name ?? null,
         productName: str(p.product_name),
+        // 2026-11-26: the Panini set id, so the tab's league / brand scope can place the pack.
+        productSetId: Number.isSafeInteger(Number(p.product_set_id)) && p.product_set_id != null ? Number(p.product_set_id) : null,
         sport: str(p.sport),
         evModeled,
         // 2026-11-22 (P0.2): the EV is a LOWER BOUND — a rarity tier that carries real value is under

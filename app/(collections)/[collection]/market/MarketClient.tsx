@@ -17,6 +17,7 @@
 //   - New filters: Set / Series / Player typeahead / Owned-or-not / Team /
 //     Tier / Specific Badges / Special Serials, all URL-persisted
 
+import PaniniScopeBar, { usePaniniScope } from "@/components/collection/PaniniScopeBar"
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -438,9 +439,22 @@ function MarketInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // 2026-11-26: Panini's league / brand scope (shared with its other tabs). Called BEFORE the URL-writing
+  // effect below so the `?property=` a visitor arrived with is read before that effect rewrites the query.
+  const paniniScope = usePaniniScope(collectionId === "panini-blockchain")
+  const paniniProperty = collectionId === "panini-blockchain" && paniniScope.index ? paniniScope.slug : ""
+  // A changed scope is a new list: back to page 1. Not on mount, and not when the index merely finishes
+  // loading for a scope the visitor arrived with (that would discard a deep-linked ?page=).
+  const lastPaniniScope = useRef<string | null>(null)
+  useEffect(() => {
+    if (lastPaniniScope.current !== null && lastPaniniScope.current !== paniniScope.slug) setPage(1)
+    lastPaniniScope.current = paniniScope.slug
+  }, [paniniScope.slug])
+
   const fetchKey = useMemo(() => {
     const params = new URLSearchParams()
     if (resolvedCollectionUuid) params.set("collectionId", resolvedCollectionUuid)
+    if (paniniProperty) params.set("property", paniniProperty)
     if (tiersSel.length > 0) params.set("tier", tiersSel.join(","))
     if (setsSel.length > 0) params.set("set", setsSel.join(","))
     if (seriesSel.length > 0) params.set("series", seriesSel.join(","))
@@ -460,7 +474,7 @@ function MarketInner() {
     params.set("page", String(page))
     params.set("limit", "50")
     return params.toString()
-  }, [resolvedCollectionUuid, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, ownedWallet, effectiveSort, page])
+  }, [resolvedCollectionUuid, paniniProperty, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, ownedWallet, effectiveSort, page])
 
   useEffect(() => {
     if (!resolvedCollectionUuid) { setLoading(false); return }
@@ -495,6 +509,15 @@ function MarketInner() {
     if (minDiscount) sp.set("minDiscount", minDiscount)
     if (debouncedPlayer) sp.set("player", debouncedPlayer)
     if (ownedFilter !== "all") sp.set("owned", ownedFilter)
+    if (collectionId === "panini-blockchain") {
+      // Keep the scope in the query. Until the scope index has loaded, keep whatever the visitor arrived
+      // with — this effect runs on the first paint and must not strip a deep-linked ?property=.
+      let scopeSlug = paniniScope.slug
+      if (!scopeSlug && !paniniScope.index) {
+        try { scopeSlug = new URLSearchParams(window.location.search).get("property") ?? "" } catch { scopeSlug = "" }
+      }
+      if (scopeSlug) sp.set("property", scopeSlug)
+    }
     // Always written. It used to be omitted for "recent" — which is not the
     // default — so a chosen "Recently listed" read back as Price ↑ on reload.
     sp.set("sort", effectiveSort)
@@ -502,7 +525,7 @@ function MarketInner() {
     if (view === "grid") sp.set("view", "grid")
     const qs = sp.toString()
     try { router.replace(qs ? `?${qs}` : "?", { scroll: false }) } catch { /* ignore */ }
-  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, effectiveSort, page, view, router])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, effectiveSort, page, view, router, collectionId, paniniScope.slug, paniniScope.index])
 
   // ── Thin-volume notice — reads /api/ready's per_collection array ─────
   const [healthRow, setHealthRow] = useState<HealthPerCollection | null>(null)
@@ -610,6 +633,7 @@ function MarketInner() {
       {collectionId === "panini-blockchain" && (
         <PaniniCoverageNote coverage={data?.coverage} failed={data?.coverage_failed === true || error != null} />
       )}
+      {collectionId === "panini-blockchain" && <PaniniScopeBar scope={paniniScope} />}
 
       {/* ── Alerts front door ── turn a below-FMV listing you're watching into a
           standing alert. Auth-gated (/alerts); anon bounces to login.

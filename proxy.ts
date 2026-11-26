@@ -1279,6 +1279,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/panini-pack-market",
     // 2026-09-27: Panini's Sets tab backend — same commit as the tab.
     "/api/panini-set-progress",
+    // 2026-11-26: the league / brand scope index the Panini tabs filter by (catalogue data
+    // only: publisher_properties + panini_products.property_slug). GET-only, no session.
+    "/api/panini-properties",
     // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
     // the same public listing data Panini's marketplace shows) — same commit.
     "/api/panini-collection",

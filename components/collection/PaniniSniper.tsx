@@ -19,6 +19,8 @@
 //   · a capped board says it is capped
 //   · RPC is read-only: the only action is a link to the card's Panini marketplace page
 
+import PaniniScopeBar, { usePaniniScope } from "@/components/collection/PaniniScopeBar"
+import { countByProperty, paniniSetIdOf, propertyOfSetId } from "@/lib/panini/scope"
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -112,8 +114,11 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
   const [minDiscount, setMinDiscount] = useState<number>(MIN_DISCOUNTS[0])
   const [query, setQuery] = useState("")
   const [sport, setSport] = useState<string>("")
+  // 2026-11-26: the league / brand scope shared by every Panini tab (replaces the sport chips when it loads).
+  const scope = usePaniniScope()
 
   const all = data?.deals ?? null
+  const scopeCounts = useMemo(() => countByProperty(scope.index, all ?? [], (r) => r.product_set_id ?? paniniSetIdOf(r.sku)), [scope.index, all])
   const wcOnly = data?.scope === "wc"
   // Sports present on the board, most deals first — a filter chip per sport, none invented.
   const sports = useMemo(() => {
@@ -136,6 +141,7 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         (!backedOnly || r.deal_basis === BACKED) &&
         (!specialOnly || !!r.special_flag) &&
         (!sport || r.sport === sport) &&
+        (!scope.slug || !scope.index || propertyOfSetId(scope.index, r.product_set_id ?? paniniSetIdOf(r.sku)) === scope.slug) &&
         (r.discount_pct ?? 0) >= minDiscount &&
         (!q ||
           textIncludes(r.player_name, q) ||
@@ -150,10 +156,10 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         (b.est_profit_usd ?? -Infinity) - (a.est_profit_usd ?? -Infinity) ||
         a.sku.localeCompare(b.sku),
     )
-  }, [all, backedOnly, specialOnly, minDiscount, query, sport])
+  }, [all, backedOnly, specialOnly, minDiscount, query, sport, scope.slug, scope.index])
 
   const cov = data?.coverage ?? null
-  const filtering = backedOnly || specialOnly || sport !== "" || minDiscount !== MIN_DISCOUNTS[0] || query.trim() !== ""
+  const filtering = backedOnly || specialOnly || sport !== "" || (scope.slug !== "" && !!scope.index) || minDiscount !== MIN_DISCOUNTS[0] || query.trim() !== ""
 
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "16px 16px 40px" }}>
@@ -194,7 +200,8 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         </div>
       ) : (
         <>
-          {sports.length > 1 ? (
+          {!wcOnly ? <PaniniScopeBar scope={scope} counts={scopeCounts} total={counts.total} /> : null}
+          {sports.length > 1 && !scope.index ? (
             <div role="group" aria-label="Sport" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "8px 0 0" }}>
               <button type="button" aria-pressed={sport === ""} onClick={() => setSport("")} style={chip(sport === "")}>
                 All sports

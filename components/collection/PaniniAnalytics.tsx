@@ -16,6 +16,8 @@
 //   · no buyer or seller handle is shown
 //   · a failed read is "couldn't load", never zeros
 
+import { paniniScopePageHref } from "@/lib/panini/scope"
+import { usePaniniScope } from "@/components/collection/PaniniScopeBar"
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { slugifyPlayerName } from "@/lib/entity-labels"
@@ -199,6 +201,9 @@ export default function PaniniAnalytics({
   byProduct?: PaniniProductVolumeRow[] | null
 }) {
   const [allTime, setAllTime] = useState(false)
+  // 2026-11-26: these figures are not split by league / brand. A visitor who picked one on another tab is
+  // told so and pointed at that league's own page, rather than reading all-Panini numbers as the league's.
+  const scope = usePaniniScope()
   const complete = useMemo(() => (data ? data.daily.filter(isCompleteDay) : []), [data])
 
   if (!data) {
@@ -219,6 +224,14 @@ export default function PaniniAnalytics({
 
   return (
     <Shell>
+      {scope.slug && scope.name ? (
+        <div role="status" data-testid="panini-analytics-scope-note" style={{ padding: "10px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, margin: "12px 0" }}>
+          <Note>
+            These figures cover every Panini product, not {scope.name} alone.{" "}
+            <Link href={paniniScopePageHref("panini-blockchain", scope.slug)} style={{ color: "var(--rpc-text-primary)" }}>{scope.name} values and sales →</Link>
+          </Note>
+        </div>
+      ) : null}
       <div role="note" style={{ padding: "10px 14px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 6, margin: "12px 0" }}>
         <Note>
           <b>How complete this is.</b> Since Sep 28 RPC keeps every Panini sale it reads — each card&apos;s top 20 and most recent 20 sales, re-read as the walk
