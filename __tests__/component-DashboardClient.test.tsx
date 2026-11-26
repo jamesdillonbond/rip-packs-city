@@ -572,6 +572,21 @@ describe("DashboardClient — Saved Wallets tiles (2026-11-25)", () => {
     expect(await screen.findByText("16,458")).toBeTruthy()
   })
 
+  it("tile FMV counts stale-priced Moments like Portfolio FMV, so the tiles add up to it (2026-11-26)", async () => {
+    withTiles({ [ADDR]: { [TS]: { packs: 430, listed: 430, usd: 15887.71 } } })
+    routes["/api/profile/collection-stats"] = () => json(200, { stats: [
+      { collection_id: TS, moment_count: 15892, fmv_total: 40871.55, fmv_stale_total: 5224.5, locked_count: 0, fmv_max: 0, stale_count: 8 },
+      // UFC Strike: every price stale while its Flow market is closed — was "—" on the tile
+      { collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", moment_count: 247, fmv_total: 0, fmv_stale_total: 364.11, locked_count: 0, fmv_max: 0, stale_count: 247 },
+    ] })
+    render(<DashboardClient />)
+    // Top Shot tile: 40,871.55 + 5,224.50 + 15,887.71 packs
+    expect(await screen.findByText("$61,984")).toBeTruthy()
+    expect(await screen.findByText("$364.11")).toBeTruthy()
+    // headline = the two tiles: 61,983.76 + 364.11
+    expect(await screen.findByText("$62,348")).toBeTruthy()
+  })
+
   it("a failed Panini read adds nothing and says so under the figures", async () => {
     withTiles({})
     routes["/api/profile/collector-identities"] = () => json(503, {})

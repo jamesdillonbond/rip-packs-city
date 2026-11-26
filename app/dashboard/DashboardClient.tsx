@@ -2593,7 +2593,10 @@ function WalletGroupCard({
           const colPacks = packsKnown && col.supabaseCollectionId ? packs[col.supabaseCollectionId] : undefined;
           const packCount = colPacks?.packs ?? 0;
           const packUsd = colPacks?.usd ?? 0;
-          const fmv = (stat?.fmv_total ?? 0) + packUsd;
+          // 2026-11-26: stale-priced Moments count here too, exactly as in Portfolio FMV (the 11-22
+          // one-number rule) — otherwise the tiles summed ~$6k short of the headline and UFC Strike
+          // (all stale while its Flow market is closed) read "—" although Portfolio FMV counts it.
+          const fmv = (stat?.fmv_total ?? 0) + (stat?.fmv_stale_total ?? 0) + packUsd;
           const unitsLabel = getEntityLabels(col.id).units;
           const locked = stat?.locked_count ?? 0;
           const fmvMax = stat?.fmv_max ?? 0;
