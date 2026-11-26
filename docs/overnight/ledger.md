@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~9:12 AM PT · 🗄 APPLIED (`20261126165600`, `…165704`, `…170312`) + pg_cron + 🔧 code — Golazos slab backs show the match (Claude Code cloud; Trevor: "Keep going")
+
+- New lane `golazos-match-results`: `espn_soccer_scoreboard_dispatch` / `_drain` (pg_cron `rpc-golazos-scoreboard-dispatch` :07/:27/:47, `-drain` :09/:29/:49) fetch ESPN's LaLiga scoreboard for every Golazos match date and the day before (Golazos dates 135 / 575 Moments a day late) into `espn_soccer_matches`. Backfilled by hand 8:55–9:05 AM PT: 545 dates, 1,689 matches, 0 errors. Spot-checked Clásicos against the record (Real Madrid 2-6 Barcelona 2009-05-02, Barcelona 5-0 2010-11-29, Real Madrid 0-4 2022-03-20).
+- `get_moment_game_context` (170312): Golazos branch — both clubs pair home↔home / away↔away by `soccer_club_tokens` (one token set inside the other; never a shared token, which pairs a swapped Madrid derby), completed only, exactly one; the side from the edition's own club. 574 / 575 resolve (the miss is a postponed match). Live md5s = file bodies; anon EXECUTE false on all four new/changed functions.
+- Client: `matchBlock` ("W 6-2 · @ Real Madrid", ESPN match link); `SLAB_STATS_COLLECTIONS` + laliga_golazos.
+- Pin (i) 7 cases (Clásico side, day-late, swapped derby NULL, Real Sporting alias, Espanyol side from the edition, N/A club, not completed); planted shared-token rule and dropped empty-set guard each red it. PIN → 170312; `soccer_club_tokens` registered.
+- Revert: each migration header carries its revert; `git revert` the code commit (find by message "Golazos slab backs show the match").
+
 ### 2026-11-26 ~8:28 AM PT · 🗄 APPLIED (`20261126162832`) — populate_wmc_image's Pinnacle branch locks only rows it can fill (Claude Code cloud; Trevor: "leaving nothing unresolved")
 - **Found:** `20261126105906` (SKIP LOCKED) left the Pinnacle NULL-only path locking `LIMIT p_limit` rows BEFORE the `pinnacle_catalog` join, the shape database.md's 11-11 rule forbids (it holds rows it never updates and re-reads an unfillable head).
 - **Fix:** join + `thumbnail_url IS NOT NULL` first, then LIMIT, then `FOR UPDATE OF wmc SKIP LOCKED`, the same shape as the editions path (`pinnacle_catalog.render_id` is the PK, so no duplicates). Plan: Limit → LockRows → Nested Loop on `idx_wmc_image_url_null` + `pinnacle_catalog_pkey`. Live: 0 Pinnacle NULL rows today, so behaviour is unchanged. md5 `25a8d575…` → `af22e560…` = file; anon/authenticated EXECUTE false; a test call on Pinnacle returned 0.
