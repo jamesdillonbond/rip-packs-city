@@ -25,6 +25,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - First red on `0736ad9` (another session's ship; every later CI run inherited it, incl. the offer-pull commits). Added to `__tests__/panini-scope.test.tsx`: storage that throws on read is no scope and the control still renders (`readAsk`'s catch); a tab with rows for one league shows no control until a league is chosen. Local full component run: 420 files / 5,287 tests, 90.85 % before the second test. ⚠ The margin is one or two statements — the next untested component line reds it again.
 - **Revert:** `git revert` the commit (message "panini scope: two tests").
+- 1:05 PM PT follow-up: CI on `1dd89f9` still read 90.84 % (later ships moved the base). Added `__tests__/property-grid-server-wrappers.test.tsx` — the async wrappers of the "What Candy covers" / "What Panini covers" grids had no test: a failed or wrong-shaped read renders nothing, a good read renders the tiles (5 tests; both wrappers now covered). **Revert:** `git revert` the commit (message "property grids: pin the server wrappers").
 
 ### 2026-11-26 ~12:30 PM PT · 🔧 SHIPPED — **Candy's leagues and brands: brand code read from each collection's own metadata, "What Candy covers" on the overview, a page per league / brand (`/candy-mlb/property/<slug>`)** (Cowork cloud; Trevor: "Do it all")
 
