@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 3:52 PM PT — Binder search box says "cards" on Candy and Panini; a test flake removed; third-pass docs
+
+`CollectionFilterBar`: the search box read "Filter moments…" on a Candy or Panini Binder — now "Filter cards…" (pins on Pinnacle, moments elsewhere; the 11-25 unit rule). `component-DashboardClient`: the "says verification is unavailable" test ended at its first request, so its start beacon landed in the next test's fetch mock (the intermittent red on 9e8ee66); it now waits for its own beacon. Docs: session log, routes-and-surfaces, Candy roadmap. No DB change.
+
+**Revert:** revert the commit "binder: the search box names the unit" (by message).
+
 ### 2026-11-26 · 3:43 PM PT — League chips on Panini Premiums; Candy serial premiums names each sale's brand
 
 **Panini Premiums** (`/insights/panini-premiums`): a League row ("NBA · 12") on both tabs, narrowing in memory by the product id each row carries; it replaces the Sport row (NBA and WNBA are one sport, two leagues) and falls back to Sport when the league index read fails. **Candy serial premiums**: the 200-sale table mixes brands (187 MLB, 13 DC today) — each row now names its brand and an "In this list" line links each brand's page; a failed lookup names none. No DB change. **Trophies board not touched**: 16 of 267 trophy slots are Panini and none are Candy — a League row there would be chrome.

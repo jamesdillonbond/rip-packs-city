@@ -8,7 +8,8 @@
 - **Measured 11-26 (90 days on record):** DC $129.8k over 2,493 sales; MLB $77.4k over 6,425. DC is 281 collections (213 single comic issues), MLB 88.
 - ⚠ **`candy_collections.kind` is not the brand** — it files 3 NASCAR, 4 DC ("All-Star …"), 2 Sweet Futures and 1 MCNY collection as `mlb`. Anything that reads `kind='mlb'` as "MLB cards" over-counts; read `property_slug`. Not changed here (its readers were not audited).
 - **Later the same day:** the dashboard's Candy tile and the Binder show the wallet's cards by brand (`/api/league-split`); Below FMV and Top Sales take a brand (`property=`). Sets and Packs are single-brand today (the 2026 MLB Base Series; one pack product), so they have no brand filter.
-- **Open:** the Binder shows the split but does not FILTER by brand (its paged read is the shared `get_wallet_moments_with_fmv`); DC's unit word is "Cards" by the 11-25 rule (Trevor may prefer "Comics").
+- **Third pass (11-26, ~4 PM PT):** the Binder FILTERS by brand (`property=` on `/api/collection-moments` → `get_candy_wallet_cards_for_property`, brand-first since `20261126233213`); the Sets tab lists every Candy collection the wallet holds with brand chips; serial premiums names each sale's brand; the squeeze picker groups sets by brand. Packs stays unfiltered — one pack product, one brand.
+- **Open:** DC's unit word is "Cards" by the 11-25 rule (Trevor may prefer "Comics").
 
 ## ⭐ 2026-11-23 evening — Candy parity pass 1: serial premiums + squeeze boards (read first)
 
