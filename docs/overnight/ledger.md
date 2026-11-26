@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~8:04 AM PT · 🔧 SHIPPED (code) — slab usage beacons carry the page path (Claude Code cloud; Trevor: "Keep going")
+
+- Verified live 8:00 AM PT: `moment-slab-flipped` (via button) and `moment-slab-back-seen` landed in `usage_events` with has_game / has_season true (QA in Trevor's signed-in Chrome — an internal account, excluded from counts). They carried sid but no path, so reach per page view could not be read; `metadata.path` added (page views already carry it).
+- Revert: `git revert` the code commit (find by message "slab usage beacons carry the page path").
+
 ### 2026-11-26 ~7:53 AM PT · 🔧 SHIPPED (code) — Moment slab usage beacons: spun / flipped / back seen / tilt on / box score (Claude Code cloud; Trevor: "Keep going")
 
 - `components/InteractiveSlab.tsx` sends `moment-slab-spun` (≥ 20° of drag), `moment-slab-flipped` (`via` button | key), `moment-slab-back-seen`, `moment-slab-tilt-on`, `moment-slab-box-score` through `lib/telemetry/track` — each at most once per page view, only after the viewer acts, with `has_game` / `has_season`. Nothing is sent for an untouched page or with the slab off. Read: `docs/reference/schema-truth.md` (slab reach). Tests (planted defects: no once-guard, no spin threshold).
