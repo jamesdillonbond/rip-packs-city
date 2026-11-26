@@ -270,3 +270,28 @@ describe("InteractiveSlab timing", () => {
     expect(Math.abs(at30 - at60)).toBeLessThan(at60 * 0.15)
   })
 })
+
+describe("InteractiveSlab stats on the back", () => {
+  it("shows the game line and the season when given, and the serial beside the name", () => {
+    window.history.replaceState(null, "", "/moment/x?slab=1")
+    const { getByText, getByLabelText } = render(
+      <InteractiveSlab
+        frameColor="red"
+        title="Damian Lillard"
+        serialLine="#53 / 75"
+        rows={[{ label: "Set", value: "NBA Cup" }]}
+        finish={null}
+        stats={{
+          game: { title: "This game", detail: "vs ORL · W 114-109 · Dec 10, 2024", chips: [{ label: "PTS", value: "28" }, { label: "AST", value: "9" }] },
+          season: { title: "2024-25 season", detail: "Milwaukee Bucks · 58 games", chips: [{ label: "PPG", value: "24.9" }] },
+        }}
+      >
+        <span>m</span>
+      </InteractiveSlab>,
+    )
+    expect(getByLabelText("This game").textContent).toContain("28")
+    expect(getByText("vs ORL · W 114-109 · Dec 10, 2024")).toBeTruthy()
+    expect(getByLabelText("2024-25 season").textContent).toContain("PPG")
+    expect(getByText("#53 / 75")).toBeTruthy()
+  })
+})

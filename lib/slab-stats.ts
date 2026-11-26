@@ -1,0 +1,296 @@
+// lib/slab-stats.ts — what the back of the interactive Moment slab says about the player.
+//
+// 2026-11-25 (Trevor: "The back of the slab should show their stats that season and anything
+// else relevant"). Two blocks, both from ESPN via tables RPC already keeps:
+//   · THIS GAME — the player's line from the game the Moment comes from (get_moment_game_context
+//     → player_gamelog_lines, or the box-score lane's player_game_stats for recent games).
+//   · SEASON   — the player's averages / totals for the season that game belongs to
+//     (player_season_stats, through get_moment_game_context or get_player_season_stats).
+//
+// Pure: shapes rows into chips; no I/O. A block with nothing real in it is NOT rendered — an
+// absence, never a row of zeros (a wide receiver's ESPN "Passing" line of zeros is not a stat).
+
+import { isZeroLike, seasonLabel, teamSlugLabel } from "@/lib/player-page-season-stats"
+
+export type EspnLeague = "nba" | "wnba" | "nfl"
+
+export interface StatChip {
+  label: string
+  value: string
+}
+
+export interface SlabStatBlock {
+  /** "This game" / "2024-25 season" */
+  title: string
+  /** "vs ORL · W 114-109 · Dec 10, 2024" / "Milwaukee Bucks · 58 games" */
+  detail: string | null
+  chips: StatChip[]
+}
+
+export interface SlabStats {
+  game: SlabStatBlock | null
+  season: SlabStatBlock | null
+}
+
+/** A player_season_stats line as get_moment_game_context / get_player_season_stats return it. */
+export interface SeasonLine {
+  category: string
+  team_slug?: string | null
+  is_total?: boolean | null
+  labels: string[]
+  names: string[]
+  values: string[]
+  season?: number
+}
+
+export interface GamelogGame {
+  source: "gamelog"
+  game_date?: string | null
+  season_type?: string | null
+  at_vs?: string | null
+  opponent_abbr?: string | null
+  score?: string | null
+  result?: string | null
+  names: string[]
+  values: string[]
+}
+
+export interface BoxGame {
+  source: "box"
+  game_date?: string | null
+  at_vs?: string | null
+  opponent_abbr?: string | null
+  did_not_play?: boolean | null
+  stats: Record<string, string>
+}
+
+export interface MomentGameContext {
+  league?: string
+  espn_league: string
+  season: number
+  moment_game_date?: string | null
+  season_rows: SeasonLine[]
+  game: GamelogGame | BoxGame | null
+}
+
+export function asEspnLeague(v: unknown): EspnLeague | null {
+  return v === "nba" || v === "wnba" || v === "nfl" ? v : null
+}
+
+/**
+ * ESPN's season number for a game on `isoDate` — the same rule as SQL moment_gamelog_season:
+ * NBA seasons are numbered by the year they END (Oct 2024 → 2025); the WNBA by the calendar year;
+ * NFL by the year they START (a February Super Bowl belongs to the previous year).
+ */
+export function momentSeason(league: EspnLeague, isoDate: string): number | null {
+  const m = /^(\d{4})-(\d{2})-\d{2}/.exec(isoDate ?? "")
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  if (league === "nba") return mo >= 8 ? y + 1 : y
+  if (league === "wnba") return y
+  return mo <= 3 ? y - 1 : y
+}
+
+function valueOf(names: string[], values: string[], name: string): string | null {
+  const i = names.indexOf(name)
+  if (i === -1) return null
+  const v = values[i]
+  return v == null || String(v).trim() === "" ? null : String(v).trim()
+}
+
+function num(v: string | null): number | null {
+  if (v == null) return null
+  const n = Number(String(v).replace(/,/g, ""))
+  return Number.isFinite(n) ? n : null
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+/** "2024-12-10" → "Dec 10, 2024" — a calendar date, never shifted through a clock zone. */
+export function plainDate(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "")
+  if (!m) return null
+  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`
+}
+
+type Pick = { name: string; label: string; keepZero?: boolean }
+
+function chipsFrom(names: string[], values: string[], picks: Pick[], max = 5): StatChip[] {
+  const out: StatChip[] = []
+  for (const p of picks) {
+    if (out.length >= max) break
+    const v = valueOf(names, values, p.name)
+    if (v == null) continue
+    if (!p.keepZero && isZeroLike(v)) continue
+    out.push({ label: p.label, value: v })
+  }
+  return out
+}
+
+// ── basketball ───────────────────────────────────────────────────────────────
+
+const BASKETBALL_GAME: Pick[] = [
+  { name: "points", label: "PTS", keepZero: true },
+  { name: "totalRebounds", label: "REB", keepZero: true },
+  { name: "rebounds", label: "REB", keepZero: true },
+  { name: "assists", label: "AST", keepZero: true },
+  { name: "fieldGoalsMade-fieldGoalsAttempted", label: "FG" },
+  { name: "threePointFieldGoalsMade-threePointFieldGoalsAttempted", label: "3PT" },
+  { name: "steals", label: "STL" },
+  { name: "blocks", label: "BLK" },
+]
+
+const BASKETBALL_SEASON: Pick[] = [
+  { name: "avgPoints", label: "PPG", keepZero: true },
+  { name: "avgRebounds", label: "RPG", keepZero: true },
+  { name: "avgAssists", label: "APG", keepZero: true },
+  { name: "fieldGoalPct", label: "FG%" },
+  { name: "threePointFieldGoalPct", label: "3P%" },
+]
+
+// ── football ────────────────────────────────────────────────────────────────
+// ESPN's NFL labels repeat ("YDS" for passing AND rushing), so every chip is named by RPC.
+
+function footballGameChips(names: string[], values: string[]): StatChip[] {
+  const n = (k: string) => num(valueOf(names, values, k))
+  const v = (k: string) => valueOf(names, values, k)
+  const chips: StatChip[] = []
+  if ((n("passingAttempts") ?? 0) > 0) {
+    const cmp = v("completions")
+    const att = v("passingAttempts")
+    if (cmp && att) chips.push({ label: "C/ATT", value: `${cmp}/${att}` })
+    if (v("passingYards") != null) chips.push({ label: "PASS YDS", value: v("passingYards") as string })
+    if (v("passingTouchdowns") != null) chips.push({ label: "PASS TD", value: v("passingTouchdowns") as string })
+    if ((n("interceptions") ?? 0) > 0) chips.push({ label: "INT", value: v("interceptions") as string })
+  }
+  if ((n("rushingAttempts") ?? 0) > 0) {
+    if (v("rushingYards") != null) chips.push({ label: "RUSH YDS", value: v("rushingYards") as string })
+    if ((n("rushingTouchdowns") ?? 0) > 0) chips.push({ label: "RUSH TD", value: v("rushingTouchdowns") as string })
+  }
+  if ((n("receptions") ?? 0) > 0 || (n("receivingYards") ?? 0) > 0) {
+    if (v("receptions") != null) chips.push({ label: "REC", value: v("receptions") as string })
+    if (v("receivingYards") != null) chips.push({ label: "REC YDS", value: v("receivingYards") as string })
+    if ((n("receivingTouchdowns") ?? 0) > 0) chips.push({ label: "REC TD", value: v("receivingTouchdowns") as string })
+  }
+  if (chips.length === 0) {
+    // a defender's line
+    chips.push(...chipsFrom(names, values, [
+      { name: "totalTackles", label: "TKL" },
+      { name: "sacks", label: "SACK" },
+      { name: "interceptions", label: "INT" },
+      { name: "passesDefended", label: "PD" },
+      { name: "fumblesForced", label: "FF" },
+    ]))
+  }
+  return chips.slice(0, 5)
+}
+
+/** The NFL categories that make up a season, in the order they lead the block. */
+const FOOTBALL_SEASON: Array<{ category: string; picks: Pick[]; leadsWhen: string }> = [
+  { category: "passing", leadsWhen: "passingAttempts", picks: [
+    { name: "passingYards", label: "PASS YDS" },
+    { name: "passingTouchdowns", label: "PASS TD" },
+    { name: "interceptions", label: "INT" },
+    { name: "QBRating", label: "RTG" },
+  ] },
+  { category: "rushing", leadsWhen: "rushingAttempts", picks: [
+    { name: "rushingYards", label: "RUSH YDS" },
+    { name: "rushingTouchdowns", label: "RUSH TD" },
+  ] },
+  { category: "receiving", leadsWhen: "receptions", picks: [
+    { name: "receptions", label: "REC" },
+    { name: "receivingYards", label: "REC YDS" },
+    { name: "receivingTouchdowns", label: "REC TD" },
+  ] },
+  { category: "defensive", leadsWhen: "totalTackles", picks: [
+    { name: "totalTackles", label: "TKL" },
+    { name: "sacks", label: "SACK" },
+    { name: "interceptions", label: "INT" },
+    { name: "passesDefended", label: "PD" },
+  ] },
+]
+
+function footballSeasonChips(rows: SeasonLine[]): StatChip[] {
+  const byCat = new Map(rows.map((r) => [r.category, r]))
+  // The position the season was about leads: the category with the most volume.
+  const ranked = FOOTBALL_SEASON
+    .map((f) => {
+      const r = byCat.get(f.category)
+      const vol = r ? num(valueOf(r.names, r.values, f.leadsWhen)) ?? 0 : 0
+      return { f, r, vol }
+    })
+    .filter((x) => x.r && x.vol > 0)
+    .sort((a, b) => b.vol - a.vol)
+  const chips: StatChip[] = []
+  for (const { f, r } of ranked) {
+    for (const c of chipsFrom(r!.names, r!.values, f.picks, 5)) {
+      if (chips.length < 5) chips.push(c)
+    }
+  }
+  return chips
+}
+
+// ── blocks ──────────────────────────────────────────────────────────────────
+
+export function gameBlock(league: EspnLeague, game: GamelogGame | BoxGame | null | undefined): SlabStatBlock | null {
+  if (!game) return null
+  if (game.source === "box" && game.did_not_play) return null
+  const names = game.source === "gamelog" ? game.names : Object.keys(game.stats ?? {})
+  const values = game.source === "gamelog" ? game.values : Object.values(game.stats ?? {}).map(String)
+  if (!Array.isArray(names) || !Array.isArray(values) || names.length !== values.length) return null
+  const chips = league === "nfl" ? footballGameChips(names, values) : chipsFrom(names, values, BASKETBALL_GAME)
+  // de-duplicate a label both rebound spellings could produce
+  const seen = new Set<string>()
+  const unique = chips.filter((c) => (seen.has(c.label) ? false : (seen.add(c.label), true)))
+  if (unique.length === 0 || unique.every((c) => isZeroLike(c.value))) return null
+  const opp = game.opponent_abbr ? `${game.at_vs === "@" ? "@" : "vs"} ${game.opponent_abbr}` : null
+  const result = game.source === "gamelog" && game.result && game.score ? `${game.result} ${game.score}` : null
+  const post = game.source === "gamelog" && /postseason/i.test(game.season_type ?? "") ? "Playoffs" : null
+  const detail = [opp, result, post, plainDate(game.game_date)].filter(Boolean).join(" · ") || null
+  return { title: "This game", detail, chips: unique }
+}
+
+export function seasonBlock(league: EspnLeague, season: number, rows: SeasonLine[] | null | undefined): SlabStatBlock | null {
+  const lines = (rows ?? []).filter((r) => r && Array.isArray(r.names) && Array.isArray(r.values) && r.names.length === r.values.length)
+  if (lines.length === 0) return null
+  // A traded season: ESPN sends one line per team plus a total. Use the total; name both teams.
+  const pick = (cat: string) => {
+    const inCat = lines.filter((r) => r.category === cat)
+    return inCat.find((r) => r.is_total === true) ?? (inCat.length === 1 ? inCat[0] : null)
+  }
+  const teamsIn = (cat: string) =>
+    Array.from(new Set(lines.filter((r) => r.category === cat && !r.is_total && r.team_slug).map((r) => teamSlugLabel(r.team_slug)).filter(Boolean))) as string[]
+
+  let chips: StatChip[] = []
+  let gp: string | null = null
+  let teams: string[] = []
+  if (league === "nfl") {
+    const cats = ["passing", "rushing", "receiving", "defensive"].map((c) => pick(c)).filter(Boolean) as SeasonLine[]
+    chips = footballSeasonChips(cats)
+    gp = cats.map((r) => valueOf(r.names, r.values, "gamesPlayed")).find((v) => v != null && !isZeroLike(v)) ?? null
+    teams = teamsIn(cats[0]?.category ?? "passing")
+  } else {
+    const avg = pick("averages")
+    if (avg) {
+      chips = chipsFrom(avg.names, avg.values, BASKETBALL_SEASON)
+      gp = valueOf(avg.names, avg.values, "gamesPlayed")
+      teams = teamsIn("averages")
+      if (teams.length === 0 && avg.team_slug) teams = [teamSlugLabel(avg.team_slug) as string]
+    }
+  }
+  if (chips.length === 0 || chips.every((c) => isZeroLike(c.value))) return null
+  const games = gp && !isZeroLike(gp) ? `${gp} ${gp === "1" ? "game" : "games"}` : null
+  const detail = [teams.join(" / ") || null, games].filter(Boolean).join(" · ") || null
+  return { title: `${seasonLabel(league, season)} season`, detail, chips }
+}
+
+/** Everything the slab's back shows about the player, or null when there is nothing real to show. */
+export function slabStatsFromContext(ctx: MomentGameContext | null | undefined): SlabStats | null {
+  if (!ctx) return null
+  const league = asEspnLeague(ctx.espn_league)
+  if (!league || !Number.isFinite(ctx.season)) return null
+  const game = gameBlock(league, ctx.game)
+  const season = seasonBlock(league, ctx.season, ctx.season_rows)
+  if (!game && !season) return null
+  return { game, season }
+}

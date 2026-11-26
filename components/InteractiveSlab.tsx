@@ -32,6 +32,7 @@ import {
   tiltFromOrientation,
   type SlabFinish,
 } from "@/lib/slab-3d";
+import type { SlabStatBlock, SlabStats } from "@/lib/slab-stats";
 
 export type SlabBackRow = { label: string; value: string };
 
@@ -118,6 +119,7 @@ export default function InteractiveSlab({
   rows,
   finish,
   eyebrow,
+  stats,
 }: {
   children: ReactNode;
   /** The tier colour — the front face's border, as before. */
@@ -132,13 +134,17 @@ export default function InteractiveSlab({
   finish: SlabFinish;
   /** Back face: collection label shown at the top. */
   eyebrow?: string | null;
+  /** Back face: the player's line from this Moment's game and that season (lib/slab-stats). */
+  stats?: SlabStats | null;
 }) {
+  const hasStats = !!(stats && (stats.game || stats.season));
   const enabled = useSyncExternalStore(subscribeFlag, readFlag, serverFlag);
   const reducedMotion = usePrefersReducedMotion();
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const frontRef = useRef<HTMLDivElement | null>(null);
   const backRef = useRef<HTMLDivElement | null>(null);
+  const backInnerRef = useRef<HTMLDivElement | null>(null);
 
   // Physics state lives in a ref — never in React state.
   const s = useRef({
@@ -219,6 +225,34 @@ export default function InteractiveSlab({
       if (st.raf) cancelAnimationFrame(st.raf);
     };
   }, []);
+
+  // Fit the back's label inside the square: scale it down (never up) when its content is taller
+  // than the face — a long name, a finish badge and two stat lines on a 320 px phone.
+  useEffect(() => {
+    if (!enabled) return;
+    const outer = backRef.current;
+    const inner = backInnerRef.current;
+    if (!outer || !inner) return;
+    const fit = () => {
+      // scrollHeight is the LAYOUT height (transforms do not change it), so the drawn height is
+      // scrollHeight × k. A narrower k widens the layer, which re-wraps text: iterate to settle.
+      let k = 1;
+      for (let i = 0; i < 4; i++) {
+        inner.style.transform = k === 1 ? "" : `scale(${k.toFixed(4)})`;
+        inner.style.width = `${(100 / k).toFixed(3)}%`;
+        inner.style.minHeight = `${(100 / k).toFixed(3)}%`;
+        const avail = outer.clientHeight;
+        const need = inner.scrollHeight;
+        if (!avail || !need || need * k <= avail + 0.5) return;
+        k = Math.max(0.6, avail / need);
+      }
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(outer);
+    return () => ro.disconnect();
+  }, [enabled, stats, title, rows, serialLine, finish]);
 
   // Tilt is offered only where it can work: a coarse pointer with orientation events.
   useEffect(() => {
@@ -466,13 +500,26 @@ export default function InteractiveSlab({
                 background:
                   "linear-gradient(160deg, var(--rpc-surface, #0D0D0D) 0%, #151515 55%, var(--rpc-surface, #0D0D0D) 100%)",
                 boxShadow: finishColor ? `0 0 0 1px ${finishColor}` : undefined,
-                display: "flex",
-                flexDirection: "column",
-                padding: "clamp(16px, 5%, 28px)",
-                gap: "clamp(8px, 2.5%, 14px)",
-                color: "var(--rpc-text-primary)",
               }}
             >
+              {/* Scaled down to fit when a long name or a full stat line would overflow (fitBack). */}
+              <div
+                ref={backInnerRef}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  minHeight: "100%",
+                  boxSizing: "border-box",
+                  transformOrigin: "top left",
+                  display: "flex",
+                  flexDirection: "column",
+                  padding: hasStats ? "clamp(14px, 4.5%, 24px)" : "clamp(16px, 5%, 28px)",
+                  gap: hasStats ? "clamp(6px, 2%, 10px)" : "clamp(8px, 2.5%, 14px)",
+                  color: "var(--rpc-text-primary)",
+                }}
+              >
               <div
                 style={{
                   display: "flex",
@@ -501,22 +548,38 @@ export default function InteractiveSlab({
                   </span>
                 ) : null}
               </div>
-              <div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontSize: "clamp(24px, 7vw, 40px)",
-                    lineHeight: 1.05,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {title}
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: hasStats ? "clamp(17px, 5.4vw, 32px)" : "clamp(24px, 7vw, 40px)",
+                      lineHeight: 1.05,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {title}
+                  </div>
+                  {subtitle ? (
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: hasStats ? 11 : 12, color: "var(--rpc-text-muted)", marginTop: 3 }}>{subtitle}</div>
+                  ) : null}
                 </div>
-                {subtitle ? (
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)", marginTop: 4 }}>{subtitle}</div>
+                {/* With stats the serial sits beside the name; without, it gets its own line. */}
+                {serialLine && hasStats ? (
+                  <div
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "clamp(16px, 5vw, 30px)",
+                      lineHeight: 1,
+                      color: finishColor ?? frameColor,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {serialLine}
+                  </div>
                 ) : null}
               </div>
-              {serialLine ? (
+              {serialLine && !hasStats ? (
                 <div
                   style={{
                     fontFamily: "var(--font-mono)",
@@ -529,6 +592,8 @@ export default function InteractiveSlab({
                   {serialLine}
                 </div>
               ) : null}
+              {stats?.game ? <StatBlockView block={stats.game} accent={finishColor ?? frameColor} /> : null}
+              {stats?.season ? <StatBlockView block={stats.season} accent={null} /> : null}
               <dl
                 style={{
                   margin: 0,
@@ -536,9 +601,9 @@ export default function InteractiveSlab({
                   display: "grid",
                   gridTemplateColumns: "auto 1fr",
                   columnGap: 14,
-                  rowGap: 6,
+                  rowGap: hasStats ? 3 : 6,
                   fontFamily: "var(--font-mono)",
-                  fontSize: 12,
+                  fontSize: hasStats ? 11 : 12,
                 }}
               >
                 {rows.map((r) => (
@@ -560,6 +625,7 @@ export default function InteractiveSlab({
                 }}
               >
                 RIP PACKS CITY
+              </div>
               </div>
             </div>
           ) : null}
@@ -599,6 +665,39 @@ export default function InteractiveSlab({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// One stat block on the slab's back: a title line ("This game · vs ORL · W 114-109") over a row
+// of big numbers with small labels.
+function StatBlockView({ block, accent }: { block: SlabStatBlock; accent: string | null }) {
+  return (
+    <section aria-label={block.title} style={{ borderTop: "1px solid var(--rpc-border, rgba(255,255,255,0.12))", paddingTop: 5 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: "var(--rpc-text-muted)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span style={{ color: accent ?? "var(--rpc-text-muted)" }}>{block.title}</span>
+        {block.detail ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "0.06em" }}>{block.detail}</span> : null}
+      </div>
+      <div style={{ display: "flex", gap: "clamp(8px, 3%, 16px)", marginTop: 4 }}>
+        {block.chips.map((c) => (
+          <div key={c.label} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <span style={{ fontFamily: "var(--font-display)", fontSize: "clamp(15px, 4.6vw, 24px)", lineHeight: 1 }}>{c.value}</span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.12em", color: "var(--rpc-text-muted)", marginTop: 2 }}>{c.label}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

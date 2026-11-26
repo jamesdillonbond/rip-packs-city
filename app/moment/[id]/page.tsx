@@ -75,6 +75,8 @@ import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
 import InteractiveSlab from "@/components/InteractiveSlab"
 import { finishFromBadges } from "@/lib/slab-3d"
+import { slabStatsFromContext } from "@/lib/slab-stats"
+import { fetchSlabStats } from "@/lib/moment-detail/slab-stats-fetch"
 import { proxyIpfsUrl, proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { joinMetaParts, metaField } from "@/lib/format"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
@@ -599,7 +601,7 @@ export default async function MomentPage(
   // serials table that had rendered fine from the other. The badges are now
   // derived from the single read below (mapNotableTagsToSpecialSerials).
   const isCandyColl = e.collection_slug === "candy_mlb"
-  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes, printingAskRes] = await Promise.all([
+  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes, printingAskRes, slabStatsRes] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -630,10 +632,14 @@ export default async function MomentPage(
     isParallelExternalId(e.external_id) && r?.collection_id
       ? fetchPrintingAskChangedAt(r.collection_id, e.external_id as string)
       : Promise.resolve<PrintingAskStamp>({ at: null, ok: true }),
+    // 2026-11-25: the interactive slab's back — the game line + that season (lib/slab-stats).
+    fetchSlabStats({ id: e.id, collection_slug: e.collection_slug, game_date: e.game_date }),
   ])
   const highOffer = highOfferRes.data
   const parallels = parallelsRes.rows
   const badges = badgesRes.rows
+  // A failed read shows no stats on the slab (no claim either way); see lib/moment-detail/slab-stats-fetch.ts.
+  const slabStats = slabStatsRes.ok ? slabStatsFromContext(slabStatsRes.ctx) : null
   const momentBestOffer = momentBestOfferRes.data
   const notableSerials = notableSerialsRes.rows
   const specialSerials: SpecialSerialRow[] =
@@ -858,10 +864,12 @@ export default async function MomentPage(
           subtitle={joinMetaParts([tier || null, e.series != null ? seriesDisplay(e.series, e.collection_slug) : null], " · ") || null}
           serialLine={serial ? `#${serial}${mint ? ` / ${mint}` : ""}` : null}
           finish={finishFromBadges(specialSerials.map((x) => x.badge_type))}
+          stats={slabStats}
           rows={[
             e.set_name ? { label: "Set", value: e.set_name } : null,
             e.play_type ? { label: "Play", value: e.play_type } : null,
-            { label: "Date", value: fmtAbsDate(parseGameDate(e.game_date)) },
+            // the game block carries the date when there is one
+            slabStats?.game ? null : { label: "Date", value: fmtAbsDate(parseGameDate(e.game_date)) },
             !serial && mint ? { label: "Minted", value: mint.toLocaleString("en-US") } : null,
             showHeroFmv ? { label: "FMV", value: fmtUsd(f?.fmv_usd) } : null,
           ].filter((x): x is { label: string; value: string } => x != null && x.value !== "")}
