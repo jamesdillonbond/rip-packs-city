@@ -1,6 +1,14 @@
 # Candy MLB — collection roadmap (refreshed 2026-10-17, PT)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
+## ⭐ 2026-11-26 — Candy is nine brands, not one league (read first)
+
+- **Brand is read, not guessed.** Every collection's official metadata carries the publisher's brand code (`symbol`): MLB, DC, NSC (NASCAR), SWF (Sweet Futures), WWE, NTX (Netflix), GTY (Getty Images), PG (Palm Garden), SP (Sex Pistols), plus CANDY (the 2026 MLB base series and its test collections), CORP and MCNY. `candy_collections_brand_step()` (pg_cron `rpc-candy-collection-brand`, :54 hourly) keeps `candy_collections.brand_symbol` filled for new collections; `property_slug` and `program` follow by trigger. 400 of 401 collections carry a code; 2 (0 cards) are unplaced and counted as such.
+- **On the site:** the section is labelled **Candy** (URL still `/candy-mlb`); "What Candy covers" on the overview; `/candy-mlb/property/<slug>` per brand (DC and MLB grouped by line); the "League or brand" bar on the Market tab; a brand crumb on set pages; `/leagues` site-wide.
+- **Measured 11-26 (90 days on record):** DC $129.8k over 2,493 sales; MLB $77.4k over 6,425. DC is 281 collections (213 single comic issues), MLB 88.
+- ⚠ **`candy_collections.kind` is not the brand** — it files 3 NASCAR, 4 DC ("All-Star …"), 2 Sweet Futures and 1 MCNY collection as `mlb`. Anything that reads `kind='mlb'` as "MLB cards" over-counts; read `property_slug`. Not changed here (its readers were not audited).
+- **Open:** the binder, sets and packs tabs are not scoped by brand yet; DC's unit word is "Cards" by the 11-25 rule (Trevor may prefer "Comics").
+
 ## ⭐ 2026-11-23 evening — Candy parity pass 1: serial premiums + squeeze boards (read first)
 
 Trevor, 11-23: further the Candy roadmap and bring over any feature other collections already have. The gaps were re-read against today's market (153 sales / $4.8k in 7 days), since several "—" cells below were decided while Candy was frozen. Dated samples, 11-23 ~5:30 PM PT.
