@@ -239,12 +239,14 @@ export default function CollectionMomentTable(props: {
   accent: string
   /** UFC Strike: the Aptos half's state, so an empty table never claims "none" while Aptos loads or failed. */
   ufcAptosStatus?: UfcAptosState["status"]
+  /** UFC Strike: the searched wallet is an Aptos account (read live), so the empty copy names only Aptos. */
+  ufcAptosDirect?: boolean
 }) {
   const {
     isMobile, filteredRows, rowsCount, summary, view, toggleExpanded,
     batchEditionStats, costBasis, collectionSeriesMap, collectionSlug,
     badgeCollectionId, connectedWallet, ownerKey, input, hasSearched,
-    loading, showDebug, getPackCount, accent, ufcAptosStatus,
+    loading, showDebug, getPackCount, accent, ufcAptosStatus, ufcAptosDirect,
   } = props
   const router = useRouter()
   // ⛔ 2026-09-28: the All Day lock suppression (lockUntracked = the slug is
@@ -329,7 +331,7 @@ export default function CollectionMomentTable(props: {
               // collector holding 500 moments that they hold none.
               <div className="rpc-table-empty">
                 {rows.length === 0
-                  ? (isUfcAptosBinder(collectionSlug) ? ufcBinderEmptyCopy(ufcAptosStatus ?? "none") : "No " + unitNoun + " found for this wallet on this collection.")
+                  ? (isUfcAptosBinder(collectionSlug) ? ufcBinderEmptyCopy(ufcAptosStatus ?? "none", ufcAptosDirect === true) : "No " + unitNoun + " found for this wallet on this collection.")
                   : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                 {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
               </div>
@@ -644,7 +646,7 @@ export default function CollectionMomentTable(props: {
                 <tr>
                   <td colSpan={15} className="rpc-table-empty">
                     {rows.length === 0
-                      ? (isUfcAptosBinder(collectionSlug) ? ufcBinderEmptyCopy(ufcAptosStatus ?? "none") : "No " + unitNoun + " found for this wallet on this collection.")
+                      ? (isUfcAptosBinder(collectionSlug) ? ufcBinderEmptyCopy(ufcAptosStatus ?? "none", ufcAptosDirect === true) : "No " + unitNoun + " found for this wallet on this collection.")
                       : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                     {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
                   </td>

@@ -27,7 +27,7 @@ import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
-import { isUfcAptosBinder, aptosHoldingToRow, type UfcAptosState, type UfcAptosHolding } from "@/lib/ufc-aptos"
+import { isUfcAptosBinder, isAptosAccountAddress, aptosHoldingToRow, type UfcAptosState, type UfcAptosHolding } from "@/lib/ufc-aptos"
 import AutoSearchReader, { type AutoSearchSource } from "@/components/collection/AutoSearchReader"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
@@ -172,7 +172,12 @@ function WalletMomentsBody() {
   // has to disappear where no username exists.
   const supportsUsernameSearch = collectionObj?.dbChain === "flow"
   const collectionLabel = collectionObj?.label ?? "wallet"
-  const searchPlaceholder = supportsUsernameSearch
+  // UFC Strike spans Flow and Aptos (2026-11-26): an Aptos account is searchable directly.
+  const searchPlaceholder = isUfcAptosBinder(collectionSlug)
+    ? (ownerKey
+        ? "Enter a UFC Strike username, Flow wallet or Aptos wallet (or press Enter to load your wallet)"
+        : "Enter a UFC Strike username, Flow wallet or Aptos wallet")
+    : supportsUsernameSearch
     ? (ownerKey
         ? `Enter ${collectionLabel} username or wallet address (or press Enter to load your wallet)`
         : `Enter ${collectionLabel} username or wallet address`)
@@ -922,6 +927,15 @@ function WalletMomentsBody() {
     pendingOfferRowsRef.current = []
     if (offerTimerRef.current) { clearTimeout(offerTimerRef.current); offerTimerRef.current = null }
     setSalesSearchNonce(function(n) { return n + 1 });
+    // UFC Strike on an APTOS account (2026-11-26): nothing to read on Flow — the Aptos half is read live
+    // (/api/ufc/aptos-holdings?aptos=) by the effect below and fills the one table and the value tile.
+    if (isUfcAptosBinder(collectionSlug) && isAptosAccountAddress(trimmed)) {
+      track("search-result", { collection: collectionSlug, ok: true, total: 0, ms: 0 })
+      setWalletSummaryLoading(false)
+      setHasSearched(true)
+      setLoading(false)
+      return
+    }
     try {
       const sort = sortKeyToServerSort(view.sortKey, view.sortDirection)
       setServerSortBy(sort)
@@ -1399,20 +1413,23 @@ function WalletMomentsBody() {
   // linked Aptos accounts. Both land in ONE table, each row tagged Flow or Aptos. The fetch result is
   // tagged with the wallet it answers, so a late answer for an older wallet is never shown.
   const [ufcAptos, setUfcAptos] = useState<{ wallet: string; state: UfcAptosState; rows: MomentRow[] } | null>(null)
+  // An Aptos account searched directly is read live (?aptos=); a Flow address reads its linked accounts.
+  const ufcAptosDirect = isUfcAptosBinder(collectionSlug) && isAptosAccountAddress(activeWallet)
   const ufcAptosWallet = isUfcAptosBinder(collectionSlug) && hasSearched
-    ? (FLOW_ADDRESS_RE.test(resolvedAddress) ? resolvedAddress : FLOW_ADDRESS_RE.test(activeWallet) ? activeWallet : "")
+    ? (ufcAptosDirect ? activeWallet.toLowerCase() : FLOW_ADDRESS_RE.test(resolvedAddress) ? resolvedAddress : FLOW_ADDRESS_RE.test(activeWallet) ? activeWallet : "")
     : ""
   useEffect(() => {
     if (!ufcAptosWallet) return
     let live = true
-    fetch("/api/ufc/aptos-holdings?wallet=" + encodeURIComponent(ufcAptosWallet))
+    fetch("/api/ufc/aptos-holdings?" + (isAptosAccountAddress(ufcAptosWallet) ? "aptos=" : "wallet=") + encodeURIComponent(ufcAptosWallet))
       .then(async function(r) {
         if (!r.ok) throw new Error("aptos holdings " + r.status)
         const j = await r.json() as { linked?: boolean; count?: number; capped?: boolean; unpriced?: number; total_fmv?: number | null; moments?: UfcAptosHolding[] }
         const moments = Array.isArray(j.moments) ? j.moments : []
+        const direct = isAptosAccountAddress(ufcAptosWallet)
         const state: UfcAptosState = !j.linked || moments.length === 0
-          ? { status: "none" }
-          : { status: "ok", count: moments.length, totalFmv: typeof j.total_fmv === "number" ? j.total_fmv : null, unpriced: Number(j.unpriced) || 0, capped: !!j.capped }
+          ? { status: "none", direct }
+          : { status: "ok", count: moments.length, totalFmv: typeof j.total_fmv === "number" ? j.total_fmv : null, unpriced: Number(j.unpriced) || 0, capped: !!j.capped, direct }
         if (live) setUfcAptos({ wallet: ufcAptosWallet, state, rows: moments.map(aptosHoldingToRow) })
       })
       .catch(function() { if (live) setUfcAptos({ wallet: ufcAptosWallet, state: { status: "failed" }, rows: [] }) })
@@ -1851,6 +1868,7 @@ function WalletMomentsBody() {
           getPackCount={sealedPackSource && !packsSignedOut ? getPackCount : null}
           accent={accent}
           ufcAptosStatus={ufcAptosState?.status}
+          ufcAptosDirect={ufcAptosDirect}
         />
 
         {paginatedPage < paginatedTotalPages ? (

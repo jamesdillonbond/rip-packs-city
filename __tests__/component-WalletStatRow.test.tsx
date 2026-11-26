@@ -160,6 +160,12 @@ describe("WalletStatRow", () => {
     expect(container.textContent).toContain("Adding Aptos holdings…")
   })
 
+  it("UFC: an Aptos account searched directly that holds none says so about that account", () => {
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: null, momentCount: 0, ufcAptos: { status: "none", direct: true } })} />)
+    expect(container.textContent).toContain("No UFC Strike moments found in this Aptos account")
+    expect(container.textContent).not.toContain("on Flow")
+  })
+
   it("UFC: nothing on either chain is a found-nothing line, not $0", () => {
     const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc", walletFmv: 0, staleFmv: 0, momentCount: 0, ufcAptos: { status: "none" } })} />)
     const txt = container.textContent!

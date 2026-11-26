@@ -27,7 +27,7 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { normalizeFlowAddress } from "@/lib/address"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 30
+export const maxDuration = 60
 
 const PAGE = 1000
 const MAX_ROWS = 20000 // runaway guard; a wallet past it is reported as capped, not truncated silently
@@ -49,19 +49,81 @@ export interface UfcAptosMoment {
   fmv_usd: number | null
 }
 
+// ── Aptos account mode (2026-11-26, Trevor: "aggregate across the multiple chains/wallets") ──────────
+// GET ?aptos=<64-hex Aptos account> reads that account LIVE from the Aptos indexer, for collectors who
+// hold UFC on an Aptos wallet RPC cannot link to a Flow address (Aptos-native, or not yet matched).
+// Only UFC Strike tokens count (collections mapped in ufc_aptos_collections). A failed indexer page is a
+// 5xx, never a shorter list; a wallet past MAX_APTOS_PAGES is reported `capped`.
+const APTOS_INDEXER = "https://api.mainnet.aptoslabs.com/v1/graphql"
+const MAX_APTOS_PAGES = 30
+const APTOS_Q = `query($o:String!,$off:Int){current_token_ownerships_v2(where:{owner_address:{_eq:$o},amount:{_gt:"0"}},order_by:{token_data_id:asc},limit:100,offset:$off){token_data_id current_token_data{collection_id token_properties}}}`
+
+function normalizeAptosAccount(v: string | null): string | null {
+  const s = (v ?? "").trim().toLowerCase()
+  return /^0x[0-9a-f]{64}$/.test(s) ? s : null
+}
+
+type Holding = { token_data_id: string; edition_id: string | null; serial_number: number | null }
+
+async function liveAptosHoldings(owner: string): Promise<{ holdings: Holding[]; capped: boolean }> {
+  const editionOf = new Map<string, string | null>()
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await boundedRead(
+      supabaseAdmin.from("ufc_aptos_collections").select("aptos_collection_id, edition_id").order("aptos_collection_id").range(from, from + PAGE - 1),
+      "api/ufc/aptos-holdings/ufc_aptos_collections-map",
+    )
+    if (error) throw error
+    const rows = (data ?? []) as Array<{ aptos_collection_id: string; edition_id: string | null }>
+    for (const r of rows) editionOf.set(r.aptos_collection_id, r.edition_id)
+    if (rows.length < PAGE) break
+  }
+  const key = process.env.APTOS_API_KEY
+  const holdings: Holding[] = []
+  for (let page = 0; ; page++) {
+    if (page >= MAX_APTOS_PAGES) return { holdings, capped: true }
+    const res = await fetch(APTOS_INDEXER, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+      body: JSON.stringify({ query: APTOS_Q, variables: { o: owner, off: page * 100 } }),
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store",
+    })
+    if (!res.ok) throw new Error(`aptos indexer ${res.status}`)
+    const j = (await res.json()) as { data?: { current_token_ownerships_v2?: Array<{ token_data_id: string; current_token_data?: { collection_id?: string; token_properties?: Record<string, unknown> } }> }; errors?: unknown }
+    if (j.errors || !j.data?.current_token_ownerships_v2) throw new Error("aptos indexer error")
+    const rows = j.data.current_token_ownerships_v2
+    for (const t of rows) {
+      const coll = t.current_token_data?.collection_id
+      if (!coll || !editionOf.has(coll)) continue
+      const serial = Number.parseInt(String(t.current_token_data?.token_properties?.["Serial Number"] ?? ""), 10)
+      holdings.push({ token_data_id: t.token_data_id, edition_id: editionOf.get(coll) ?? null, serial_number: Number.isFinite(serial) ? serial : null })
+    }
+    if (rows.length < 100) return { holdings, capped: false }
+  }
+}
+
 export async function GET(req: NextRequest) {
-  const wallet = normalizeFlowAddress(req.nextUrl.searchParams.get("wallet"))
-  if (!wallet) {
+  const aptosParam = req.nextUrl.searchParams.get("aptos")
+  const aptosOwner = aptosParam != null ? normalizeAptosAccount(aptosParam) : null
+  if (aptosParam != null && !aptosOwner) {
+    return NextResponse.json({ error: "aptos must be an Aptos account (0x + 64 hex)" }, { status: 400 })
+  }
+  const wallet = aptosOwner ? null : normalizeFlowAddress(req.nextUrl.searchParams.get("wallet"))
+  if (!aptosOwner && !wallet) {
     return NextResponse.json({ error: "wallet must be a Flow address (0x + 16 hex)" }, { status: 400 })
   }
 
   try {
-    // 1. Holdings for every Aptos wallet linked to this Flow address. SETOF RPCs are capped at
-    //    1,000 rows by PostgREST, so page it on a unique key.
-    type Holding = { token_data_id: string; edition_id: string | null; serial_number: number | null }
+    // 1. Holdings: an Aptos account read live (aptos mode), or every Aptos wallet linked to this Flow
+    //    address (SETOF RPCs are capped at 1,000 rows by PostgREST, so page it on a unique key).
     const holdings: Holding[] = []
     let capped = false
-    for (let from = 0; ; from += PAGE) {
+    if (aptosOwner) {
+      const live = await liveAptosHoldings(aptosOwner)
+      holdings.push(...live.holdings)
+      capped = live.capped
+    }
+    for (let from = 0; wallet; from += PAGE) {
       const { data, error } = await boundedRead(
         supabaseAdmin
           .rpc("get_ufc_aptos_holdings_for_flow", { p_flow_address: wallet })

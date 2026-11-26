@@ -120,8 +120,9 @@ export interface UfcAptosHolding {
 export type UfcAptosState =
   | { status: "loading" }
   | { status: "failed" }
-  | { status: "none" }
-  | { status: "ok"; count: number; totalFmv: number | null; unpriced: number; capped: boolean }
+  | { status: "none"; direct?: boolean }
+  | { status: "ok"; count: number; totalFmv: number | null; unpriced: number; capped: boolean; direct?: boolean }
+// `direct`: the searched wallet IS an Aptos account (read live), not a Flow address with linked Aptos accounts.
 
 /** A held Aptos Moment as a binder row: same table, same filters, tagged Aptos. */
 export function aptosHoldingToRow(m: UfcAptosHolding): MomentRow {
@@ -147,7 +148,12 @@ export function aptosHoldingToRow(m: UfcAptosHolding): MomentRow {
  * Empty-state copy for the UFC binder table, which lists BOTH chains (2026-11-26). "Not linked" and "linked,
  * holds none" are indistinguishable here, so the copy names what was searched and claims nothing more.
  */
-export function ufcBinderEmptyCopy(aptos: UfcAptosState["status"]): string {
+export function ufcBinderEmptyCopy(aptos: UfcAptosState["status"], direct = false): string {
+  if (direct) {
+    if (aptos === "failed") return "Couldn't read this Aptos account right now — search again to retry."
+    if (aptos === "loading") return "Reading this Aptos account…"
+    return "No UFC Strike Moments found in this Aptos account."
+  }
   if (aptos === "failed") return "No UFC Strike Moments found on Flow for this wallet, and its Aptos holdings couldn't load — search again to retry."
   if (aptos === "loading") return "No UFC Strike Moments found on Flow for this wallet. Checking Aptos…"
   return "No UFC Strike Moments found for this wallet on Flow or on any Aptos account RPC has linked to it."

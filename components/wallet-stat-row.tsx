@@ -147,8 +147,9 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     if (aptosOk && aptosOk.unpriced > 0) parts.push(`${formatCount(aptosOk.unpriced)} on Aptos without a current FMV, not in the total`)
     if (ufcAptos?.status === "loading") parts.push("Adding Aptos holdings…")
     if (ufcAptos?.status === "failed") parts.push("Aptos holdings couldn't load — not included")
+    const direct = (ufcAptos?.status === "ok" || ufcAptos?.status === "none") && ufcAptos.direct === true
     const caption = !anyHeld && ufcAptos?.status !== "loading" && ufcAptos?.status !== "failed"
-      ? `No UFC Strike ${noun} found on Flow or on an Aptos account linked to this wallet`
+      ? (direct ? `No UFC Strike ${noun} found in this Aptos account` : `No UFC Strike ${noun} found on Flow or on an Aptos account linked to this wallet`)
       : parts.join(" · ")
     return (
       <div>

@@ -283,6 +283,14 @@ describe("CollectionMomentTable", () => {
     expect(hrefs).not.toContain("/moment/aptos:0xa")
   })
 
+  it("UFC: an empty table for an Aptos account searched directly names only that account", () => {
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ collectionSlug: "ufc", filteredRows: [], rowsCount: 0, hasSearched: true, ufcAptosStatus: "none", ufcAptosDirect: true })} />
+    )
+    expect(container.textContent).toContain("No UFC Strike Moments found in this Aptos account.")
+    expect(container.textContent).not.toContain("on Flow")
+  })
+
   it("a single-chain collection renders no chain tag", () => {
     const { container } = render(
       <CollectionMomentTable {...baseProps({ collectionSlug: "nba-top-shot", filteredRows: [{ momentId: "1", playerName: "P", setName: "S" }] as never, rowsCount: 1, hasSearched: true })} />

@@ -21,7 +21,7 @@ const db = {
 
 function thenable<T>(resolveWith: () => T, extra: Record<string, unknown> = {}) {
   const b: Record<string, unknown> = { ...extra }
-  for (const m of ["select", "order", "in", "eq"]) b[m] = () => b
+  for (const m of ["select", "order", "in", "eq", "range"]) b[m] = () => b
   b.then = (ok: (v: T) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(resolveWith()).then(ok, bad)
   return b
 }
@@ -156,6 +156,45 @@ describe("GET /api/ufc/aptos-holdings", () => {
     expect(body.count).toBe(1)
     expect(body.total_fmv).toBe(2)
     expect(body.moments[0].aptos_collection_id).toBeNull()
+  })
+
+  // 2026-11-26: an Aptos account is read LIVE from the Aptos indexer (Aptos-native / unlinked collectors).
+  describe("?aptos= — an Aptos account read live", () => {
+    const APT = "0x" + "ab".repeat(32)
+    const page = (rows: unknown[]) => ({ ok: true, json: async () => ({ data: { current_token_ownerships_v2: rows } }) })
+    let fetchMock: ReturnType<typeof vi.fn>
+    beforeEach(() => {
+      fetchMock = vi.fn()
+      vi.stubGlobal("fetch", fetchMock)
+    })
+
+    it("400s on anything but a 64-hex Aptos account", async () => {
+      expect((await GET(req("https://t/api/ufc/aptos-holdings?aptos=0x8c84d174d73e2d4c"))).status).toBe(400)
+    })
+
+    it("keeps only UFC Strike tokens, prices them, and never consults the Flow link table", async () => {
+      db.colls = [{ edition_id: "e1", aptos_collection_id: "0xufc" }]
+      db.editions = [{ id: "e1", external_id: "733", name: "X", player_name: "X", set_name: "S", tier: null, circulation_count: null, thumbnail_url: null }]
+      db.fmv = [{ edition_id: "e1", fmv_usd: 2 }]
+      fetchMock.mockResolvedValueOnce(page([
+        { token_data_id: "0xt1", current_token_data: { collection_id: "0xufc", token_properties: { "Serial Number": "12" } } },
+        { token_data_id: "0xt2", current_token_data: { collection_id: "0xnotufc", token_properties: {} } },
+      ]))
+      const body = await (await GET(req(`https://t/api/ufc/aptos-holdings?aptos=${APT.toUpperCase().replace("0X", "0x")}`))).json()
+      expect(body.linked).toBe(true)
+      expect(body.count).toBe(1)
+      expect(body.moments[0].serial_number).toBe(12)
+      expect(body.total_fmv).toBe(2)
+      expect(db.rpcCalls.some((c) => c.name === "get_ufc_aptos_holdings_for_flow")).toBe(false)
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).variables.o).toBe(APT)
+    })
+
+    it("a failed indexer read is an error, never an empty account", async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      const res = await GET(req(`https://t/api/ufc/aptos-holdings?aptos=${APT}`))
+      expect(res.status).toBeGreaterThanOrEqual(500)
+      expect(await res.json()).not.toHaveProperty("linked")
+    })
   })
 
   it("pages past PostgREST's 1,000-row RPC cap on a unique key", async () => {
