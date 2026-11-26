@@ -22,6 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - `player_identities`: espn_id / espn_league / espn_id_matched_by → NULL on the 3 someone-else ids (Michael Cage, Michael Cooper, Tim Thomas) and the 13 ids ESPN has no athlete for (Candace Parker, Nate Robinson, …); only rows still holding the measured id were touched (16 / 16). They are back in `player_stats_espn_resolve_targets`; the 10:23 AM PT resolver run re-searches them with the athlete check pushed in `eef1780`.
 - Verified: Tim Thomas's Moments now show no stats (were Sue Wicks's season). Scratch probe table dropped.
+- The file's header says "measured ~7:20 AM PT": that was an estimate; the probes ran ~6:55 AM PT (the version stamp 15:05:42 UTC is 7:05 AM PT). The file is left byte-identical to what production recorded.
 - Revert: the migration file carries the exact UPDATE that restores the 16 old ids.
 
 ### 2026-11-26 ~7:00 AM PT · 🔧 SHIPPED (code) — ESPN id matcher checks the athlete is the person before taking an id (Claude Code cloud; Trevor: "Keep going")
