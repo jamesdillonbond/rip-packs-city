@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~12:57 PM PT · 🔧 SHIPPED — **`/leagues`: one map of every league and brand RPC covers and where its cards live (Top Shot, All Day, Golazos, UFC, Pinnacle, Panini, Candy)** (Cowork cloud; Trevor: "Do it all")
+
+- **What:** new public page `/leagues` — one tile per league / brand under "Leagues" and "Entertainment", each listing every place it lives (NBA → NBA Top Shot + Panini; WWE → Panini + Candy; MLB → Candy), with a team-hubs link where hubs exist. Built from the two publisher boards plus the five single-league collections; a publisher whose read fails is NAMED on the page, never shown as covering nothing.
+- **Ways in:** Collectors menu ("Leagues and brands"), the homepage collections section, a trailing "All leagues →" chip on the phone collection switcher, both "What … covers" grids, both brand pages' More row.
+- **Plumbing:** `proxy.ts` public rule (exact `/leagues`), sitemap static list (109 → 110), `STATIC_TOP_LEVEL_SEGMENTS`, the rendered-DOM smoke list. Candy brand pages now list a title's issues in natural order (#2 before #10).
+- **Revert:** `git revert` the code commit (find by message "leagues: the coverage map"). No DB change.
+
 ### 2026-11-26 12:48 PM PT · UFC Aptos listings lane armed in pipeline_cadence_watchlist
 - `ufc-aptos-listings` (feeds /ufc/sniper and concierge UFC floors) now has a watchlist row: silence 2160 min, no-success 4320 min (the sniper's 3-day re-check window), severity info. Before this, the lane could have stopped and the board would have emptied with no alert, because the auto-arm job waits for 12 days of runs. Migration `20261126204840_audit_20261126_watchlist_ufc_aptos_listings`. The other ufc-aptos lanes reach 12 days around 11-27 or 11-28 and will be auto-armed by jobid 675.
 - Revert: `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'ufc-aptos-listings';`
