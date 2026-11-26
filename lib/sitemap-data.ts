@@ -737,6 +737,24 @@ async function getPaniniProductPaths(): Promise<string[]> {
   return ['/panini-blockchain/product', ...propertyPaths, ...paths]
 }
 
+/**
+ * /candy-mlb/property/<slug> — one page per league / brand Candy has published a collection under
+ * (2026-11-26; get_candy_property_board lists only those). A failed read throws, like every read here.
+ */
+async function getCandyPropertyPaths(): Promise<string[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('candy property pages: supabase env missing, so nothing could be read')
+  const sb = createClient(url, key)
+  const { data: board, error } = await sb.rpc('get_candy_property_board')
+  if (error) throw new SitemapReadIncomplete('get_candy_property_board read failed: ' + error.message)
+  const props = (board as { properties?: unknown } | null)?.properties
+  if (!Array.isArray(props)) throw new SitemapReadIncomplete('get_candy_property_board returned no list')
+  return (props as Array<{ slug?: unknown; collections?: unknown }>)
+    .filter((r) => typeof r.slug === 'string' && r.slug && Number(r.collections) > 0)
+    .map((r) => `/candy-mlb/property/${encodeURIComponent(r.slug as string)}`)
+}
+
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -1096,7 +1114,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     const routablePlayers = await getRoutablePlayerSlugs()
     const paniniProductSets = await getPaniniProductSetPages()
     const hubPaths = await getIndexableHubPaths()
-    const paniniProductPaths = await getPaniniProductPaths()
+    const paniniProductPaths = [...(await getPaniniProductPaths()), ...(await getCandyPropertyPaths())]
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>

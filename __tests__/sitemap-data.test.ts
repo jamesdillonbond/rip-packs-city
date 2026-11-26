@@ -68,7 +68,9 @@ vi.mock("@supabase/supabase-js", () => ({
       r.order = () => r
       r.range = (from: number, to: number) => { r._range = [from, to]; return r }
       r.then = (resolve: any, reject: any) => {
-        const res = h.r[fn] ?? { data: [], error: null }
+        // 2026-11-26: get_candy_property_board answers an OBJECT ({ properties: [] } = no brand yet); a bare
+        // list is a failed read by its reader's contract, so the default here is the answered-empty object.
+        const res = h.r[fn] ?? (fn === "get_candy_property_board" ? { data: { properties: [] }, error: null } : { data: [], error: null })
         const out = res.error || !Array.isArray(res.data) || !r._range ? res : { data: res.data.slice(r._range[0], r._range[1] + 1), error: null }
         return Promise.resolve(out).then(resolve, reject)
       }
@@ -1019,5 +1021,18 @@ describe("buildSitemapSegment — defensive catch arms", () => {
       { dist_id: "5048", collection_id: TS_ID, updated_at: null },
     ])
     await expect(buildSitemapSegment(4)).rejects.toThrow(SitemapReadIncomplete)
+  })
+})
+
+describe("Candy league / brand pages (2026-11-26)", () => {
+  it("lists one /candy-mlb/property/<slug> per brand with a collection, and a failed read fails the segment", async () => {
+    h.r.get_candy_property_board = { data: { properties: [{ slug: "dc", collections: 281 }, { slug: "mlb", collections: 88 }, { slug: "empty", collections: 0 }] }, error: null }
+    const urls = (await buildSitemapSegment(3)).map((e) => e.url)
+    expect(urls).toContain(`${BASE}/candy-mlb/property/dc`)
+    expect(urls).toContain(`${BASE}/candy-mlb/property/mlb`)
+    expect(urls).not.toContain(`${BASE}/candy-mlb/property/empty`)
+    h.r.get_candy_property_board = { data: null, error: { message: "boom" } }
+    await expect(buildSitemapSegment(3)).rejects.toThrow(/get_candy_property_board/)
+    delete h.r.get_candy_property_board
   })
 })

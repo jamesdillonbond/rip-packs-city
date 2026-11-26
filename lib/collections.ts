@@ -94,6 +94,12 @@ export interface Collection {
    * panini_product_rollup; any collection without the flag 404s on that route.
    */
   productPages?: true
+  /**
+   * Has /[collection]/property/[slug] pages — one per league / brand the publisher covers (2026-11-26).
+   * The value names the reader: Panini's products (lib/panini/properties.ts) or Candy's collections
+   * (lib/candy/properties.ts). "property" is a URL / code word only — never rendered.
+   */
+  propertyPages?: "panini" | "candy"
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -357,6 +363,7 @@ export const COLLECTIONS: Collection[] = [
     pages: ["overview", "market", "collection", "packs", "sets", "sniper", "analytics", "hot-floors"],
     // 2026-10-25 — PRODUCT pages (/panini-blockchain/product/<set_id>-<slug>), the series-page counterpart.
     productPages: true,
+    propertyPages: "panini",
     published: true,
     // 2026-11-23 (Panini parity pass): dated RPC changes, each in the ledger — the same rule as the other
     // collections' news (no coverage stats dressed as news).
@@ -378,6 +385,9 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Candy",
     sport: "MLB",
     chain: "candy",
+    // 2026-11-26 — a page per league / brand Candy covers (MLB, DC, NASCAR, WWE, Netflix …), from the brand
+    // code in each collection's official metadata (migration 20261126201654).
+    propertyPages: "candy",
     // Solana / Metaplex Core under new owner Candy Digital (Tad Smith).
     // The old "Root Network / Futureverse" plan is dead — Candy migrated
     // off Futureverse to Solana in mid-2026. dbChain is the authoritative

@@ -1,6 +1,7 @@
 // app/(collections)/[collection]/property/[slug]/page.tsx
 //
-// One league / brand a Panini product is made under (2026-11-26): FIFA World Cup, NBA, WNBA, Bad Eggs …
+// One league / brand a publisher covers (2026-11-26): Panini's FIFA World Cup, NBA, WNBA, Bad Eggs … and
+// Candy's MLB, DC, NASCAR, WWE … — the registry's `propertyPages` names which reader serves the collection.
 // The layout gates existence; this page renders PaniniPropertyBody or, on a failed read, says it couldn't
 // load. Data: lib/panini/properties.ts (get_panini_property_page, migration 20261126193845).
 // ⛔ "property" is a URL / code word only — the page says "League" or "Entertainment".
@@ -14,6 +15,8 @@ import { collectionDisplayName, collectionEntityJsonLd, collectionOgUrl, entityU
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { fetchPaniniPropertyPage } from "@/lib/panini/properties"
 import PaniniPropertyBody, { PaniniPropertyUnavailable } from "@/components/entity/PaniniPropertyBody"
+import { fetchCandyPropertyPage } from "@/lib/candy/properties"
+import CandyPropertyBody, { CandyPropertyUnavailable } from "@/components/entity/CandyPropertyBody"
 
 export const revalidate = 1800
 
@@ -21,12 +24,54 @@ type Props = { params: Promise<{ collection: string; slug: string }> }
 
 async function load(props: Props) {
   const { collection, slug: raw } = await props.params
-  return { collection, coll: getCollectionByUrlSlug(collection), slug: decodeSlugOrNull(raw) }
+  const coll = getCollectionByUrlSlug(collection)
+  return { collection, coll, slug: decodeSlugOrNull(raw), reader: coll ? getCollection(coll.urlSlug)?.propertyPages : undefined }
+}
+
+const shell = { maxWidth: 1100, margin: "0 auto", padding: "16px 16px 48px" } as const
+
+async function candyMetadata(collection: string, slug: string): Promise<Metadata> {
+  const res = await fetchCandyPropertyPage(slug)
+  if (!res.ok) return { title: "Candy cards", robots: { index: false, follow: true } }
+  const p = res.page
+  if (!p) return NOT_FOUND_METADATA
+  const url = entityUrl(collection, "property", p.slug)
+  const title = `Candy ${p.name} Cards — Collections, Values & Sales`
+  const n = p.collections.length
+  const description = `Candy's digital ${p.name} cards: ${n.toLocaleString("en-US")} ${n === 1 ? "collection" : "collections"} and ${p.cards.toLocaleString("en-US")} cards in circulation, with fair market values, live asks and recent sales.`
+  const image = collectionOgUrl(collection)
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { ...OG_INHERITED, title, description, url, images: [{ url: image, width: 1200, height: 630, alt: `Candy ${p.name} cards` }] },
+    twitter: { ...TWITTER_INHERITED, title, description, images: [image] },
+  }
+}
+
+async function CandyPage({ collection, slug }: { collection: string; slug: string }) {
+  const res = await fetchCandyPropertyPage(slug)
+  if (!res.ok) return <CandyPropertyUnavailable collection={collection} />
+  if (!res.page) notFound()
+  const jsonLd = collectionEntityJsonLd({
+    name: `Candy ${res.page.name} cards`,
+    url: entityUrl(collection, "property", res.page.slug),
+    collectionUrlSlug: collection,
+    eds: res.page.top_editions.map((e) => ({ route_slug: e.external_id, player_name: e.player_name ?? e.name, thumbnail_url: null })),
+    crumbName: res.page.name,
+  })
+  return (
+    <div style={shell}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
+      <CandyPropertyBody collection={collection} collectionLabel={collectionDisplayName(collection)} page={res.page} />
+    </div>
+  )
 }
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
-  const { collection, coll, slug } = await load(props)
-  if (!(coll && getCollection(coll.urlSlug)?.productPages) || slug === null) return NOT_FOUND_METADATA
+  const { collection, coll, slug, reader } = await load(props)
+  if (!coll || !reader || slug === null) return NOT_FOUND_METADATA
+  if (reader === "candy") return candyMetadata(collection, slug)
   const res = await fetchPaniniPropertyPage(slug)
   if (!res.ok) return { title: "Panini cards", robots: { index: false, follow: true } }
   const p = res.page
@@ -45,8 +90,9 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
 }
 
 export default async function PaniniPropertyPage(props: Props) {
-  const { collection, coll, slug } = await load(props)
-  if (!(coll && getCollection(coll.urlSlug)?.productPages) || slug === null) notFound()
+  const { collection, coll, slug, reader } = await load(props)
+  if (!coll || !reader || slug === null) notFound()
+  if (reader === "candy") return <CandyPage collection={collection} slug={slug} />
   const res = await fetchPaniniPropertyPage(slug)
   if (!res.ok) return <PaniniPropertyUnavailable collection={collection} />
   if (!res.page) notFound()
@@ -58,7 +104,7 @@ export default async function PaniniPropertyPage(props: Props) {
     crumbName: res.page.name,
   })
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 48px" }}>
+    <div style={shell}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
       <PaniniPropertyBody collection={collection} collectionLabel={collectionDisplayName(collection)} page={res.page} />
     </div>

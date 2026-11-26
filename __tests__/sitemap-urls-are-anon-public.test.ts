@@ -52,6 +52,8 @@ vi.mock("@supabase/supabase-js", () => ({
     // 2026-10-21 (#204): panini_product_set_pages is paged (.order().range()), so a thenable builder.
     // 2026-10-23: the two hub readers answer one row each, so the sweep below
     // proves /players/<slug> and /teams/<league>/<slug> are anon-public too.
+    // 2026-11-26: get_candy_property_board answers one brand, so the sweep proves /candy-mlb/property/<slug>
+    // is anon-public too (an [] here is a failed read by that reader's contract, and the segment throws).
     rpc: (fn: string) => {
       const r: any = {}
       r.order = () => r
@@ -59,6 +61,7 @@ vi.mock("@supabase/supabase-js", () => ({
       const data =
         fn === "list_indexable_player_hubs" ? [{ slug: "damian-lillard" }]
         : fn === "list_indexable_franchise_hubs" ? [{ league: "NBA", slug: "blazers" }]
+        : fn === "get_candy_property_board" ? { properties: [{ slug: "dc", collections: 3 }] }
         : []
       r.then = (resolve: any, reject: any) => Promise.resolve({ data, error: null }).then(resolve, reject)
       return r

@@ -14,6 +14,7 @@ import { CollectionMarketCapTile } from "@/components/entity/MarketCapTile";
 import { getCollectionByUrlSlug } from "@/lib/collection-slug";
 import { readCollectionStatsForPage } from "@/lib/collection-stats/read";
 import PaniniPropertyGrid from "@/components/collection/PaniniPropertyGrid";
+import CandyPropertyGrid from "@/components/collection/CandyPropertyGrid";
 
 export default async function OverviewPage({
   params,
@@ -42,6 +43,11 @@ export default async function OverviewPage({
   const coverageSlot = collection === "panini-blockchain" ? (
     <Suspense fallback={null}>
       <PaniniPropertyGrid collection={collection} />
+    </Suspense>
+  ) : collection === "candy-mlb" ? (
+    // "What Candy covers" — MLB, DC, NASCAR, WWE … from each collection's own brand code (20261126201654).
+    <Suspense fallback={null}>
+      <CandyPropertyGrid collection={collection} />
     </Suspense>
   ) : null;
   let initialStats: Record<string, unknown> | null = null;

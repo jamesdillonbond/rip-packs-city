@@ -127,18 +127,8 @@ export function paniniPropertyIndexHref(collection: string, slug: string): strin
   return `/${collection}/product#${slug}`
 }
 
-const SUBJECT_PLURALS: Record<string, string> = {
-  player: "Players",
-  driver: "Drivers",
-  character: "Characters",
-  artist: "Artists",
-  superstar: "Superstars",
-}
-
-/** "Players" / "Characters" / "Artists" … — the word a league or brand uses for who is on its cards. */
-export function subjectPlural(word: string | null | undefined): string {
-  return SUBJECT_PLURALS[(word ?? "").toLowerCase()] ?? "Players"
-}
+// "Players" / "Characters" / "Artists" … lives in lib/property-words.ts (client-safe, shared with Candy).
+export { subjectPlural } from "@/lib/property-words"
 
 /** "2021 to 2024-25", or the single season; null when no product name carries one. */
 export function seasonSpan(p: Pick<PaniniProperty, "first_season" | "last_season">): string | null {
