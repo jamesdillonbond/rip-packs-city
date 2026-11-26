@@ -2134,7 +2134,7 @@ const PINS = [
   {
     fn: "remap_topshot_base_keyed_parallel_sales",
     test: "supabase/tests/remap_topshot_base_keyed_parallel_sales.sql",
-    migration: "supabase/migrations/20260802205000_audit_20260802_snapshot_remap_topshot_base_keyed_parallel_sales.sql",
+    migration: "supabase/migrations/20261126174004_audit_20261126_remap_base_keyed_parallel_sales_scoped_to_recent_resolutions.sql",
   },
   // 2026-11-14: parallel sales follow their subedition once the chain answers (Trevor: "Fix it").
   {
