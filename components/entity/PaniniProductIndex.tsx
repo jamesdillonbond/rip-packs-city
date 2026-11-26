@@ -14,7 +14,7 @@ import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { paniniProductHref } from "@/lib/panini/product-url"
 import { paniniSportLabel } from "@/lib/panini/sport-label"
-import { PANINI_PROPERTY_HEADINGS, seasonSpan, type PaniniPropertyBoard } from "@/lib/panini/properties"
+import { PANINI_PROPERTY_HEADINGS, paniniPropertyHref, seasonSpan, type PaniniPropertyBoard } from "@/lib/panini/properties"
 
 export interface PaniniProductIndexRow {
   name: string
@@ -105,7 +105,7 @@ export default function PaniniProductIndex({
           ) : null}
           <section id={id} className="rpc-card" style={{ padding: 18, marginTop: 14, scrollMarginTop: 80 }}>
             <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 10px" }}>
-              {title}
+              {id ? <Link prefetch={false} href={paniniPropertyHref(collection, id)} data-testid={`panini-product-index-group-${id}`} style={{ color: "inherit", textDecoration: "none" }}>{title} →</Link> : title}
             </h2>
             {note ? <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "-6px 0 10px" }}>{note}</div> : null}
             <div className="rpc-scroll-x" {...scrollRegion("Products in this group")}>

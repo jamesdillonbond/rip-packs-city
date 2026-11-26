@@ -5,7 +5,7 @@
 // failed read, says it couldn't load. Data: lib/panini/product.ts (panini_product_rollup, hourly).
 
 import type { Metadata } from "next"
-import { fetchPaniniPropertyBoard, paniniPropertyHref } from "@/lib/panini/properties"
+import { fetchPaniniPropertyBoard, paniniPropertyHref, subjectPlural } from "@/lib/panini/properties"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
@@ -63,7 +63,7 @@ export default async function PaniniProductPage(props: Props) {
   // 2026-11-26: the league / brand breadcrumb step; a failed read or an unplaced product simply has none.
   const propertySlug = properties.ok ? properties.board.productProperty[res.product.slug] : undefined
   const propertyRow = properties.ok && propertySlug ? properties.board.properties.find((x) => x.slug === propertySlug) : undefined
-  const property = propertyRow ? { name: propertyRow.name, href: paniniPropertyHref(collection, propertyRow.slug) } : null
+  const property = propertyRow ? { name: propertyRow.name, href: paniniPropertyHref(collection, propertyRow.slug), subjects: subjectPlural(propertyRow.subject_word) } : null
   // CollectionPage + BreadcrumbList (+ ItemList of the top editions), the shape the
   // series pages publish (2026-11-06: the 68 product pages were the one indexable
   // entity route with no structured data). route_slug = external_id, as the body's

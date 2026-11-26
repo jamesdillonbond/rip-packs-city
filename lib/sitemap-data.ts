@@ -723,8 +723,18 @@ async function getPaniniProductPaths(): Promise<string[]> {
   const paths = rows
     .filter((r) => r.computed_at === newest && typeof r.slug === 'string' && r.slug && Number(r.editions) >= 2)
     .map((r) => `/panini-blockchain/product/${encodeURIComponent(r.slug as string)}`)
+  if (!paths.length) return paths
+  // 2026-11-26: one page per league / brand that has a product page (get_panini_property_board lists only
+  // those). A failed read throws, like every read in this file.
+  const { data: board, error: boardError } = await sb.rpc('get_panini_property_board')
+  if (boardError) throw new SitemapReadIncomplete('get_panini_property_board read failed: ' + boardError.message)
+  const props = (board as { properties?: unknown } | null)?.properties
+  if (!Array.isArray(props)) throw new SitemapReadIncomplete('get_panini_property_board returned no list')
+  const propertyPaths = (props as Array<{ slug?: unknown }>)
+    .filter((r) => typeof r.slug === 'string' && r.slug)
+    .map((r) => `/panini-blockchain/property/${encodeURIComponent(r.slug as string)}`)
   // The products index rides along whenever there is a product to index.
-  return paths.length ? ['/panini-blockchain/product', ...paths] : paths
+  return ['/panini-blockchain/product', ...propertyPaths, ...paths]
 }
 
 async function getCollectionSeries(): Promise<SeriesRow[]> {

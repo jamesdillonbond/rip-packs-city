@@ -62,7 +62,7 @@ export default function PaniniProductBody({
   /** Market cap (2026-11-23, the series page's tile); absent = not read. */
   marketCap?: { ok: boolean; cap: PaniniProductMarketCap | null }
   /** The league / brand this product is made under (2026-11-26) — a breadcrumb step; absent = not read or unplaced. */
-  property?: { name: string; href: string } | null
+  property?: { name: string; href: string; subjects?: string } | null
 }) {
   const unpriced = p.editions - p.priced_editions
   return (
@@ -77,7 +77,7 @@ export default function PaniniProductBody({
           {p.name}
         </h1>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>
-          {fmtCount(p.editions)} editions seen · {fmtCount(p.players)} players · {fmtCount(p.sets)} sets
+          {fmtCount(p.editions)} editions seen · {fmtCount(p.players)} {(property?.subjects ?? "Players").toLowerCase()} · {fmtCount(p.sets)} sets
           {p.computed_at ? ` · updated ${relTime(p.computed_at)}` : ""}
         </div>
       </header>
@@ -181,10 +181,10 @@ export default function PaniniProductBody({
           editions RPC has seen in this product and their FMV total (unpriced editions counted, never summed as $0).
           A failed read says so; a product whose cards carry no player hides the section. */}
       {topPlayers && (!topPlayers.ok || topPlayers.players.length > 0) && (
-        <Section title="Top Players in this Product">
+        <Section title={`Top ${property?.subjects ?? "Players"} in this Product`}>
           {!topPlayers.ok ? (
             <div className="rpc-mono" data-testid="panini-product-players-unavailable" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
-              Top players couldn&rsquo;t load right now.
+              This list couldn&rsquo;t load right now.
             </div>
           ) : (
             <div data-testid="panini-product-players" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
