@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~7:15 AM PT · 📝 DOCS — X draft for the interactive Moment slab (Claude Code cloud; Trevor: "Keep going")
+
+- `docs/social/posts/2026-11-26/`: main post (262 / 280, no link) + 2/2 link reply (utm `slab_1126`) + `slab-spin.mp4` captured from the live Giannis #11/509 page. Draft only; Trevor posts. No prod change.
+- Revert: delete the folder.
+
 ### 2026-11-26 ~7:50 AM PT · 🗄 APPLIED (`20261126150542`) — 16 wrong ESPN ids cleared and re-queued for the checked matcher (Claude Code cloud; Trevor: "Keep going")
 
 - `player_identities`: espn_id / espn_league / espn_id_matched_by → NULL on the 3 someone-else ids (Michael Cage, Michael Cooper, Tim Thomas) and the 13 ids ESPN has no athlete for (Candace Parker, Nate Robinson, …); only rows still holding the measured id were touched (16 / 16). They are back in `player_stats_espn_resolve_targets`; the 10:23 AM PT resolver run re-searches them with the athlete check pushed in `eef1780`.
