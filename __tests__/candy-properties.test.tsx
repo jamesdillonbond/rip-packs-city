@@ -15,6 +15,10 @@ vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 
 import { toCandyPropertyBoard, readCandyPropertyBoard, toCandyPropertyPage, readCandyPropertyPage, candyPropertyHref, candySeasonSpan, groupCandyCollections, readCandySetProperty } from "@/lib/candy/properties"
 import { SCOPE_SOURCES } from "@/lib/panini/scope"
+import { readCandySetBrandIndex } from "@/lib/candy/properties"
+import { groupByCandyBrand } from "@/lib/candy/brand-groups"
+import CandySqueezeBoard from "@/components/insights/CandySqueezeBoard"
+import { EMPTY_CANDY_SQUEEZE } from "@/lib/insights/candy-parity-boards"
 import { CandyPropertyGridView } from "@/components/collection/CandyPropertyGrid"
 import CandyPropertyBody from "@/components/entity/CandyPropertyBody"
 import { getCollection } from "@/lib/collections"
@@ -139,5 +143,41 @@ describe("a Candy set page's brand", () => {
     expect(SCOPE_SOURCES.candy.endpoint).toBe("/api/candy-properties")
     expect(SCOPE_SOURCES.candy.storageKey).not.toBe(SCOPE_SOURCES.panini.storageKey)
     expect(SCOPE_SOURCES.candy.event).not.toBe(SCOPE_SOURCES.panini.event)
+  })
+})
+
+describe("Candy sets grouped by brand (the squeeze picker)", () => {
+  const index = { bySetId: { a: "dc", b: "mlb", c: "dc" }, names: { mlb: "MLB", dc: "DC" }, order: ["mlb", "dc"] }
+  const tableDb = (cols: unknown, props: unknown) => ({
+    from: (t: string) => {
+      const b: Record<string, unknown> = {}
+      for (const m of ["select", "eq", "not", "order"]) b[m] = () => b
+      b.limit = async () => (t === "candy_collections" ? cols : props)
+      return b
+    },
+  })
+  it("groups in brand order, unbranded last; a null index is one unnamed group", () => {
+    const rows = [{ id: "a" }, { id: "b" }, { id: "x" }, { id: "c" }]
+    expect(groupByCandyBrand(rows, (r) => r.id, index).map((g) => [g.name, g.rows.map((r) => r.id)])).toEqual([["MLB", ["b"]], ["DC", ["a", "c"]], [null, ["x"]]])
+    expect(groupByCandyBrand(rows, (r) => r.id, null)).toEqual([{ slug: null, name: null, rows }])
+  })
+  it("the index read drops a set whose brand has no name; a failed or clamped read is null", async () => {
+    const ok = await readCandySetBrandIndex(tableDb({ data: [{ set_id: "a", property_slug: "dc" }, { set_id: "z", property_slug: "ghost" }], error: null }, { data: [{ slug: "dc", name: "DC" }], error: null }))
+    expect(ok).toEqual({ bySetId: { a: "dc" }, names: { dc: "DC" }, order: ["dc"] })
+    expect(await readCandySetBrandIndex(tableDb({ data: null, error: { message: "boom" } }, { data: [], error: null }))).toBeNull()
+    expect(await readCandySetBrandIndex(tableDb({ data: Array.from({ length: 1000 }, () => ({ set_id: "a", property_slug: "dc" })), error: null }, { data: [], error: null }))).toBeNull()
+  })
+  it("the picker's full list sits under brand headings when the index is there, and is flat when it is not", () => {
+    const set = (id: string, name: string) => ({ set_id: id, set_name: name, registry: false, ranked: 50, zero_listed: 1, asks: 3 })
+    const sets = Array.from({ length: 20 }, (_, i) => set(`f${i}`, `Filler ${String(i).padStart(2, "0")}`)).concat([set("a", "Zeta Batman"), set("b", "Zeta ICONs")])
+    const data = { ...EMPTY_CANDY_SQUEEZE, sets }
+    const grouped = render(<CandySqueezeBoard ok data={data} activeSet={null} brands={index} />)
+    expect(grouped.container.querySelector('[data-testid="candy-squeeze-brand-dc"]')?.textContent).toContain("Zeta Batman")
+    expect(grouped.container.querySelector('[data-testid="candy-squeeze-brand-mlb"]')?.textContent).toContain("Zeta ICONs")
+    expect(grouped.container.textContent?.toLowerCase()).not.toContain("property")
+    cleanup()
+    const flat = render(<CandySqueezeBoard ok data={data} activeSet={null} />)
+    expect(flat.container.querySelector('[data-testid="candy-squeeze-brand-dc"]')).toBeNull()
+    expect(flat.container.querySelector('[data-testid="candy-squeeze-brand-other"]')?.textContent).toContain("Zeta Batman")
   })
 })

@@ -12,6 +12,7 @@
 import CandySqueezeBoard from "@/components/insights/CandySqueezeBoard"
 import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
 import { EMPTY_CANDY_SQUEEZE, fetchCandySqueeze } from "@/lib/insights/candy-parity-boards"
+import { fetchCandySetBrandIndex } from "@/lib/candy/properties"
 
 // The Candy listings sweeps run every 3 h; refresh at half that.
 export const revalidate = 1800
@@ -20,6 +21,10 @@ export const revalidate = 1800
 const READ_BUDGET_MS = 25_000
 
 export default async function CandySqueezePage() {
-  const res = await fetchBoardForPage("Candy squeeze", EMPTY_CANDY_SQUEEZE, (db) => fetchCandySqueeze(db), READ_BUDGET_MS)
-  return <CandySqueezeBoard ok={res.ok} data={res.data} activeSet={null} />
+  // The brand index only groups the set picker; a failed read leaves the picker ungrouped.
+  const [res, brands] = await Promise.all([
+    fetchBoardForPage("Candy squeeze", EMPTY_CANDY_SQUEEZE, (db) => fetchCandySqueeze(db), READ_BUDGET_MS),
+    fetchCandySetBrandIndex(),
+  ])
+  return <CandySqueezeBoard ok={res.ok} data={res.data} activeSet={null} brands={brands} />
 }

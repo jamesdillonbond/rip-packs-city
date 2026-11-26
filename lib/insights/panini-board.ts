@@ -23,8 +23,9 @@ import type { BoardLiveResult } from "@/lib/insights/board-cache"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
+// external_id added 2026-11-26: the board's League chips place a row by the product id in its key.
 const COLS =
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag,fmv_confidence"
+  "external_id, player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag,fmv_confidence"
 
 const PAGE = 1000
 const MAX_PAGES = 10 // hard stop so a runaway view can never spin the request

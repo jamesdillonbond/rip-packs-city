@@ -14,6 +14,7 @@ import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import type { CandySqueezePayload, CandySqueezeSet } from "@/lib/insights/candy-parity-boards"
 import { fmtBoardUsd } from "@/lib/insights/pinnacle-board-format"
 import { editionRouteHref } from "@/lib/entity-href"
+import { groupByCandyBrand, type CandySetBrandIndex } from "@/lib/candy/brand-groups"
 
 const cell: React.CSSProperties = { padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }
 const head: React.CSSProperties = { ...cell, fontWeight: 600, color: "var(--rpc-text-muted)" }
@@ -46,7 +47,7 @@ export function pickerSets(sets: CandySqueezeSet[]): CandySqueezeSet[] {
   return sets.filter((s) => s.set_id && s.ranked >= PICKER_MIN_RANKED)
 }
 
-function SetPicker({ sets, activeSetId }: { sets: CandySqueezeSet[]; activeSetId: string | null }) {
+function SetPicker({ sets, activeSetId, brands }: { sets: CandySqueezeSet[]; activeSetId: string | null; brands: CandySetBrandIndex | null }) {
   const offer = pickerSets(sets)
   if (offer.length === 0) return null
   // The default board already ranks the 2026 sets; every other set (legacy, and the 2024 Team Balls registry set)
@@ -67,14 +68,24 @@ function SetPicker({ sets, activeSetId }: { sets: CandySqueezeSet[]; activeSetId
       {rest.length > 0 ? (
         <details style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>
           <summary style={{ cursor: "pointer" }}>All sets ({offer.length.toLocaleString("en-US")})</summary>
-          <ul style={{ columns: "260px", margin: "8px 0 0", paddingLeft: 16, lineHeight: 1.8 }}>
-            {rest.map((s) => (
-              <li key={s.set_id}>
-                <Link prefetch={false} href={candySqueezeSetPath(s.set_id)} style={linkStyle}>{s.set_name}</Link>
-                {" "}· {s.ranked.toLocaleString("en-US")} cards, {s.asks.toLocaleString("en-US")} listed
-              </li>
-            ))}
-          </ul>
+          {/* 2026-11-26: Candy is nine brands — the list is grouped by league / brand (ungrouped if that read failed). */}
+          {groupByCandyBrand(rest, (s) => s.set_id, brands).map((g) => (
+            <div key={g.slug ?? "other"} data-testid={`candy-squeeze-brand-${g.slug ?? "other"}`}>
+              {brands ? (
+                <div style={{ margin: "10px 0 0", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
+                  {g.name ?? "Other"} ({g.rows.length.toLocaleString("en-US")})
+                </div>
+              ) : null}
+              <ul style={{ columns: "260px", margin: "8px 0 0", paddingLeft: 16, lineHeight: 1.8 }}>
+                {g.rows.map((s) => (
+                  <li key={s.set_id}>
+                    <Link prefetch={false} href={candySqueezeSetPath(s.set_id)} style={linkStyle}>{s.set_name}</Link>
+                    {" "}· {s.ranked.toLocaleString("en-US")} cards, {s.asks.toLocaleString("en-US")} listed
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </details>
       ) : null}
     </nav>
@@ -85,11 +96,14 @@ export default function CandySqueezeBoard({
   ok,
   data: d,
   activeSet,
+  brands = null,
 }: {
   ok: boolean
   data: CandySqueezePayload
   /** The set this page ranks; null = the default 2026 view. */
   activeSet: CandySqueezeSet | null
+  /** Brand of each set, for the picker's grouping; null/omitted = ungrouped (the read failed or was not made). */
+  brands?: CandySetBrandIndex | null
 }) {
   const title = activeSet ? `Candy Squeeze · ${activeSet.set_name}` : "Candy Squeeze Board"
   return (
@@ -122,7 +136,7 @@ export default function CandySqueezeBoard({
             {d.editions_ranked.toLocaleString("en-US")} cards ranked · {d.editions_zero_listed.toLocaleString("en-US")} with none listed
           </span>
         ) : null}
-        {ok ? <SetPicker sets={d.sets} activeSetId={activeSet?.set_id ?? null} /> : null}
+        {ok ? <SetPicker sets={d.sets} activeSetId={activeSet?.set_id ?? null} brands={brands} /> : null}
       </header>
 
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Candy squeeze", ok)])} />

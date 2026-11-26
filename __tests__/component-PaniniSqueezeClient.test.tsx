@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { describe, it, expect, afterEach, vi } from "vitest"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 // The Panini squeeze board publishes ONE sealed-dollar headline, and as of
 // 2026-07-28 three-fifths of the blended figure ($992,165 of $1,636,380) comes
@@ -480,3 +480,41 @@ describe("PaniniSqueezeClient — coverage banner", () => {
     expect(container.querySelector(".psq-cov")).toBeNull()
   })
 })
+
+// 2026-11-26: League chips. The whole board is on the client, so narrowing here is exact; a row is placed
+// by the product id in its card key, and a failed index read shows no chips and filters nothing.
+describe("PaniniSqueezeClient — league chips", () => {
+  const rows = [
+    row({ external_id: "packcard-2332_1_2_3", player_name: "Lionel Messi" }),
+    row({ external_id: "packcard-2332_4_5_6", player_name: "Kylian Mbappe" }),
+    row({ external_id: "packcard-155_1_2_3", player_name: "Victor Wembanyama" }),
+    row({ external_id: null, player_name: "No Key" }),
+  ]
+  const index = { properties: [{ slug: "nba", name: "NBA", heading: "leagues", sort_order: 20 }, { slug: "fifa-world-cup", name: "FIFA World Cup", heading: "leagues", sort_order: 10 }, { slug: "nfl", name: "NFL", heading: "leagues", sort_order: 30 }], setProperty: { "2332": "fifa-world-cup", "155": "nba" } }
+  const stub = (ok: boolean) => vi.stubGlobal("fetch", vi.fn(async () => ({ ok, status: ok ? 200 : 503, headers: new Headers({ "content-type": "application/json" }), json: async () => index, text: async () => JSON.stringify(index) }) as unknown as Response))
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("offers only leagues the board has rows for, biggest first, and narrows to the pick", async () => {
+    stub(true)
+    const { container } = render(<PaniniSqueezeClient initialRows={rows as never} fetchedAt={null} totals={TOTALS} />)
+    await waitFor(() => expect(container.querySelector('[data-testid="psq-league"]')).not.toBeNull())
+    const chips = [...container.querySelectorAll('[data-testid="psq-league"] button')]
+    expect(chips.map((b) => b.textContent)).toEqual(["All", "FIFA World Cup · 2", "NBA · 1"])
+    expect(container.textContent).toContain("Victor Wembanyama")
+    fireEvent.click(chips[1])
+    expect(container.textContent).toContain("Lionel Messi")
+    expect(container.textContent).not.toContain("Victor Wembanyama")
+    expect(container.textContent).not.toContain("No Key")
+    expect(chips[1].getAttribute("aria-pressed")).toBe("true")
+    fireEvent.click(chips[0])
+    expect(container.textContent).toContain("No Key")
+  })
+  it("a failed league read shows no chips and filters nothing", async () => {
+    stub(false)
+    const { container } = render(<PaniniSqueezeClient initialRows={rows as never} fetchedAt={null} totals={TOTALS} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container.querySelector('[data-testid="psq-league"]')).toBeNull()
+    expect(container.textContent).toContain("Victor Wembanyama")
+  })
+})
+

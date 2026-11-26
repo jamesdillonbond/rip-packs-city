@@ -19,6 +19,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import CandySqueezeBoard from "@/components/insights/CandySqueezeBoard"
 import { fetchBoardForPage } from "@/lib/insights/board-page-fetch"
+import { fetchCandySetBrandIndex } from "@/lib/candy/properties"
 import { CANDY_SET_ID_RE, EMPTY_CANDY_SQUEEZE, fetchCandySqueeze } from "@/lib/insights/candy-parity-boards"
 
 export const revalidate = 1800
@@ -57,8 +58,9 @@ export async function generateMetadata({ params }: { params: Promise<{ setId: st
 export default async function CandySqueezeSetPage({ params }: { params: Promise<{ setId: string }> }) {
   const { setId } = await params
   if (!CANDY_SET_ID_RE.test(setId)) notFound()
-  const res = await loadSet(setId)
+  // The brand index only groups the set picker; a failed read leaves the picker ungrouped.
+  const [res, brands] = await Promise.all([loadSet(setId), fetchCandySetBrandIndex()])
   const activeSet = res.data.sets.find((s) => s.set_id === setId) ?? null
   if (res.ok && !activeSet) notFound()
-  return <CandySqueezeBoard ok={res.ok} data={res.data} activeSet={activeSet} />
+  return <CandySqueezeBoard ok={res.ok} data={res.data} activeSet={activeSet} brands={brands} />
 }

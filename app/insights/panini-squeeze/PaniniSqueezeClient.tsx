@@ -1,12 +1,16 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
 import { fmvBasis } from "@/lib/fmv-basis";
 import { textIncludes } from "@/lib/filter-match";
+import { fetchJson } from "@/lib/analytics/fetch-json";
+import { SCOPE_SOURCES, countByProperty, paniniSetIdOf, propertyOfSetId, toScopeIndex, type PaniniScopeIndex } from "@/lib/panini/scope";
 
 type Row = {
+  /** The card key (`packcard-<product id>_…`) — places the row under a league (2026-11-26); absent on an older seed. */
+  external_id?: string | null;
   player_name: string | null;
   set_name: string | null;
   tier: string | null;
@@ -202,6 +206,24 @@ export default function PaniniSqueezeClient({
   const [cap, setCap] = useState(0);
   const [rookie, setRookie] = useState(false);
   const [q, setQ] = useState("");
+  // 2026-11-26: League chips. The whole board is on the client, so narrowing it here is exact. A row is
+  // placed by the product id in its key; a failed index read shows no chips and filters nothing.
+  const [league, setLeague] = useState("");
+  const [leagueIndex, setLeagueIndex] = useState<PaniniScopeIndex | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson<unknown>(SCOPE_SOURCES.panini.endpoint).then((r) => {
+      if (cancelled) return;
+      const index = r.ok ? toScopeIndex(r.json) : null;
+      if (index) setLeagueIndex(index);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const leagueCounts = useMemo(() => countByProperty(leagueIndex, initialRows, (r) => paniniSetIdOf(r.external_id)), [leagueIndex, initialRows]);
+  const leagueOptions = useMemo(
+    () => (leagueIndex ? leagueIndex.properties.filter((p) => (leagueCounts.get(p.slug) ?? 0) > 0).sort((a, b) => (leagueCounts.get(b.slug) ?? 0) - (leagueCounts.get(a.slug) ?? 0)) : []),
+    [leagueIndex, leagueCounts]
+  );
 
   // Filter/sort over the FULL fetched board, then render a bounded slice. Keeps filters
   // complete without putting ~1.8k rows in the DOM.
@@ -210,6 +232,7 @@ export default function PaniniSqueezeClient({
     let r = initialRows.filter((x) => {
       if (cap === 1 ? Number(x.mint_cap) !== 1 : cap > 0 && Number(x.mint_cap) > cap) return false;
       if (rookie && !x.is_rookie) return false;
+      if (league && propertyOfSetId(leagueIndex, paniniSetIdOf(x.external_id)) !== league) return false;
       if (q && !textIncludes((x.player_name || "") + " " + (x.set_name || ""), q)) return false;
       return true;
     });
@@ -224,7 +247,7 @@ export default function PaniniSqueezeClient({
       return asc ? x - y : y - x;
     });
     return r;
-  }, [initialRows, sortK, asc, cap, rookie, q]);
+  }, [initialRows, sortK, asc, cap, rookie, q, league, leagueIndex]);
 
   const matched = rows.length;                 // how many editions actually match the filters
   const visible = rows.slice(0, RENDER_CAP);   // what we put in the DOM
@@ -446,6 +469,16 @@ export default function PaniniSqueezeClient({
           ))}
         </div>
         <div className="psq-seg"><button className={rookie ? "on" : ""} onClick={() => setRookie(!rookie)}>Rookies</button></div>
+        {leagueOptions.length >= 2 ? (
+          <div className="psq-seg" role="group" aria-label="League or brand" data-testid="psq-league">
+            <button aria-pressed={league === ""} className={league === "" ? "on" : ""} onClick={() => setLeague("")}>All</button>
+            {leagueOptions.map((o) => (
+              <button key={o.slug} aria-pressed={league === o.slug} className={league === o.slug ? "on" : ""} onClick={() => setLeague(o.slug)}>
+                {o.name} · {(leagueCounts.get(o.slug) ?? 0).toLocaleString("en-US")}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="psq-scroll">

@@ -14,6 +14,7 @@ import { cache } from "react"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiReadTimeoutMs } from "@/lib/api/bounded-read"
 import { withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
+import type { CandySetBrandIndex } from "@/lib/candy/brand-groups"
 
 export type CandyPropertyHeading = "leagues" | "entertainment"
 
@@ -340,3 +341,39 @@ export async function readCandySetProperty(setName: string, db: any = supabaseAd
 }
 
 export const fetchCandySetProperty = cache((setName: string) => readCandySetProperty(setName))
+
+// ── Brand of every Candy set, by set id (the Candy squeeze picker groups its sets by it) ───────────────
+
+/** Two small reads. null = a read failed — the caller then shows its list ungrouped, never a guessed brand. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readCandySetBrandIndex(db: any = supabaseAdmin): Promise<CandySetBrandIndex | null> {
+  try {
+    const [cols, props] = await Promise.all([
+      withQueryDeadline<unknown>(
+        db.from("candy_collections").select("set_id,property_slug").not("property_slug", "is", null).not("set_id", "is", null).order("address", { ascending: true }).limit(1000),
+        "candy/set-brand-index",
+        apiReadTimeoutMs(),
+      ),
+      withQueryDeadline<unknown>(
+        db.from("publisher_properties").select("slug,name,sort_order").eq("publisher", "candy").order("sort_order", { ascending: true }).limit(200),
+        "candy/set-brand-names",
+        apiReadTimeoutMs(),
+      ),
+    ])
+    if (cols.error || props.error || !Array.isArray(cols.data) || !Array.isArray(props.data) || cols.data.length >= 1000) return null
+    const names: Record<string, string> = {}
+    const order: string[] = []
+    for (const r of props.data as Array<{ slug?: unknown; name?: unknown }>) {
+      if (typeof r?.slug === "string" && typeof r?.name === "string") { names[r.slug] = r.name; order.push(r.slug) }
+    }
+    const bySetId: Record<string, string> = {}
+    for (const r of cols.data as Array<{ set_id?: unknown; property_slug?: unknown }>) {
+      if (typeof r?.set_id === "string" && typeof r?.property_slug === "string" && names[r.property_slug]) bySetId[r.set_id] = r.property_slug
+    }
+    return { bySetId, names, order }
+  } catch {
+    return null
+  }
+}
+
+export const fetchCandySetBrandIndex = cache(() => readCandySetBrandIndex())
