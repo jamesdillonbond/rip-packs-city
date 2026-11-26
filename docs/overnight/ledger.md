@@ -13,6 +13,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~10:40 PM PT · 🔧 SHIPPED (code) — pinnacle-image: one edition-page read stores all three variants, and a pin with traffic refreshes its stored signature after the response (Claude Code cloud, autonomous pass)
+
+- **Measured first.** The leg logs from this morning's diagnostic (Vercel, last 3 h) put every slow request on the edition-page leg: GraphQL misses in 30–111 ms, the page then takes 3.0–6.4 s (4 cases, `sin1`). The signed-url store (shipped 11-25 afternoon) holds 414 rows; signatures live 23.98 h, so **every viewed pin went back to the slow page once a day**. 14 renders had paid for two separate page reads, one per variant.
+- **What.**
+  - `allSignedMediaFromEditionPage()` returns every variant of THIS render from one page. The route stores the siblings next to the asked variant, but only those with more than 30 min left; another pin's asset is never stored.
+  - When a stored signature is served with less than 8 h left, the route re-resolves it in `after()`. The response never waits, and a failed refresh writes nothing.
+  - Upstream order, cache headers and the 404/store-stale paths are unchanged.
+- **Tests.** 4 new tests and 1 re-pin (the re-pin's page carries only front.png, so it now writes 3 variants). A planted defect (refresh-ahead disabled, siblings dropped) turns all 4 new tests and the re-pin red. `npm run preflight`: 5 steps, 0 failed.
+- **Verify ~11-26 evening.** In `pinnacle_signed_media`, `quarter` rows should appear and `thumb`/`front` counts should converge per render. `[pinnacle-image] … source=edition-page` warns should thin out to first views only.
+- **Revert.** `git revert` this commit; the store table and its rows are unaffected.
+
 ### 2026-11-25 ~9:20 PM PT · 🔧 SHIPPED (code) — Interactive Moment slab ON FOR EVERYONE on /moment/[id] (Claude Code cloud; Trevor: "Yes do it all")
 
 - `lib/slab-3d.ts` `slabEnabled`: default on; `?slab=0` turns it off for that browser (remembered), `?slab=1` back on; `NEXT_PUBLIC_MOMENT_SLAB_3D=0` is the kill switch for everyone who has not opted in. `InteractiveSlab` server-renders the default, so no flash on load.
