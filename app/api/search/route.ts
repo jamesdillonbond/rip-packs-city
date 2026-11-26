@@ -53,6 +53,7 @@ import { mergeTeamHubHits, type FranchiseHubKey } from "@/lib/search/team-hub-hi
 import { boundedRead } from "@/lib/api/bounded-read"
 import { accentOnlyLabelMatches, loadAccentedLabels } from "@/lib/search/accented-labels"
 import { fuzzyPlayerHits, type FuzzyMeta } from "@/lib/search/fuzzy-players"
+import { leagueHits, loadLeagueIndex } from "@/lib/search/league-hits"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -268,7 +269,10 @@ export async function GET(req: NextRequest) {
   // hub; each entity's per-collection rows collapse into one
   // (lib/search/team-hub-hits.ts, lib/search/player-hub-hits.ts).
   const teamKeys = await fetchFranchiseHubKeys(supa, mapped)
-  const results = mergePlayerHubHits(mergeTeamHubHits(mapped, teamKeys))
+  // 2026-11-26: a league or brand name ("dc", "nascar", "world cup") leads with its Panini / Candy page.
+  // The index read is optional and memoized; a failure adds nothing (lib/search/league-hits.ts).
+  const leagues = leagueHits(q, await loadLeagueIndex(supabaseAdmin), collectionParam ?? null)
+  const results = [...leagues, ...mergePlayerHubHits(mergeTeamHubHits(mapped, teamKeys))]
 
   return NextResponse.json(
     {
@@ -278,7 +282,7 @@ export async function GET(req: NextRequest) {
         count: results.length,
         collection: collectionParam ?? null,
         // Stated, not implied — see the honesty note at the top of this file.
-        searches: ["player", "set", "team", "edition key", "play type", "moment description"],
+        searches: ["league or brand", "player", "set", "team", "edition key", "play type", "moment description"],
         coverage,
         note: coverageNote(coverage),
         // Set only when the list is a "closest matches" answer to a query that
