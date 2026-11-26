@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~10:00 AM PT · 🔧 SHIPPED — the interactive slab on every collection: shared edition pages (all seven collections, incl. Panini's only detail page) and Disney Pinnacle pin pages (Claude Code cloud; Trevor: "Keep going and see how we can enable this for all collections")
+
+- **Before:** only `/moment/[id]` had the slab (Top Shot, All Day, Golazos, UFC, Candy). Edition pages (`/[collection]/edition/[slug]`) and `/pinnacle/moment/[id]` showed a flat image.
+- **Edition page:** hero media wrapped in `InteractiveSlab`. Back = Set · Printing (parallel) · Team · Minted · FMV (never on a closed market; no confidence). On Top Shot / All Day / Golazos the back also carries the player's game + season line (or the match) — `fetchSlabStats` gains `date_from_db: true` so the DB function reads the edition's own date; the season-only fallback still needs a known date and reads nothing without one. Read defaults to FAILED (renders no stats, never "0").
+- **Pin page:** pin art in a 260 px slab (was 180 px img). Back = Set · Franchise · Variant · Edition · Minted · FMV, eyebrow "Disney Pinnacle", Pinnacle's own badge labels; chaser pins get the legendary frame.
+- Same switches as /moment: `?slab=0` opts out, `NEXT_PUBLIC_MOMENT_SLAB_3D=0` kills it.
+- Tests: `__tests__/slab-on-every-collection.test.ts` (new), two cases in `slab-stats.test.ts`. Preflight green.
+- **Revert:** `git revert <this code commit>` (find by message "slab on every collection"); no DB change.
+
 ### 2026-11-26 ~10:45 AM PT · 🗄 APPLIED (`20261126174004`) — the conflated-editions parallel remap only sweeps chain answers from the last 7 days (Claude Code cloud; Trevor: "Keep going and address all that needs it")
 - **Why:** `refresh-conflated-editions` (daily 7:17 AM PT) failed today. Its `remap_base_to_parallel` lane (`remap_topshot_base_keyed_parallel_sales`) hit its 120 s timeout, after the route's run time climbed 108 → 154 → 196 s over three days while moving 0 sales. The function joins every mapped Top Shot parallel (~359K of 2.35M `topshot_moment_subeditions` rows, growing ~20K a day) to all of `sales`. Since #251 the same work is done at write time, and by `topshot_parallel_sales_followup()` every 2 h for mappings resolved in the last 3 days.
 - **What:** same predicate plus `ms.resolved_at > now() - interval '7 days'`, kept as a backstop with a wider window than the 2-hourly lane. Before apply: 16K parallels in the window, 0 sales to move, 8.9 s cold. After apply, the real function ran in 0.9 s and moved 0. The pin now asserts that a mapping resolved 8 days ago is not swept; dropping the window fails it (3 moved, not 2). Preflight, including the DB tests, is green.
