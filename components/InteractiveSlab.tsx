@@ -120,6 +120,7 @@ export default function InteractiveSlab({
   finish,
   eyebrow,
   stats,
+  badges,
 }: {
   children: ReactNode;
   /** The tier colour — the front face's border, as before. */
@@ -136,6 +137,8 @@ export default function InteractiveSlab({
   eyebrow?: string | null;
   /** Back face: the player's line from this Moment's game and that season (lib/slab-stats). */
   stats?: SlabStats | null;
+  /** Back face: the edition's badges (Rookie Year, Championship Year, …) — up to three shown, then "+N". */
+  badges?: string[] | null;
 }) {
   const hasStats = !!(stats && (stats.game || stats.season));
   const enabled = useSyncExternalStore(subscribeFlag, readFlag, serverFlag);
@@ -252,7 +255,7 @@ export default function InteractiveSlab({
     const ro = new ResizeObserver(() => fit());
     ro.observe(outer);
     return () => ro.disconnect();
-  }, [enabled, stats, title, rows, serialLine, finish]);
+  }, [enabled, stats, title, rows, serialLine, finish, badges]);
 
   // Tilt is offered only where it can work: a coarse pointer with orientation events.
   useEffect(() => {
@@ -592,6 +595,7 @@ export default function InteractiveSlab({
                   {serialLine}
                 </div>
               ) : null}
+              {badges && badges.length > 0 ? <BadgeRow badges={badges} /> : null}
               {stats?.game ? <StatBlockView block={stats.game} accent={finishColor ?? frameColor} /> : null}
               {stats?.season ? <StatBlockView block={stats.season} accent={null} /> : null}
               <dl
@@ -665,6 +669,40 @@ export default function InteractiveSlab({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// The edition's badges on the back: at most three (wrapping), then "+N" for the rest.
+const BADGES_SHOWN = 3;
+function BadgeRow({ badges }: { badges: string[] }) {
+  const unique = Array.from(new Set(badges.map((b) => b.trim()).filter(Boolean)));
+  if (unique.length === 0) return null;
+  const shown = unique.slice(0, BADGES_SHOWN);
+  const more = unique.length - shown.length;
+  return (
+    <ul aria-label="Badges" style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: 0, padding: 0, listStyle: "none" }}>
+      {shown.map((b) => (
+        <li
+          key={b}
+          style={{
+            border: "1px solid var(--rpc-border, rgba(255,255,255,0.18))",
+            borderRadius: 999,
+            padding: "1px 7px",
+            fontFamily: "var(--font-mono)",
+            fontSize: 9,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            whiteSpace: "nowrap",
+            color: "var(--rpc-text-primary)",
+          }}
+        >
+          {b}
+        </li>
+      ))}
+      {more > 0 ? (
+        <li style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", alignSelf: "center", whiteSpace: "nowrap" }}>+{more}</li>
+      ) : null}
+    </ul>
   );
 }
 

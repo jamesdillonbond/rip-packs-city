@@ -865,6 +865,7 @@ export default async function MomentPage(
           serialLine={serial ? `#${serial}${mint ? ` / ${mint}` : ""}` : null}
           finish={finishFromBadges(specialSerials.map((x) => x.badge_type))}
           stats={slabStats}
+          badges={badges.map((b) => b.title)}
           rows={[
             e.set_name ? { label: "Set", value: e.set_name } : null,
             e.play_type ? { label: "Play", value: e.play_type } : null,

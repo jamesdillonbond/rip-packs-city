@@ -295,3 +295,26 @@ describe("InteractiveSlab stats on the back", () => {
     expect(getByText("#53 / 75")).toBeTruthy()
   })
 })
+
+describe("InteractiveSlab badges on the back", () => {
+  it("shows up to three badges, de-duplicated, then a +N for the rest", () => {
+    window.history.replaceState(null, "", "/moment/x?slab=1")
+    const { getByLabelText } = render(
+      <InteractiveSlab frameColor="red" title="T" rows={[]} finish={null} badges={["Rookie Year", "Rookie Year", "Top Shot Debut", "Rookie Mint", " ", "Championship Year"]}>
+        <span>m</span>
+      </InteractiveSlab>,
+    )
+    const list = getByLabelText("Badges")
+    const items = Array.from(list.querySelectorAll("li")).map((li) => li.textContent)
+    expect(items).toEqual(["Rookie Year", "Top Shot Debut", "Rookie Mint", "+1"])
+  })
+  it("renders no badge row for none", () => {
+    window.history.replaceState(null, "", "/moment/x?slab=1")
+    const { queryByLabelText } = render(
+      <InteractiveSlab frameColor="red" title="T" rows={[]} finish={null} badges={[]}>
+        <span>m</span>
+      </InteractiveSlab>,
+    )
+    expect(queryByLabelText("Badges")).toBeNull()
+  })
+})
