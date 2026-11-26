@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:40 AM PT · 🔧 SHIPPED (a11y copy) — the UFC binder's screen-reader result line counted Flow rows only and read "no moments to show" over a wallet's Aptos Moments (Claude Code cloud; found verifying the ~11:30 AM ship)
+- The sr-only `binder-result-status` line now counts the one table (Flow + Aptos rows). Live check before the fix: an Aptos wallet with 24 UFC Moments rendered them, with "Search finished — no moments to show" beside them.
+- **Revert:** `git revert <this commit>`.
+
 ### 2026-11-26 ~11:30 AM PT · 🔧 SHIPPED — UFC binder searches an Aptos wallet directly (read live from the Aptos indexer); time stamps of the three UFC entries below corrected to commit times (Claude Code cloud; Trevor: "Keep going")
 - `/api/ufc/aptos-holdings?aptos=<64-hex>` reads that account's UFC Strike tokens live (UFC collections only, ≤30 indexer pages, `capped` past that; a failed page is a 5xx, never a shorter list). The binder accepts an Aptos wallet for UFC: no Flow read, the Aptos Moments fill the one table and the value tile, and empty copy names only that account. For collectors RPC cannot link to a Flow address (Aptos-native, or not matched yet).
 - **Revert:** `git revert <this commit>`.
