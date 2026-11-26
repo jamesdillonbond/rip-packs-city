@@ -1446,9 +1446,16 @@ const PINS = [
     migration: "supabase/migrations/20260725010345_audit_20260725_check_anon_write_surface.sql",
   },
   {
+    // 2026-11-25 (serial-cal-1.0): serial_fmv_estimate is a calibrating WRAPPER; the 20260726 model body
+    // lives on, renamed, as serial_fmv_estimate_uncalibrated (registered next). Both from the record-only re-issue.
     fn: "serial_fmv_estimate",
     test: "supabase/tests/serial_fmv_estimate.sql",
-    migration: "supabase/migrations/20260726015000_audit_20260726_pooled_serial_fmv_jersey1_readpath.sql",
+    migration: "supabase/migrations/20261126013801_audit_20261125_serial_cal_and_pool_sync_reissue_for_pins.sql",
+  },
+  {
+    fn: "serial_fmv_estimate_uncalibrated",
+    test: "supabase/tests/serial_fmv_estimate.sql",
+    migration: "supabase/migrations/20261126013801_audit_20261125_serial_cal_and_pool_sync_reissue_for_pins.sql",
   },
   {
     fn: "get_edition_fmv_history",
@@ -3709,7 +3716,8 @@ const PINS = [
     test: "supabase/tests/sync_topshot_pools_from_atlas.sql",
     // 2026-10-10 follow-ups: the zeroing arm keeps orig_drop_weight; the size gate counts drawable rows.
     // 2026-11-16: an edition list re-confirmed by a later reconciled summary counts as fresh.
-    migration: "supabase/migrations/20261117054311_audit_20261116_atlas_pool_sync_trusts_a_reconfirmed_edition_list.sql",
+    // 2026-11-25: gql_historical pools upgrade like gql ones; refreshes are ordered before upgrades.
+    migration: "supabase/migrations/20261126013801_audit_20261125_serial_cal_and_pool_sync_reissue_for_pins.sql",
   },
   {
     // Added 2026-10-10 (#85). Picks the editions whose Atlas snapshot is re-fetched next; an

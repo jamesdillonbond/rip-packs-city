@@ -14,9 +14,13 @@
 --   5. a failure is caught, logged ok=false, and the function still returns.
 --   6. an edition list fetched > 7 days ago still counts as fresh when a later summary carried
 --      that same reconciled pass forward (2026-11-16); an unreconciled one does not.
+--   7. (2026-11-25) a pool written by the 08-28 historical lane (pool_source gql_historical) is
+--      upgraded exactly like a gql one -- 1,161 such dists were frozen at 08-28 weights;
+--   8. (2026-11-25) under the candidate LIMIT an Atlas pool with a newer edition list is refreshed
+--      BEFORE any upgrade candidate, so perpetually-skipped upgrades cannot starve refreshes.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261117054311_audit_20261116_atlas_pool_sync_trusts_a_reconfirmed_edition_list.sql).
+-- (supabase/migrations/20261126013801_audit_20261125_serial_cal_and_pool_sync_reissue_for_pins.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -63,7 +67,7 @@ BEGIN
        WHERE subedition_name IS NOT NULL AND subedition_id IS NOT NULL
        GROUP BY 1
     ), pool AS (
-      SELECT dist_id, count(*) FILTER (WHERE drop_weight > 0) AS n_live, bool_and(pool_source = 'gql') AS all_gql,
+      SELECT dist_id, count(*) FILTER (WHERE drop_weight > 0) AS n_live, bool_and(pool_source IN ('gql', 'gql_historical')) AS all_gql,
              bool_and(pool_source = 'atlas') AS all_atlas, max(last_refreshed_at) AS refreshed
         FROM public.pack_drop_pool WHERE collection_id = v_cid GROUP BY dist_id
     ), lp0 AS (
@@ -101,7 +105,7 @@ BEGIN
                     OR pd.first_seen_at > now() - interval '7 days'))
               OR pool.all_gql
               OR (pool.all_atlas AND lp.f > pool.refreshed))
-       ORDER BY (pool.dist_id IS NULL) DESC, coalesce(pool.all_gql, false) DESC, lp.f DESC, lp.dist_id
+       ORDER BY (pool.dist_id IS NULL) DESC, coalesce(pool.all_atlas AND lp.f > pool.refreshed, false) DESC, coalesce(pool.all_gql, false) DESC, lp.f DESC, lp.dist_id
        LIMIT greatest(coalesce(p_limit, 400), 1)
     ), arows AS (
       -- the latest Atlas pass of each candidate, mapped to our editions (base, or base::<subedition>)
@@ -230,6 +234,12 @@ INSERT INTO public.pack_drop_pool VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_UP','00000000-0000-0000-0000-0000000000e1','10:1',0,'default','gql','2026-08-28',40),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_SHRINK','00000000-0000-0000-0000-0000000000e4','20:1',0.5,'default','gql','2026-08-28',50),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_SHRINK','00000000-0000-0000-0000-0000000000e5','20:2',0.5,'default','gql','2026-08-28',50);
+-- claim 7: a historical-lane pool with a fresh Atlas list
+INSERT INTO public.pack_distributions SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D_HIST';
+INSERT INTO public.topshot_atlas_dist_editions VALUES
+  ('D_HIST','k1',1,20,2,'Standard','COMMON',40,4,0, now() - interval '1 hour');
+INSERT INTO public.pack_drop_pool VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_HIST','00000000-0000-0000-0000-0000000000e5','20:2',1,'default','gql_historical','2026-08-28',40);
 
 SELECT _assert_eq((public.sync_topshot_pools_from_atlas(400)->>'ok'), 'true', 'run 1 ok');
 
@@ -246,6 +256,10 @@ SELECT _assert_eq((SELECT string_agg(pool_source || ':' || round(drop_weight, 2)
   'atlas:1.00', 'c6 an old list re-confirmed by a reconciled summary fills');
 SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_UNRECON'), '0',
   'c6 CONTROL: an old list whose carried pass does not reconcile does not fill');
+
+-- claim 7
+SELECT _assert_eq((SELECT string_agg(pool_source || ':' || round(drop_weight, 2)::text, ',') FROM pack_drop_pool WHERE dist_id = 'D_HIST'),
+  'atlas:1.00', 'c7 a gql_historical pool is upgraded like a gql one');
 
 -- claim 2
 SELECT _assert_eq((SELECT count(*)::text FROM pack_drop_pool WHERE dist_id = 'D_UP'), '4', 'c2 nothing deleted');
@@ -269,6 +283,26 @@ INSERT INTO public.topshot_atlas_dist_editions VALUES
 SELECT _assert_eq((public.sync_topshot_pools_from_atlas(400)->>'rewritten'), '1', 'c4 newer pass refreshes');
 SELECT _assert_eq((SELECT round(drop_weight, 2)::text FROM pack_drop_pool WHERE dist_id = 'D_FILL' AND edition_flow_id = '10:2'), '0.75', 'c4 re-weighted');
 SELECT _assert_eq((SELECT drop_weight::text FROM pack_drop_pool WHERE dist_id = 'D_FILL' AND edition_flow_id = '10:1::4'), '0', 'c4 dropped edition zeroed');
+
+-- claim 8: two fill candidates that always skip (D_UNMAPPED, D_EMPTY), one upgrade (D_UP2, plus the
+-- perpetually skipped D_SHRINK) and one refresh (D_FILL, newer pass 3). LIMIT 3 = the two fills + one
+-- more slot: it must go to the refresh, not to an upgrade.
+INSERT INTO public.pack_distributions SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D_UP2';
+INSERT INTO public.topshot_atlas_dist_editions VALUES
+  ('D_UP2','m1',1,10,1,'Standard','COMMON',20,2,0, now() - interval '1 hour'),
+  ('D_FILL','a1',3,10,1,'Standard','COMMON',60,3,0, now() + interval '2 minutes'),
+  ('D_FILL','a2',3,10,2,'Standard','COMMON',30,1,0, now() + interval '2 minutes');
+INSERT INTO public.pack_drop_pool VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','D_UP2','00000000-0000-0000-0000-0000000000e1','10:1',1,'default','gql','2026-08-28',20);
+UPDATE public.pack_drop_pool SET last_refreshed_at = now() - interval '30 minutes' WHERE dist_id = 'D_FILL';
+SELECT _assert_eq((public.sync_topshot_pools_from_atlas(3)->>'candidates'), '3', 'c8 limit honoured');
+SELECT _assert_eq((SELECT round(drop_weight, 2)::text FROM pack_drop_pool WHERE dist_id = 'D_FILL' AND edition_flow_id = '10:2'), '0.25',
+  'c8 the refresh took the slot');
+SELECT _assert_eq((SELECT string_agg(pool_source, ',') FROM pack_drop_pool WHERE dist_id = 'D_UP2'), 'gql',
+  'c8 CONTROL: the upgrade waited for the next run');
+SELECT _assert_eq((public.sync_topshot_pools_from_atlas(400)->>'ok'), 'true', 'c8 next run ok');
+SELECT _assert_eq((SELECT string_agg(pool_source, ',') FROM pack_drop_pool WHERE dist_id = 'D_UP2'), 'atlas',
+  'c8 and the upgrade lands on it');
 
 -- claim 5
 ALTER TABLE public.pack_drop_pool RENAME TO pack_drop_pool_x;

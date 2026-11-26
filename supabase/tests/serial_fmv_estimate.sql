@@ -15,9 +15,16 @@
 --   * pooled beats the power-law which beats the grid (precedence);
 --   * the grid tier_circ vs aggregate basis split;
 --   * every estimate is floored at edition_fmv (never below the base FMV).
+--   * (2026-11-25, serial-cal-1.0) serial_fmv_estimate is now a WRAPPER over the unchanged model
+--     (renamed serial_fmv_estimate_uncalibrated): it divides the estimate by
+--     serial_fmv_calibration.factor for the collection x bucket, keeps the edition_fmv floor,
+--     stamps calibration_factor + uncalibrated_estimate_usd, and passes the model value through
+--     untouched when there is no factor or the factor is 1. Every claim above runs through the
+--     wrapper with no factor seeded, so it still pins the model itself.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260726015000_audit_20260726_pooled_serial_fmv_jersey1_readpath.sql);
+-- (supabase/migrations/20261126013801_audit_20261125_serial_cal_and_pool_sync_reissue_for_pins.sql;
+-- the wrapper first, then the model body; the model body is the 20260726015000 one, renamed);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -49,9 +56,31 @@ CREATE TABLE public.serial_fmv_power_model (
 CREATE TABLE public.serial_fmv_multipliers (
   collection_id uuid, multiplier numeric, sample_size integer,
   serial_bucket text, tier text, circ_band text, is_reliable boolean);
+CREATE TABLE public.serial_fmv_calibration (
+  collection_id uuid, serial_bucket text, factor numeric, PRIMARY KEY (collection_id, serial_bucket));
 
 -- >>> BEGIN verbatim serial_fmv_estimate (keep byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.serial_fmv_estimate(
+CREATE OR REPLACE FUNCTION public.serial_fmv_estimate(p_collection_id uuid, p_serial integer, p_circulation integer,
+  p_tier text, p_edition_fmv numeric, p_confidence text, p_jersey_number integer, p_edition_id uuid)
+ RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
+AS $fn$
+DECLARE r jsonb; v_f numeric; v_est numeric;
+BEGIN
+  r := public.serial_fmv_estimate_uncalibrated(p_collection_id, p_serial, p_circulation, p_tier,
+         p_edition_fmv, p_confidence, p_jersey_number, p_edition_id);
+  IF r IS NULL OR (r->>'estimate_usd') IS NULL THEN RETURN r; END IF;
+  SELECT c.factor INTO v_f FROM public.serial_fmv_calibration c
+   WHERE c.collection_id = p_collection_id AND c.serial_bucket = r->>'serial_bucket';
+  IF v_f IS NULL OR v_f <= 0 OR v_f = 1 THEN RETURN r; END IF;
+  v_est := GREATEST(p_edition_fmv, (r->>'estimate_usd')::numeric / v_f);
+  RETURN r || jsonb_build_object('estimate_usd', round(v_est, 2),
+     'multiplier', round(v_est / p_edition_fmv, 2),
+     'uncalibrated_estimate_usd', (r->>'estimate_usd')::numeric,
+     'calibration_factor', round(v_f, 3), 'calibration', 'serial-cal-1.0');
+END;
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.serial_fmv_estimate_uncalibrated(
   p_collection_id uuid, p_serial integer, p_circulation integer, p_tier text,
   p_edition_fmv numeric, p_confidence text, p_jersey_number integer, p_edition_id uuid)
  RETURNS jsonb
@@ -162,6 +191,7 @@ BEGIN
     'serial_bucket',v_bucket,'circ_band',v_band,'basis',v_basis,'sample_size',v_sample,'label',v_label);
 END;
 $function$;
+
 -- <<< END verbatim serial_fmv_estimate <<<
 
 -- Fixed ids used throughout.
@@ -229,6 +259,23 @@ SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'H
 -- support BELOW gate -> pooled does NOT fire, falls back to power-law.
 UPDATE public.serial_fmv_pooled_set_effect SET support_n = 3 WHERE collection_id = :cid::uuid;
 SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, :eid::uuid))->>'basis', 'power_model', 'pooled below gate -> falls to power');
+
+-- ── 7. serial-cal-1.0 calibration (2026-11-25) ─────────────────────────────────
+-- current engine for (#1, 100, RARE, fmv 10, no edition id) is the power-law: 40.00 uncalibrated.
+SELECT _assert((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL)) ? 'calibration_factor' = false,
+  'no factor seeded -> model value passes through unstamped');
+INSERT INTO public.serial_fmv_calibration VALUES (:cid::uuid, 'first', 2), (:cid::uuid, 'perfect', 2.5);
+SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL))->>'estimate_usd', '20.00', 'factor divides the estimate (40 / 2)');
+SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL))->>'multiplier', '2.00', 'multiplier recomputed from the calibrated estimate');
+SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL))->>'uncalibrated_estimate_usd', '40.00', 'model value kept beside it');
+SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL))->>'calibration_factor', '2.000', 'factor stamped');
+SELECT _assert_eq((public.serial_fmv_estimate_uncalibrated(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL))->>'estimate_usd', '40.00', 'CONTROL: the model itself is untouched');
+-- the edition_fmv floor still holds after dividing (perfect /50: model 25.00, / 2.5 = 10 -> floored to 25)
+SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 50, 50, 'LEGENDARY', 25, 'HIGH', NULL, NULL))->>'estimate_usd', '25.00', 'calibrated estimate floored at edition_fmv');
+-- a factor of 1 is a pass-through; a non-special serial stays NULL through the wrapper
+UPDATE public.serial_fmv_calibration SET factor = 1 WHERE serial_bucket = 'first';
+SELECT _assert_eq((public.serial_fmv_estimate(:cid::uuid, 1, 100, 'RARE', 10, 'HIGH', NULL, NULL))->>'estimate_usd', '40.00', 'factor 1 -> model value');
+SELECT _assert(public.serial_fmv_estimate(:cid::uuid, 500, 2500, 'RARE', 10, 'HIGH', NULL, NULL) IS NULL, 'non-special serial -> NULL through the wrapper');
 
 SELECT '✓ serial_fmv_estimate: all assertions passed' AS result;
 
