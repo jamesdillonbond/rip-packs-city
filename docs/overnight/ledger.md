@@ -13,20 +13,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
-<<<<<<< Updated upstream
 ### 2026-11-25 ~7:25 PM PT · 🗄 APPLIED (`20261126031512`, `20261126031648`) — Moment game line: back-to-backs settled by the edition's own record, not by a date rule (Claude Code cloud; Trevor's 3-hour "keep going")
 
 - Found: the "US date first" rule (`20261126020836`) was measured on 147 editions; at 288 player-seasons the back-to-backs showed Top Shot dates Moments BOTH ways — Brunson 2025-12-19 (recorded Pacers vs Knicks), Harden 2026-03-25 (Cavaliers vs Magic), Josh Hart, Wembanyama, Veronica Burton name the UTC-date game; Giannis and Melton the US-date one. Those slabs were showing the wrong night.
 - `20261126031512`: one game on the date (either reading) → it, unless the edition's recorded teams name someone else; a back-to-back → the game the edition's teams (2) or description (1) name, when exactly one scores highest, else no line; box-score lane only with the night before empty; `moment_gamelog_targets` re-reads current seasons daily. `20261126031648`: "N/A" is not a team, names trimmed (6 + 1 editions).
 - Verified on production: all 12 known back-to-backs resolve to the game their own record names, the 2 with no evidence show none; 2,708 / 2,778 covered editions get a game. Pin repointed (21 assertions; planted defects red for the evidence rule, the team veto, the box guard and "N/A"). Docs corrected (apis-and-cadence.md, session entry). anon EXECUTE false.
 - Revert: re-apply `get_moment_game_context` from `20261126025114` and `moment_gamelog_targets` from `20261126021927` (this restores the US-first rule, i.e. the defect).
-=======
+
 ### 2026-11-25 ~7:25 PM PT · 🗄 APPLIED (`20261126032027`) + pg_cron 932 — Top Shot pulls that left the opener's wallet are read from the chain at the rip's block height (Claude Code cloud; Trevor's "Apply it")
 - **Why:** 12–21 % of Top Shot rips a week had no `pull_value_usd`. In a 400-rip sample, 394 were missing a `moments` row for at least one pulled Moment. Every one of those had been asked of the chain at `block_height=sealed`, got back `panic: no nft` (the Moment had already left the opener's wallet), and was then not retried for 365 days. About 86K pulls were in this state, about 85.7K of them from after the current spork root.
 - **What:** `topshot_moment_hydrate_requests.at_block_height` (new column); `topshot_moment_hydrate_dispatch_at_rip()` runs the same script at `pack_rips.block_height`, newest first behind its own cursor, once per Moment, only at or above spork root 137390146; `topshot_moment_hydrate_drain()` writes these rows with `owner_address` NULL; `topshot_moment_hydrate_at_rip_tick()` logs `topshot-moments-hydrate-at-rip` with the last hour's outcomes and is on the cadence watchlist. pg_cron **932** `2-58/4` × 60 runs between 603 and 469; the existing tick (469) drains it. Probe before shipping: 5 of 5 post-spork pulls answered 200; a 2024 height answered 404.
 - **Older rips:** the `/api/cron/backfill-pack-rip-metadata` unpriced leg reprices them at about 75 an hour once the Moments exist. Revisit once the backlog (about 4 days) is drained.
 - **Revert:** `SELECT cron.unschedule(932)`; restore the drain body from `20260924044634`; drop the two new functions and the column. Moment rows already written are chain facts and stay.
->>>>>>> Stashed changes
 
 ### 2026-11-25 ~7:55 PM PT · 🔧 SHIPPED (code) — Moment slab back: readable in the light theme; above-average highlight no longer dimmed by grey tiers (Claude Code cloud; Trevor's 3-hour "keep going")
 
