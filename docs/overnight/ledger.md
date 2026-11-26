@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~10:40 AM PT · 🔧 SHIPPED (follow-up) — a Panini card's own set name wins when it names a season (Claude Code cloud; Trevor: "Yes do it all")
+
+- Found checking the live sample before QA: Tatum's "BC 2021-22 Donruss Net Marvels" card sits in the product "2021 Panini Blockchain NBA Packs Prizm Entertainment". That single-year NBA product name gives no season, so the 10:30 ship would have shown nothing. The set name now wins when it names a season; otherwise the product name is used.
+- Test added in `__tests__/card-slab-stats.test.ts`. **Revert:** `git revert` the code commit (message "card set name season wins").
+
 ### 2026-11-26 ~10:30 AM PT · 🔧 SHIPPED — Panini and Candy card slabs show that card's season line on the back; stale rpc-surface-qa skill bundle re-packed (Claude Code cloud; Trevor: "Yes do it all")
 
 - **Cards have no game, so the back shows the season the CARD is from** (`cardSeason` in `lib/slab-stats.ts`): "2021-22 …" → the NBA's 2021-22; a single year → that NFL / MLB / WNBA season. An NBA product with one year ("2022 Panini NFT Hoops") could be either season, so it shows nothing. No fallback to another season: on a legend's card, a namesake's current season would be the wrong person.
