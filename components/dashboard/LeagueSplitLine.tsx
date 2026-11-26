@@ -33,11 +33,24 @@ export default function LeagueSplitLine({ publisher, owner }: { publisher: "pani
 }
 
 /**
- * The Candy Binder's "By league or brand" strip (2026-11-26): every brand the wallet holds, each linking its
- * brand page. Information, not a filter — the Binder's paged read is one RPC shared by every collection and
- * is not scoped by brand. Renders nothing while loading, on a failed read, or for a one-brand wallet.
+ * The Candy Binder's "League or brand" row (2026-11-26): every brand the wallet holds, with its card count.
+ * With `onSelect` the chips FILTER the Binder (the page is then read through
+ * get_candy_wallet_cards_for_property); without it they link each brand's page. Renders nothing while
+ * loading, on a failed read, or for a one-brand wallet — and then nothing is filtered either.
  */
-export function LeagueSplitStrip({ publisher, owner, collection }: { publisher: "panini" | "candy"; owner: string; collection: string }) {
+export function LeagueSplitStrip({
+  publisher,
+  owner,
+  collection,
+  selected = "",
+  onSelect,
+}: {
+  publisher: "panini" | "candy"
+  owner: string
+  collection: string
+  selected?: string
+  onSelect?: (slug: string) => void
+}) {
   const [split, setSplit] = useState<LeagueSplit | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -49,9 +62,29 @@ export function LeagueSplitStrip({ publisher, owner, collection }: { publisher: 
     }
   }, [publisher, owner])
   if (!split || split.leagues.length < 2) return null
+  const label = { fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-muted)" } as const
+  if (onSelect) {
+    const chip = (on: boolean) => ({
+      fontFamily: "var(--font-mono)", fontSize: 11, cursor: "pointer", padding: "6px 10px", borderRadius: 6, minHeight: 32, whiteSpace: "nowrap",
+      background: on ? "var(--rpc-red-bg)" : "var(--rpc-surface)", border: `1px solid ${on ? "var(--rpc-red-border)" : "var(--rpc-border)"}`, color: "var(--rpc-text-primary)",
+    } as const)
+    return (
+      <div role="group" aria-label="League or brand" data-testid="league-split-strip" style={{ margin: "0 0 12px", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <button type="button" aria-pressed={selected === ""} onClick={() => onSelect("")} style={chip(selected === "")}>
+          All · {split.cards_total.toLocaleString("en-US")}
+        </button>
+        {split.leagues.map((l) => (
+          <button key={l.slug} type="button" aria-pressed={selected === l.slug} onClick={() => onSelect(l.slug)} style={chip(selected === l.slug)}>
+            {l.name} · {l.cards.toLocaleString("en-US")}
+          </button>
+        ))}
+        {split.unplaced > 0 ? <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>{split.unplaced.toLocaleString("en-US")} not placed</span> : null}
+      </div>
+    )
+  }
   return (
     <div data-testid="league-split-strip" className="rpc-mono" style={{ margin: "0 0 12px", fontSize: 12, color: "var(--rpc-text-secondary)", display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
-      <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>By league or brand</span>
+      <span style={label}>By league or brand</span>
       {split.leagues.map((l) => (
         <Link key={l.slug} prefetch={false} href={`/${collection}/property/${encodeURIComponent(l.slug)}`} style={{ color: "var(--rpc-text-primary)" }}>
           {l.name} {l.cards.toLocaleString("en-US")}

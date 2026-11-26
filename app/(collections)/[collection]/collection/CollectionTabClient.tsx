@@ -117,6 +117,10 @@ function WalletMomentsBody() {
   // Candy MLB: set when the live Solana read of the searched wallet did not finish, so the
   // binder is the last daily read — said, never implied (2026-11-08).
   const [candyLiveNote, setCandyLiveNote] = useState("")
+  // 2026-11-26: the Candy Binder's league / brand filter. The ref is what the fetchers read (a pick refetches
+  // in the same tick, before the state has rendered); the state is what the chips show.
+  const [candyBrand, setCandyBrand] = useState("")
+  const candyBrandRef = useRef("")
   // Candy MLB: the searched wallet's OTHER Candy collectibles (2021–2025 ICONs, pins…),
   // which RPC does not catalogue — named so an empty binder never reads as "holds nothing".
   const [candyOtherNote, setCandyOtherNote] = useState("")
@@ -752,6 +756,7 @@ function WalletMomentsBody() {
       if (sn) params.set("series", sn)
     }
     if (view.rarityFilter !== "all") params.set("tier", view.rarityFilter)
+    if (collectionSlug === "candy-mlb" && candyBrandRef.current) params.set("property", candyBrandRef.current)
 
     const url = "/api/collection-moments?" + params.toString()
     // Zero-wait when a WarmupContext prewarm is fresh; otherwise fetchOrJoin so an
@@ -906,6 +911,9 @@ function WalletMomentsBody() {
     setActiveWallet(trimmed)
     setResolvedAddress("")
     lastSearchedRef.current = trimmed
+    // A new search starts unfiltered: a brand picked on the last wallet must not narrow this one.
+    candyBrandRef.current = ""
+    setCandyBrand("")
     // Reset accumulated owned flow IDs at the start of each new wallet search
     ownedFlowIdsRef.current = new Set<string>()
     // Task 15: Persist wallet address in URL for bookmarking and sharing
@@ -1276,6 +1284,7 @@ function WalletMomentsBody() {
             if (sn) params.set("series", sn)
           }
           if (view.rarityFilter !== "all") params.set("tier", view.rarityFilter)
+          if (collectionSlug === "candy-mlb" && candyBrandRef.current) params.set("property", candyBrandRef.current)
           const res = await fetch("/api/collection-moments?" + params.toString())
           if (!res.ok) break
           const json = await res.json()
@@ -1349,6 +1358,20 @@ function WalletMomentsBody() {
     a.download = filename
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // A brand pick is a new list: back to page 1 through the brand's own read (like a server sort change).
+  function pickCandyBrand(slug: string) {
+    if (slug === candyBrandRef.current) return
+    candyBrandRef.current = slug
+    setCandyBrand(slug)
+    if (!activeWallet) return
+    setRows([])
+    setBadgesPartial(false)
+    setLoading(true)
+    fetchPaginatedMoments(activeWallet, 1, serverSortBy, false)
+      .catch(function(err) { setError(err instanceof Error ? err.message : "Filter failed") })
+      .finally(function() { setLoading(false) })
   }
 
   function toggleSort(next: SortKey) {
@@ -1759,8 +1782,8 @@ function WalletMomentsBody() {
         {/* role=status: a failed lookup (or the UFC scan progress this box also
             carries) is announced, not only painted (2026-11-07). */}
         {error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
-        {/* 2026-11-26: Candy is nine brands — what this wallet holds of each (not a filter; see the component). */}
-        {collectionSlug === "candy-mlb" && !error && isValidAddressForChain(activeWallet, "solana") ? <LeagueSplitStrip publisher="candy" owner={activeWallet} collection={collectionSlug} /> : null}
+        {/* 2026-11-26: Candy is nine brands — what this wallet holds of each; a chip filters the Binder to it. */}
+        {collectionSlug === "candy-mlb" && !error && isValidAddressForChain(activeWallet, "solana") ? <LeagueSplitStrip publisher="candy" owner={activeWallet} collection={collectionSlug} selected={candyBrand} onSelect={pickCandyBrand} /> : null}
         {candyLiveNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-live-note">{candyLiveNote}</div> : null}
         {candyOtherNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-other-note">{candyOtherNote}</div> : null}
         {/* The RESULT is announced too (2026-11-07): after Enter, focus stays in

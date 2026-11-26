@@ -10,6 +10,7 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
+import { cleanScopeSlug } from "@/lib/panini/scope"
 
 /**
  * GET /api/collection-moments
@@ -248,6 +249,33 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // ── Candy league / brand filter (2026-11-26): ?property=<slug> ───────────────────────────────────────
+    // Candy is nine brands. The slug must be one of Candy's publisher_properties rows: an unknown one — or
+    // any slug on another collection — is a 400, and a failed lookup a 503. Never the whole Binder under a
+    // brand's name. The page then comes from get_candy_wallet_cards_for_property (migration 20261126225745),
+    // the shared RPC's Candy arm plus the brand predicate; same row shape, same sorts. (It does not compute
+    // the 30-day price band — one Candy edition qualified for it on 11-26.)
+    const propertyRaw = sp.get("property")?.trim() ?? ""
+    let candyProperty: string | null = null
+    if (propertyRaw) {
+      const slug = cleanScopeSlug(propertyRaw)
+      if (!slug || collectionSlug !== "candy-mlb") {
+        return NextResponse.json({ error: "unknown_league", message: "That league or brand is not part of this collection." }, { status: 400, headers: { "Cache-Control": "no-store" } })
+      }
+      const known = await boundedRead(
+        (supabaseAdmin as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: string) => { eq: (c: string, v: string) => { limit: (n: number) => PromiseLike<unknown> } } } } })
+          .from("publisher_properties").select("slug").eq("publisher", "candy").eq("slug", slug).limit(1),
+        "collection-moments/candy_property",
+      )
+      if (known.error || !Array.isArray(known.data)) {
+        return NextResponse.json({ error: "Database query failed" }, { status: 503, headers: { "Cache-Control": "no-store" } })
+      }
+      if (known.data.length === 0) {
+        return NextResponse.json({ error: "unknown_league", message: "That league or brand is not part of this collection." }, { status: 400, headers: { "Cache-Control": "no-store" } })
+      }
+      candyProperty = slug
+    }
+
     // Single SQL call: joins wallet_moments_cache → editions → fmv_snapshots,
     // sorts by real FMV BEFORE pagination, returns one page + total count.
     const rpcParams: Record<string, any> = {
@@ -262,8 +290,14 @@ export async function GET(req: NextRequest) {
     if (collectionId) rpcParams.p_collection_id = collectionId
     console.log("[collection-moments] calling RPC with:", JSON.stringify(rpcParams))
 
-    const { data, error: rpcError } = await (supabaseAdmin as any)
-      .rpc("get_wallet_moments_with_fmv", rpcParams)
+    const pageDb = supabaseAdmin as any
+    const { data, error: rpcError } = await (candyProperty
+      ? pageDb.rpc("get_candy_wallet_cards_for_property", {
+          p_wallet: wallet, p_property: candyProperty, p_sort_by: sortBy, p_limit: limit, p_offset: offset,
+          p_player: playerFilter || null,
+          p_tier: tierFilter || null,
+        })
+      : pageDb.rpc("get_wallet_moments_with_fmv", rpcParams))
 
     console.log("[collection-moments] RPC result data type:", typeof data, "isArray:", Array.isArray(data), "data:", JSON.stringify(data)?.slice(0, 200))
 

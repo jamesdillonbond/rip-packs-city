@@ -129,6 +129,21 @@ describe("league split", () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(failed.container.innerHTML).toBe("")
   })
+  it("with onSelect the strip is a filter: pressed state, All, and the pick is reported", async () => {
+    fj.json = raw
+    const picks: string[] = []
+    const c = render(<LeagueSplitStrip publisher="candy" owner="W" collection="candy-mlb" selected="nba" onSelect={(s) => picks.push(s)} />)
+    await waitFor(() => expect(c.queryByTestId("league-split-strip")).not.toBeNull())
+    const strip = c.getByTestId("league-split-strip")
+    expect(strip.getAttribute("aria-label")).toBe("League or brand")
+    const buttons = [...strip.querySelectorAll("button")]
+    expect(buttons.map((b) => b.textContent)).toEqual(["All · 8,124", "NFL · 3,647", "NBA · 1,556", "WNBA · 769", "WWE · 271"])
+    expect(buttons[2].getAttribute("aria-pressed")).toBe("true")
+    fireEvent.click(buttons[1])
+    fireEvent.click(buttons[0])
+    expect(picks).toEqual(["nfl", ""])
+    expect(strip.querySelectorAll("a")).toHaveLength(0)
+  })
   const req = (q: string) => ({ nextUrl: new URL(`https://t/api/league-split?${q}`) }) as never
   it("the API passes a Solana key through untouched, lower-cases nothing, and names the right function", async () => {
     db.res = { data: raw, error: null }

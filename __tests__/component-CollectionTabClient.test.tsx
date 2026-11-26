@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, cleanup, act, within } from "@testing-library/react"
 import CollectionTabClient from "@/app/(collections)/[collection]/collection/CollectionTabClient"
 import { _resetSignedInForTests } from "@/lib/auth/signed-in-client"
 
@@ -1879,6 +1879,31 @@ describe("CollectionTabClient — the owner key follows the collection's chain",
     // ⚠ The CHAIN is asserted, not just the key. A write of the right address
     // into the wrong slot is the clobber this change exists to prevent.
     expect(ownerKeyWrites[0]).toEqual({ chain: "solana", key: MINT })
+  })
+
+  // 2026-11-26: Candy is nine brands. A chip on the Binder re-reads page 1 through the brand's own read.
+  it("a Candy brand chip refetches the Binder with ?property=, and All clears it", async () => {
+    PARAMS.collection = "candy-mlb"
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: MINT, page: 1, total_count: 1, total_pages: 1, total_fmv: 42 })
+    const realFetch = fetchMock.getMockImplementation() as (input: unknown, init?: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown, init?: unknown) => {
+      const url = String(input)
+      if (!url.startsWith("/api/league-split")) return realFetch(input, init)
+      return json(200, { cards_total: 30, unplaced: 0, leagues: [{ slug: "mlb", name: "MLB", cards: 20 }, { slug: "dc", name: "DC", cards: 10 }] })
+    })
+    searchParams = new URLSearchParams(`wallet=${MINT}`)
+    render(<CollectionTabClient />)
+    const strip = await screen.findByTestId("league-split-strip")
+    const momentCalls = () => fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/collection-moments"))
+    expect(momentCalls().some((u) => u.includes("property="))).toBe(false)
+    fireEvent.click(within(strip).getByRole("button", { name: /^DC/ }))
+    await waitFor(() => expect(momentCalls().some((u) => u.includes("property=dc") && u.includes("page=1"))).toBe(true))
+    expect(within(strip).getByRole("button", { name: /^DC/ }).getAttribute("aria-pressed")).toBe("true")
+    const before = momentCalls().length
+    fireEvent.click(within(strip).getByRole("button", { name: /^All/ }))
+    await waitFor(() => expect(momentCalls().length).toBeGreaterThan(before))
+    expect(momentCalls()[momentCalls().length - 1]).not.toContain("property=")
   })
 
   it("⛔ does NOT write a Flow-shaped wallet while on the Candy tab", async () => {
