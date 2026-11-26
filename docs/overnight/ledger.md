@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~7:45 PM PT · 🗄 APPLIED (`20261126033441`) — refresh_wmc_fmv_changed keeps a fixed 20 s of headroom, so the route's 30 s tick stops dying mid-chunk (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
+
+- Found: a NEW failure class beside the declined 11-25 deadlock item. 5 route runs (`/api/wmc-fmv-populate`, PostgREST service_role 30 s) between 8:53 AM and 7:08 PM PT died at exactly 30 s with `statement timeout`; ok runs reach 20–28 s every hour. The loop deadline is 60 % of the timeout (18 s) checked only between chunks, and one chunk can wait 8 s on wmc row locks (authenticator `lock_timeout`) before working. A kill rolls back the tick's writes and cursor.
+- Fix: budget = `GREATEST(LEAST(0.6×timeout, timeout − 20 s), 5 s)`: route 18 → 10 s; jobid 303 (`cron_heavy` 600 s) 360 s unchanged. Capacity checked first: `rwfc_state` lag 7 min (the 5-min overlap floor), jobid 303 p50 0.4 s over 144 runs/24 h. Body otherwise byte-identical (md5 guard `fc41b0b8…` → live `70d7cdf9…` = file). anon EXECUTE false.
+- Pin re-pointed; `supabase/tests/refresh_wmc_fmv_changed.sql` adds a headroom assertion, red against the 11-14 body (planted). Preflight green (8 steps, 316 DB-invariant files).
+- **Verify ~11-26 evening:** 0 `statement timeout` rows for `refresh_wmc_fmv_changed` since the apply (was 5 / 11 h); ok-run max `duration_ms` < ~25 s; `rwfc_state` lag < ~20 min.
+- Revert: re-apply the function body from `20261114171317_audit_20261114_rwfc_drops_only_what_it_applied.sql` (CREATE OR REPLACE only).
+
 ### 2026-11-25 ~7:35 PM PT · 🗄 APPLIED (`20261126032613`) + 📝 pin — Moment game line: a description naming the opponent's CITY now counts as evidence on a back-to-back (Claude Code cloud; Trevor's 3-hour "keep going")
 
 - `get_moment_game_context`: the description scores 1 point when it names the opponent's nickname OR city ("against Detroit"). Measured before: 58 covered editions sat on an ambiguous back-to-back; the city settles 38. On the 20 back-to-backs the recorded teams already settle, the city agreed 16 / 16. Recorded teams still score 2 and still veto.
