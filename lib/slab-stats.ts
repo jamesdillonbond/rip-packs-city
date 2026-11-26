@@ -442,7 +442,10 @@ export function slabStatsFromContext(ctx: MomentGameContext | null | undefined):
  */
 export function cardSeason(league: CardLeague, setName: string | null | undefined): number | null {
   const t = String(setName ?? "")
-  const range = /\b((?:19|20)\d{2})\s*[-–/]\s*(\d{2}|(?:19|20)\d{2})\b/.exec(t)
+  const ranges = Array.from(t.matchAll(/\b((?:19|20)\d{2})\s*[-–/]\s*(\d{2}|(?:19|20)\d{2})\b/g))
+  // Two DIFFERENT seasons named ("2020-21 NFT NBA Entertainment - BC 2021-22 Prizm …"): no guess.
+  if (new Set(ranges.map((r) => r[1])).size > 1) return null
+  const range = ranges[0] ?? null
   if (range) {
     const a = Number(range[1])
     const b = Number(range[2])
@@ -475,4 +478,58 @@ export function cardSlabStats(league: CardLeague | null, setName: string | null 
 
 export function asCardLeague(v: unknown): CardLeague | null {
   return v === "mlb" ? "mlb" : asEspnLeague(v)
+}
+
+// ── Soccer cards (Panini) ────────────────────────────────────────────────────────────────────────
+// A soccer card's back: the player's line in the competition and season its product is from
+// (public.get_panini_card_soccer_line, ESPN's athlete stats). ESPN's soccer line has no appearances
+// or minutes, only starts; a keeper has a second line (clean sheets, saves, goals against).
+
+export interface SoccerCardLine {
+  team_name?: string | null
+  split_name?: string | null
+  kind: "field" | "keeper"
+  names: string[]
+  values: string[]
+}
+export interface SoccerCardPayload {
+  league_slug: string
+  season_year: number
+  lines: SoccerCardLine[]
+}
+
+const SOCCER_COMPETITION: Record<string, string> = { "fifa.world": "World Cup", "esp.1": "LALIGA", "ita.1": "Serie A", "fra.1": "Ligue 1" }
+
+function sumLines(lines: SoccerCardLine[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const l of lines) {
+    if (!Array.isArray(l.names) || !Array.isArray(l.values) || l.names.length !== l.values.length) continue
+    l.names.forEach((n, i) => {
+      const v = num(l.values[i] ?? null)
+      if (v != null) out.set(n, (out.get(n) ?? 0) + v)
+    })
+  }
+  return out
+}
+
+export function soccerCardBlock(p: SoccerCardPayload | null | undefined): SlabStatBlock | null {
+  if (!p || !Array.isArray(p.lines) || p.lines.length === 0) return null
+  const comp = SOCCER_COMPETITION[p.league_slug]
+  if (!comp || !Number.isInteger(p.season_year)) return null
+  const title = p.league_slug === "fifa.world" ? `${p.season_year} World Cup` : `${p.season_year}-${String(p.season_year + 1).slice(-2)} ${comp}`
+  const field = sumLines(p.lines.filter((l) => l.kind === "field"))
+  const keeper = sumLines(p.lines.filter((l) => l.kind === "keeper"))
+  const isKeeper = (keeper.get("SV") ?? 0) > 0 || (keeper.get("CS") ?? 0) > 0
+  const chip = (m: Map<string, number>, name: string, label: string, keepZero: boolean): StatChip | null => {
+    const v = m.get(name)
+    if (v == null || (!keepZero && v === 0)) return null
+    return { label, value: String(v) }
+  }
+  const chips = (isKeeper
+    ? [chip(keeper, "CS", "CS", true), chip(keeper, "SV", "SV", true), chip(keeper, "GA", "GA", true), chip(field, "STRT", "GS", true)]
+    : [chip(field, "G", "G", true), chip(field, "A", "A", true), chip(field, "STRT", "GS", true), chip(field, "SHOT", "SH", false), chip(field, "SOG", "SOT", false)]
+  ).filter((c): c is StatChip => c != null)
+  if (chips.length === 0 || chips.every((c) => isZeroLike(c.value))) return null
+  const teams = Array.from(new Set(p.lines.map((l) => (l.team_name ?? "").trim()).filter(Boolean)))
+  return { title, detail: teams.join(" / ") || null, chips }
 }

@@ -13,7 +13,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
-import { asCardLeague, asEspnLeague, cardSeason, cardSlabStats, momentSeason, type MomentGameContext, type SeasonLine, type SlabStats } from "@/lib/slab-stats"
+import { asCardLeague, asEspnLeague, cardSeason, cardSlabStats, soccerCardBlock, type SoccerCardPayload, momentSeason, type MomentGameContext, type SeasonLine, type SlabStats } from "@/lib/slab-stats"
 import { marketCapKey } from "@/lib/player-recent-games"
 
 type RpcClient = {
@@ -154,12 +154,20 @@ async function readCardSlabStats(card: CardSlabStatsEdition, client: RpcClient):
     // The season is usually in the PRODUCT's name ("2021-22 Panini NFT Noir Basketball"); the card's own
     // set name is usually just "Base Prizms Silver". A failed product read is a failed read.
     const setId = /^packcard-(\d+)_/.exec(card.external_id ?? "")?.[1] ?? null
-    const [r, prod] = await Promise.all([
+    const [r, prod, soccer] = await Promise.all([
       client.rpc("get_panini_player_season_stats", { p_slugs: slugs, p_seasons: 20 }),
       setId
         ? client.from("panini_products").select("name").eq("set_id", Number(setId)).limit(1).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
+      // A soccer card: its product's competition and season (ESPN athlete stats, 20261126184303).
+      setId
+        ? client.rpc("get_panini_card_soccer_line", { p_slugs: slugs, p_external_id: card.external_id })
+        : Promise.resolve({ data: null, error: null }),
     ])
+    // A missing reader (a rolled-back migration) is not a failed read of the other lines.
+    if (soccer.error && !isFunctionMissing(soccer.error)) return { ok: false, error: soccer.error.message ?? "get_panini_card_soccer_line failed" }
+    const soccerBlock = soccerCardBlock(soccer.data as SoccerCardPayload | null)
+    if (soccerBlock) return { ok: true, stats: { game: null, season: soccerBlock } }
     if (r.error) return { ok: false, error: r.error.message ?? "get_panini_player_season_stats failed" }
     if (prod.error) return { ok: false, error: prod.error.message ?? "panini_products read failed" }
     payload = r.data as SeasonStatsPayload

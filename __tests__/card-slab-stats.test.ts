@@ -1,7 +1,7 @@
 // 2026-11-26 (Trevor: "Yes do it all"): Panini and Candy cards get a season line on the slab's back.
 // A card has no game, so the line is the season the CARD is from — never another season.
 import { describe, it, expect } from "vitest"
-import { cardSeason, cardSlabStats, seasonBlock, type SeasonLine } from "@/lib/slab-stats"
+import { cardSeason, cardSlabStats, seasonBlock, soccerCardBlock, type SeasonLine } from "@/lib/slab-stats"
 import { fetchCardSlabStats } from "@/lib/moment-detail/slab-stats-fetch"
 
 const BAT_NAMES = ["gamesPlayed", "atBats", "runs", "hits", "doubles", "triples", "homeRuns", "RBIs", "walks", "hitByPitch", "strikeouts", "stolenBases", "caughtStealing", "avg", "onBasePct", "slugAvg", "OPS", "WARBR"]
@@ -30,6 +30,8 @@ describe("cardSeason", () => {
     expect(cardSeason("nba", "2021-23 Odd")).toBe(null)
     expect(cardSeason("mlb", "2021-22 Something")).toBe(null)
     expect(cardSeason("mlb", null)).toBe(null)
+    expect(cardSeason("nba", "2020-21 NFT NBA Entertainment - BC 2021-22 Prizm 75 Years of NBA Challenge")).toBe(null)
+    expect(cardSeason("nba", "BC 2021-22 Prizm 2021-22")).toBe(2022)
   })
 })
 
@@ -59,12 +61,13 @@ describe("cardSlabStats", () => {
   })
 })
 
-function client(answers: { rpc?: { data: unknown; error: { message?: string } | null }; ed?: { data: unknown; error: { message?: string } | null }; prod?: { data: unknown; error: { message?: string } | null } }) {
+function client(answers: { rpc?: { data: unknown; error: { message?: string } | null }; soccer?: { data: unknown; error: { code?: string; message?: string } | null }; ed?: { data: unknown; error: { message?: string } | null }; prod?: { data: unknown; error: { message?: string } | null } }) {
   const calls: Array<{ fn: string; args: Record<string, unknown> }> = []
   return {
     calls,
     rpc(fn: string, args: Record<string, unknown>) {
       calls.push({ fn, args })
+      if (fn === "get_panini_card_soccer_line") return Promise.resolve(answers.soccer ?? { data: null, error: null })
       return Promise.resolve(answers.rpc ?? { data: null, error: null })
     },
     from(table: string) {
@@ -79,7 +82,7 @@ describe("fetchCardSlabStats", () => {
   it("Panini reads the crosswalk by the player's slug", async () => {
     const c = client({ rpc: { data: { league: "mlb", espn_league: "mlb", rows: [bat(2026, BREGMAN_2026)] }, error: null } })
     const r = await fetchCardSlabStats(CARD, c as never)
-    expect(c.calls).toEqual([{ fn: "get_panini_player_season_stats", args: { p_slugs: ["alex-bregman"], p_seasons: 20 } }])
+    expect(c.calls).toEqual([{ fn: "get_panini_player_season_stats", args: { p_slugs: ["alex-bregman"], p_seasons: 20 } }]) // no product id → no soccer read
     expect(r.ok && r.stats?.season?.title).toBe("2026 season")
   })
   it("Candy reads by the edition's player", async () => {
@@ -121,5 +124,43 @@ describe("fetchCardSlabStats", () => {
     const c = client({ rpc: { data: { league: "nba", espn_league: "wnba", rows: [avg] }, error: null } })
     const r = await fetchCardSlabStats({ ...CARD, set_name: "2023 Prizm WNBA", player_names: ["A'ja Wilson"] }, c as never)
     expect(r.ok && r.stats?.season?.title).toBe("2023 season")
+  })
+})
+
+const WC = (vals: string[], team = "Argentina") => ({ team_name: team, split_name: "2022 FIFA World Cup", kind: "field" as const, names: ["STRT", "FC", "FA", "YC", "RC", "G", "A", "SHOT", "SOG", "OFF"], values: vals })
+
+describe("soccer card backs", () => {
+  it("a scorer's World Cup", () => {
+    // Messi, 2022 FIFA World Cup — measured from ESPN 2026-11-26 (7 G, 3 A)
+    const b = soccerCardBlock({ league_slug: "fifa.world", season_year: 2022, lines: [WC(["7", "9", "22", "1", "0", "7", "3", "31", "17", "4"])] })
+    expect(b?.title).toBe("2022 World Cup")
+    expect(b?.detail).toBe("Argentina")
+    expect(b?.chips.map((c) => `${c.label} ${c.value}`)).toEqual(["G 7", "A 3", "GS 7", "SH 31", "SOT 17"])
+  })
+  it("a keeper's club season, summed across two clubs", () => {
+    const keeper = (t: string, v: string[]) => ({ team_name: t, kind: "keeper" as const, names: ["CS", "SV", "GA"], values: v })
+    const b = soccerCardBlock({
+      league_slug: "esp.1", season_year: 2022,
+      lines: [{ ...WC(["31", "0", "3", "0", "0", "0", "0", "0", "0", "3"], "Real Madrid") }, keeper("Real Madrid", ["10", "79", "29"])],
+    })
+    expect(b?.title).toBe("2022-23 LALIGA")
+    expect(b?.chips.map((c) => `${c.label} ${c.value}`)).toEqual(["CS 10", "SV 79", "GA 29", "GS 31"])
+  })
+  it("no line, an unknown competition, or all zeros → nothing", () => {
+    expect(soccerCardBlock({ league_slug: "fifa.world", season_year: 2022, lines: [] })).toBe(null)
+    expect(soccerCardBlock({ league_slug: "usa.1", season_year: 2022, lines: [WC(["7", "0", "0", "0", "0", "7", "3", "0", "0", "0"])] })).toBe(null)
+    expect(soccerCardBlock({ league_slug: "fifa.world", season_year: 2022, lines: [WC(["0", "0", "0", "0", "0", "0", "0", "0", "0", "0"])] })).toBe(null)
+    expect(soccerCardBlock(null)).toBe(null)
+  })
+  it("the Panini read uses the soccer line when there is one, and tolerates a missing reader", async () => {
+    const card = { id: "e9", collection_slug: "panini_blockchain", set_name: "Base", external_id: "packcard-2001_1_1_1", player_names: ["Lionel Messi"] }
+    const c = client({ soccer: { data: { league_slug: "fifa.world", season_year: 2022, lines: [WC(["7", "9", "22", "1", "0", "7", "3", "31", "17", "4"])] }, error: null } })
+    const r = await fetchCardSlabStats(card, c as never)
+    expect(r.ok && r.stats?.season?.title).toBe("2022 World Cup")
+    expect(c.calls.find((x) => x.fn === "get_panini_card_soccer_line")?.args).toEqual({ p_slugs: ["lionel-messi"], p_external_id: "packcard-2001_1_1_1" })
+    const missing = client({ soccer: { data: null, error: { code: "PGRST202", message: "Could not find the function" } } })
+    expect((await fetchCardSlabStats(card, missing as never)).ok).toBe(true)
+    const failed = client({ soccer: { data: null, error: { code: "57014", message: "canceling statement" } } })
+    expect((await fetchCardSlabStats(card, failed as never)).ok).toBe(false)
   })
 })

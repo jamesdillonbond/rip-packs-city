@@ -15,6 +15,30 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-26 (the card slab on Panini soccer cards). A Panini soccer product's competition and ESPN season (only products naming ONE competition).
+    fn: "panini_soccer_competition",
+    test: "supabase/tests/espn_soccer_athlete_stats_drain.sql",
+    migration: "supabase/migrations/20261126184303_audit_20261126_panini_soccer_season_lines.sql",
+  },
+  {
+    // Added 2026-11-26 (the card slab on Panini soccer cards). Discovery first, then one request per team x competition a card needs — never a competition no card needs.
+    fn: "espn_soccer_athlete_stats_dispatch",
+    test: "supabase/tests/espn_soccer_athlete_stats_drain.sql",
+    migration: "supabase/migrations/20261126184303_audit_20261126_panini_soccer_season_lines.sql",
+  },
+  {
+    // Added 2026-11-26 (the card slab on Panini soccer cards). Stores an answer only when ESPN's own filters name the team AND competition asked for; 404 = none.
+    fn: "espn_soccer_athlete_stats_drain",
+    test: "supabase/tests/espn_soccer_athlete_stats_drain.sql",
+    migration: "supabase/migrations/20261126184303_audit_20261126_panini_soccer_season_lines.sql",
+  },
+  {
+    // Added 2026-11-26 (the card slab on Panini soccer cards). A Panini soccer card's line: NULL for an ambiguous player or a product with no competition.
+    fn: "get_panini_card_soccer_line",
+    test: "supabase/tests/espn_soccer_athlete_stats_drain.sql",
+    migration: "supabase/migrations/20261126184303_audit_20261126_panini_soccer_season_lines.sql",
+  },
+  {
     // Added 2026-11-25. The interactive Moment slab's back: the game a Moment is from — Top Shot dates Moments
     // by the US date OR the UTC date, so a back-to-back is settled by the edition's teams / description or left
     // blank; recorded teams veto; no nearest-day fallback; no stats for an All Day play without both teams.
