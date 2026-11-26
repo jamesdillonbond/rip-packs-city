@@ -89,6 +89,15 @@ function signedUsd(n: number | null | undefined): string {
   return (n > 0 ? "+" : n < 0 ? "−" : "") + usd(Math.abs(n))
 }
 
+// ⚠ 2026-11-25: net_rip_edge_usd is WHOLE DOLLARS — panini_pack_ev_board computes it as round(ev − cost).
+// Printed through usd() it read "$0.00 vs cost" for New Yolk City Green (EV $14.12 on a $14 floor: a $0.12
+// edge rounded to 0 and shown as an exact break-even), and "+$1.00" for anything from +$0.50 to +$1.49.
+// Print it at the precision it has, and a rounded zero as what it is.
+function signedWholeUsd(n: number): string {
+  const r = Math.round(n)
+  return (r > 0 ? "+" : r < 0 ? "−" : "") + "$" + Math.abs(r).toLocaleString("en-US")
+}
+
 // A positive MEAN edge is carried by chase cards most packs never contain (measured 2026-10-18:
 // WC Hobby/FOTL means sat +$3/+$25 over cost while P(pull >= price) was 13%/18%), so it never
 // renders alone: when the typical pull is under cost, the same line says so.
@@ -96,8 +105,9 @@ function meanEdgeSub(edge: number | null, typical: number | null, cost: number |
   if (edge === null || !Number.isFinite(edge)) return undefined
   // A floor EV bounds the mean from BELOW: a positive edge is "at least", a negative one proves nothing
   // about the mean — never print it as the pack's edge.
-  if (floor) return edge > 0 ? `at least ${signedUsd(edge)} vs cost` : "a lower bound — can't say if the mean beats cost"
-  const base = `${signedUsd(edge)} vs cost`
+  if (floor) return edge > 0 ? `at least ${signedWholeUsd(edge)} vs cost` : "a lower bound — can't say if the mean beats cost"
+  if (Math.round(edge) === 0) return "about even with cost (within $0.50)"
+  const base = `${signedWholeUsd(edge)} vs cost`
   if (edge > 0 && typical !== null && cost !== null && Number.isFinite(typical) && Number.isFinite(cost) && typical < cost) {
     return `${base} on the mean only · typical pull ${signedUsd(typical - cost)}`
   }

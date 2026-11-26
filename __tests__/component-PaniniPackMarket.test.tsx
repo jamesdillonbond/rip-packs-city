@@ -62,9 +62,9 @@ describe("PaniniPackMarket", () => {
     expect(text).toContain("Hobby pack · 4 cards")
     expect(text.indexOf("Typical pull")).toBeLessThan(text.indexOf("EV (mean)"))
     expect(text).toContain("$30.00")
-    expect(text).toContain("+$6.00 vs cost")
+    expect(text).toContain("+$6 vs cost")
     // The fixture's typical pull ($30) is under cost ($144): a positive mean edge never renders alone.
-    expect(text).toContain("+$6.00 vs cost on the mean only · typical pull −$114")
+    expect(text).toContain("+$6 vs cost on the mean only · typical pull −$114")
     expect(c.querySelector('[data-testid="panini-coverage-note"]')).not.toBeNull()
     expect(text).toContain("5,100")
     // Fresh stats carry no stale warning.
@@ -75,7 +75,7 @@ describe("PaniniPackMarket", () => {
     mockFetch(200, payload({ products: [product({ netRipEdgeUsd: 25, typicalEvUsd: 38, costUsd: 209 })] }))
     const c = await mount()
     const text = c.textContent ?? ""
-    expect(text).not.toMatch(/\+\$25\.00 vs cost(?! on the mean only)/)
+    expect(text).not.toMatch(/\+\$25 vs cost(?! on the mean only)/)
     expect(text).toContain("typical pull −$171")
     expect(text).not.toContain("not asks")
   })
@@ -83,13 +83,29 @@ describe("PaniniPackMarket", () => {
   it("a negative mean edge, or a typical pull at or above cost, keeps the plain edge line", async () => {
     mockFetch(200, payload({ products: [product({ netRipEdgeUsd: -10, typicalEvUsd: 7, costUsd: 27 })] }))
     let c = await mount()
-    expect(c.textContent ?? "").toContain("−$10.00 vs cost")
+    expect(c.textContent ?? "").toContain("−$10 vs cost")
     expect(c.textContent ?? "").not.toContain("on the mean only")
     cleanup()
     mockFetch(200, payload({ products: [product({ netRipEdgeUsd: 6, typicalEvUsd: 150, costUsd: 144 })] }))
     c = await mount()
-    expect(c.textContent ?? "").toContain("+$6.00 vs cost")
+    expect(c.textContent ?? "").toContain("+$6 vs cost")
     expect(c.textContent ?? "").not.toContain("on the mean only")
+  })
+
+  // 2026-11-25: net_rip_edge_usd is whole dollars (the view rounds ev − cost). New Yolk City Green (EV $14.12
+  // on a $14 floor) read "$0.00 vs cost" — a rounded 0 stated as an exact break-even, at a precision it lacks.
+  it("a whole-dollar edge prints without cents, and a rounded zero says 'about even', never '$0.00 vs cost'", async () => {
+    mockFetch(200, payload({ products: [product({ netRipEdgeUsd: 0, actualEvUsd: 14.12, typicalEvUsd: 14, costUsd: 14 })] }))
+    let c = await mount()
+    let text = c.textContent ?? ""
+    expect(text).not.toContain("$0.00 vs cost")
+    expect(text).toContain("about even with cost (within $0.50)")
+    cleanup()
+    mockFetch(200, payload({ products: [product({ netRipEdgeUsd: 3, typicalEvUsd: 150, costUsd: 144 })] }))
+    c = await mount()
+    text = c.textContent ?? ""
+    expect(text).toContain("+$3 vs cost")
+    expect(text).not.toContain("+$3.00 vs cost")
   })
 
   // 2026-11-22 (P0.2): a floor EV reads "at least", and a negative edge on it is never printed as the pack's edge.
@@ -99,14 +115,14 @@ describe("PaniniPackMarket", () => {
     let text = c.textContent ?? ""
     expect(text).toContain("EV (mean, at least)")
     expect(text).toContain("at least $6.75")
-    expect(text).not.toContain("−$2.00 vs cost")
+    expect(text).not.toMatch(/−\$2(\.00)? vs cost/)
     expect(text).toContain("can't say if the mean beats cost")
     expect(text).toContain("EV is a floor")
     cleanup()
     mockFetch(200, payload({ products: [product({ evFloor: true, actualEvUsd: 57.22, netRipEdgeUsd: 14, typicalEvUsd: 17, costUsd: 43 })] }))
     c = await mount()
     text = c.textContent ?? ""
-    expect(text).toContain("at least +$14.00 vs cost")
+    expect(text).toContain("at least +$14 vs cost")
     cleanup()
     // The control: no floor flag, no floor wording.
     mockFetch(200, payload())
