@@ -486,4 +486,14 @@ describe("WalletPacksView", () => {
     expect(window.location.search).not.toContain("packs_view")
     window.history.replaceState(null, "", "/")
   })
+
+  it("only a sealed row's link carries the 'Sealed pack' note -- not an opened pack with no distribution", async () => {
+    ownerKey = "0xowner"
+    window.history.replaceState(null, "", "/?packs_view=opened")
+    const opened = { ...heldRow, pack_nft_id: "burst-1", pack_name: "NBA Top Shot pack (no pack NFT, reconstructed)", status: "ripped" as const, has_rip: true }
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [opened], total_count: 1 }) }))
+    const { findByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    const link = await findByText("NBA Top Shot pack (no pack NFT, reconstructed)")
+    expect(link.getAttribute("title")).toBeNull()
+  })
 })

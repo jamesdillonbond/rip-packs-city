@@ -594,7 +594,9 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                             ) : (
                               <Link prefetch={false}
                                 href={`/${collection}/pack/${encodeURIComponent(row.pack_nft_id)}`}
-                                title="Sealed pack — which distribution it came from is only recorded when the pack is opened or resold on the marketplace."
+                                // 2026-11-26: only a sealed row gets this note -- an opened pack with no pack NFT
+                                // (a reconstructed rip) carried it on the Opened tab and read "Sealed pack".
+                                title={row.status === "held" ? "Sealed pack — which distribution it came from is only recorded when the pack is opened or resold on the marketplace." : undefined}
                                 style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
                               >
                                 {packName}
