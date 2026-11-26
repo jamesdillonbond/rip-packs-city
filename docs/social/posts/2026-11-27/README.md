@@ -10,7 +10,7 @@ Featured Moment (Trevor 11-26): **Calvin Johnson, Relentless · Reception, Nov 2
 
 ⛔ Trevor 11-26: **do not use UFC Strike for this post** (the clip or the copy). UFC slab backs are live, but they are not featured here.
 
-## Main post (attach `slab-allday-calvin-johnson.mp4`) — check the count in X before posting
+## Main post (no video — see Media) — check the count in X before posting
 
 ```
 Megatron on Thanksgiving, 2012. Flip the Moment and the back has the season: 122 catches, 1,964 yards, still the NFL single-season record.
@@ -30,7 +30,7 @@ Spin it yourself 👇 https://www.rippackscity.com/nfl-all-day/edition/5035?utm_
 
 ## Media
 
-`slab-allday-calvin-johnson.mp4` (8.0 s, 1080×1080, 24 fps): the Calvin Johnson Thanksgiving Moment rendered from its live edition page. It plays the catch at full 24 fps (45.25–49.3 s of the Moment video: the leaping grab over the Texans' DB, the close-up, the ball raised with the "C" on his chest), then the slab turns over in 1.4 s (eased, 5° tilt) while the video keeps playing — to the back: NFL ALL DAY · CALVIN JOHNSON · RARE · Historical (2025 Release) · Hall of Fame · 2012 season · Detroit Lions · 16 games · 122 REC / 1,964 REC YDS / 5 REC TD · Set Relentless · Minted 299 · FMV $4.00 — and holds the back 2.5 s. Rendered 11-26 ~12:25 PM PT in headless Chrome: one screenshot per video frame and per flip frame of the page's own rendering (the slab rotated by script, nothing composited), assembled with ffmpeg. The FMV on the back is the live value at capture; re-check the page before posting if that matters.
+⛔ Trevor 11-26: no screen-captured slab clip for this post — three cuts (UFC, Tatum, Calvin Johnson) were all judged too rough. Post text-only, or attach your own screen recording of the slab if you want one. Don't re-render a clip without asking.
 
 ## House rules
 
