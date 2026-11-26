@@ -22,9 +22,9 @@
 // `flow-chain` / `pinnacle-edition-page` rows) is read from Pinnacle's own edition page,
 // which embeds the same signed asset URLs — see lib/pinnacle/edition-page-media.ts.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { signedMediaFromEditionPage } from "@/lib/pinnacle/edition-page-media";
+import { allSignedMediaFromEditionPage, type EditionPageMedia } from "@/lib/pinnacle/edition-page-media";
 import { expOfSignedUrl, readSignedMedia, writeSignedMedia } from "@/lib/pinnacle/signed-media-store";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,10 @@ const CACHE_SECONDS = 1800; // 30m, comfortably under the signature TTL (hours)
 const SLOW_LEG_MS = 3000;
 // Serve a stored signature only while it has at least this long left; under it, re-resolve.
 const STORE_SERVE_MIN_LEFT_S = 1800;
+// 2026-11-25 (evening): a stored signature served with less than this left is re-resolved AFTER the
+// response, so a pin with steady traffic never reaches the cold path. Signatures live ~24 h, so this
+// costs at most one background page read per viewed pin per ~16 h; a pin nobody views costs nothing.
+const STORE_REFRESH_AHEAD_S = 8 * 3600;
 
 const MEDIA_QUERY = `
 query PinnacleImage($rid: String!) {
@@ -95,8 +99,7 @@ const EDITION_ID_RE = /^[0-9]{1,9}$/;
 
 async function resolveFromEditionPage(
   renderId: string,
-  variant: Variant,
-): Promise<{ url: string; exp: number } | null> {
+): Promise<Partial<Record<Variant, EditionPageMedia>> | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from("pinnacle_catalog")
@@ -111,7 +114,69 @@ async function resolveFromEditionPage(
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) return null;
-  return signedMediaFromEditionPage(await res.text(), renderId, variant);
+  return allSignedMediaFromEditionPage(await res.text(), renderId);
+}
+
+interface Resolved {
+  url: string | null;
+  exp: number | null;
+  source: "gql" | "edition-page" | "none";
+  legs: string[];
+  /** The other variants the same edition-page read carried (stored too; never served here). */
+  siblings: Partial<Record<Variant, EditionPageMedia>>;
+}
+
+// The live upstreams, in order: GraphQL, then Pinnacle's edition page. Never throws.
+async function resolveFresh(renderId: string, variant: Variant): Promise<Resolved> {
+  const legs: string[] = [];
+  const now = () => Math.floor(Date.now() / 1000);
+  const t0 = Date.now();
+  try {
+    const url = await resolveSignedUrl(renderId, variant);
+    legs.push(`gql:${url ? "ok" : "miss"}:${Date.now() - t0}ms`);
+    if (url) return { url, exp: expOfSignedUrl(url), source: "gql", legs, siblings: {} };
+  } catch (e) {
+    legs.push(`gql:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t0}ms`);
+  }
+  const t1 = Date.now();
+  try {
+    const page = await resolveFromEditionPage(renderId);
+    const hit = page?.[variant];
+    // Keep 5 min spare; a signature with a minute or less of that left is no answer.
+    const ok = hit != null && hit.exp - now() - 300 > 60;
+    legs.push(`edition-page:${ok ? "ok" : "miss"}:${Date.now() - t1}ms`);
+    const siblings: Partial<Record<Variant, EditionPageMedia>> = {};
+    for (const [k, m] of Object.entries(page ?? {}) as Array<[Variant, EditionPageMedia]>) {
+      if (k !== variant && m.exp - now() > STORE_SERVE_MIN_LEFT_S) siblings[k] = m;
+    }
+    if (ok) return { url: hit.url, exp: hit.exp, source: "edition-page", legs, siblings };
+    return { url: null, exp: null, source: "none", legs, siblings };
+  } catch (e) {
+    legs.push(`edition-page:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t1}ms`);
+  }
+  return { url: null, exp: null, source: "none", legs, siblings: {} };
+}
+
+async function storeResolved(renderId: string, variant: Variant, r: Resolved): Promise<void> {
+  const writes: Array<Promise<boolean>> = [];
+  if (r.url && r.exp != null && r.source !== "none") {
+    writes.push(writeSignedMedia(renderId, variant, r.url, r.exp, r.source));
+  }
+  for (const [k, m] of Object.entries(r.siblings) as Array<[Variant, EditionPageMedia]>) {
+    writes.push(writeSignedMedia(renderId, k, m.url, m.exp, "edition-page"));
+  }
+  await Promise.all(writes);
+}
+
+// Run `task` after the response. Outside a request scope (unit tests) `after` throws: run it inline
+// detached instead — a refresh is best-effort either way and never changes this response.
+function afterResponse(task: () => Promise<void>): void {
+  const guarded = () => task().catch(() => undefined);
+  try {
+    after(guarded);
+  } catch {
+    void guarded();
+  }
 }
 
 export async function GET(
@@ -136,44 +201,26 @@ export async function GET(
   const now = () => Math.floor(Date.now() / 1000);
   const stored = await readSignedMedia(renderId, variant);
   if (stored && stored.exp - now() > STORE_SERVE_MIN_LEFT_S) {
+    if (stored.exp - now() < STORE_REFRESH_AHEAD_S) {
+      afterResponse(async () => {
+        const r = await resolveFresh(renderId, variant);
+        await storeResolved(renderId, variant, r);
+      });
+    }
     return redirectTo(stored.url, Math.min(CACHE_SECONDS, stored.exp - now() - 300), "store");
   }
 
   // Which leg answered and how long each took: a miss or a slow request logs every leg.
-  const legs: string[] = [];
-  let source: "gql" | "edition-page" | "store-stale" | "none" = "none";
-  let url: string | null = null;
-  let exp: number | null = null;
   const t0 = Date.now();
-  try {
-    url = await resolveSignedUrl(renderId, variant);
-    legs.push(`gql:${url ? "ok" : "miss"}:${Date.now() - t0}ms`);
-    if (url) {
-      source = "gql";
-      exp = expOfSignedUrl(url);
-    }
-  } catch (e) {
-    url = null;
-    legs.push(`gql:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t0}ms`);
-  }
+  const fresh = await resolveFresh(renderId, variant);
+  const legs = fresh.legs;
+  let source: "gql" | "edition-page" | "store-stale" | "none" = fresh.source;
+  let url: string | null = fresh.url;
+  const exp: number | null = fresh.exp;
   // Cache for CACHE_SECONDS unless a fallback signature expires sooner (keep 5 min spare).
   let cacheSeconds = CACHE_SECONDS;
-  if (!url) {
-    const t1 = Date.now();
-    try {
-      const page = await resolveFromEditionPage(renderId, variant);
-      const left = page ? page.exp - now() - 300 : 0;
-      if (page && left > 60) {
-        url = page.url;
-        exp = page.exp;
-        cacheSeconds = Math.min(CACHE_SECONDS, left);
-        source = "edition-page";
-      }
-      legs.push(`edition-page:${url ? "ok" : "miss"}:${Date.now() - t1}ms`);
-    } catch (e) {
-      url = null;
-      legs.push(`edition-page:error(${e instanceof Error ? e.name : "unknown"}):${Date.now() - t1}ms`);
-    }
+  if (url && source === "edition-page" && exp != null) {
+    cacheSeconds = Math.min(CACHE_SECONDS, exp - now() - 300);
   }
   // Every upstream failed: a stored signature with at least 6 min left still beats a placeholder.
   if (!url && stored && stored.exp - now() > 360) {
@@ -190,9 +237,12 @@ export async function GET(
     // <img> onError can fall back to a placeholder tile.
     return NextResponse.json({ error: "not found" }, { status: 404, headers: { "x-pinnacle-image-source": source } });
   }
-  // Remember a FRESH signature (never re-write one we just served from the store).
-  if ((source === "gql" || source === "edition-page") && exp != null) {
-    await writeSignedMedia(renderId, variant, url, exp, source);
+  // Remember a FRESH signature and the sibling variants the same page read carried (never re-write
+  // one we just served from the store).
+  if (source === "gql" || source === "edition-page") {
+    await storeResolved(renderId, variant, fresh);
+  } else {
+    await storeResolved(renderId, variant, { ...fresh, url: null });
   }
   return redirectTo(url, cacheSeconds, source);
 }

@@ -36,15 +36,16 @@ export interface EditionPageMedia {
 }
 
 /**
- * Pick this render's signed asset URL for `variant` out of an edition page's HTML.
- * Returns null when the page carries no asset for THIS render (never another pin's).
+ * Every variant of THIS render that an edition page carries, keyed by variant (each resolved by
+ * the same preference order as `signedMediaFromEditionPage`). One page read holds all three, so the
+ * route stores the siblings too and a later request for another variant skips the slow page.
  */
-export function signedMediaFromEditionPage(
+export function allSignedMediaFromEditionPage(
   html: string,
   renderId: string,
-  variant: PinnacleImageVariant,
-): EditionPageMedia | null {
-  if (!html || !RENDER_ID_RE.test(renderId)) return null
+): Partial<Record<PinnacleImageVariant, EditionPageMedia>> {
+  const out: Partial<Record<PinnacleImageVariant, EditionPageMedia>> = {}
+  if (!html || !RENDER_ID_RE.test(renderId)) return out
   // renderId passed the allowlist above, so it holds only [A-Za-z0-9-] — no regex metacharacters.
   const re = new RegExp(
     `https://assets\\.disneypinnacle\\.com/render/${renderId}/([a-z_]+\\.png)\\?exp=([0-9]{9,11})(?:\\\\u0026|&amp;|&)sig=([0-9a-f]{16,128})`,
@@ -60,9 +61,26 @@ export function signedMediaFromEditionPage(
       })
     }
   }
-  for (const file of FILE_ORDER[variant]) {
-    const hit = found.get(file)
-    if (hit) return hit
+  for (const variant of Object.keys(FILE_ORDER) as PinnacleImageVariant[]) {
+    for (const file of FILE_ORDER[variant]) {
+      const hit = found.get(file)
+      if (hit) {
+        out[variant] = hit
+        break
+      }
+    }
   }
-  return null
+  return out
+}
+
+/**
+ * Pick this render's signed asset URL for `variant` out of an edition page's HTML.
+ * Returns null when the page carries no asset for THIS render (never another pin's).
+ */
+export function signedMediaFromEditionPage(
+  html: string,
+  renderId: string,
+  variant: PinnacleImageVariant,
+): EditionPageMedia | null {
+  return allSignedMediaFromEditionPage(html, renderId)[variant] ?? null
 }

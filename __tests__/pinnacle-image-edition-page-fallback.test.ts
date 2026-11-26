@@ -193,8 +193,49 @@ describe("GET /api/public/pinnacle-image/[renderId] — edition-page fallback", 
     const res = await GET(req(), params())
     expect(res.headers.get("x-pinnacle-image-source")).toBe("edition-page")
     expect(res.headers.get("location")).toContain(`/render/${RID}/front.png?exp=${FUTURE}`)
-    expect(store.writes).toHaveLength(1)
+    // Re-pinned 2026-11-25 (evening): the same page read also stores the sibling variants (here both fall
+    // back to front.png, exactly what the route would serve for them). The ASKED variant is written first.
     expect(store.writes[0]).toMatchObject({ renderId: RID, variant: "front", exp: FUTURE, source: "edition-page" })
+    expect(store.writes.map((w) => w.variant).sort()).toEqual(["front", "quarter", "thumb"])
+  })
+
+  it("one edition-page read stores every variant of THIS render — never another pin's", async () => {
+    stub(new Response(asset(OTHER, "front_cropped.png") + asset(RID, "front.png") + asset(RID, "main.png") + asset(RID, "front_cropped.png"), { status: 200 }))
+    const res = await GET(req(), params())
+    expect(res.headers.get("x-pinnacle-image-source")).toBe("edition-page")
+    const byVariant = Object.fromEntries(store.writes.map((w) => [w.variant, w.url]))
+    expect(byVariant.front).toContain(`/render/${RID}/front.png?`)
+    expect(byVariant.quarter).toContain(`/render/${RID}/main.png?`)
+    expect(byVariant.thumb).toContain(`/render/${RID}/front_cropped.png?`)
+    expect(store.writes.every((w) => w.renderId === RID && !w.url.includes(OTHER))).toBe(true)
+  })
+
+  it("a sibling whose signature is near expiry is not stored", async () => {
+    const soon = Math.floor(Date.now() / 1000) + 900
+    stub(new Response(asset(RID, "front.png") + asset(RID, "main.png", soon) + asset(RID, "front_cropped.png", soon), { status: 200 }))
+    await GET(req(), params())
+    // quarter/thumb resolve to the near-expiry files (their preferred ones), so neither is stored.
+    expect(store.writes.map((w) => w.variant)).toEqual(["front"])
+  })
+
+  it("⚠ serves a stored signature with under 8 h left IMMEDIATELY, then refreshes it after the response", async () => {
+    store.row = { url: "https://stored/front.png", exp: Math.floor(Date.now() / 1000) + 4 * 3600 }
+    stub(new Response(asset(RID, "front.png"), { status: 200 }))
+    const res = await GET(req(), params())
+    expect(res.headers.get("x-pinnacle-image-source")).toBe("store")
+    expect(res.headers.get("location")).toBe("https://stored/front.png")
+    await vi.waitFor(() => expect(store.writes.some((w) => w.variant === "front" && w.exp === FUTURE)).toBe(true))
+  })
+
+  it("a background refresh that fails writes nothing and never touches the served response", async () => {
+    store.row = { url: "https://stored/front.png", exp: Math.floor(Date.now() / 1000) + 4 * 3600 }
+    stub(new Response("nope", { status: 403 }))
+    const res = await GET(req(), params())
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toBe("https://stored/front.png")
+    await vi.waitFor(() => expect(fetched.length).toBe(2))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(store.writes).toEqual([])
   })
 
   it("stores a GraphQL signature with the exp from its url, and the variant asked for", async () => {
