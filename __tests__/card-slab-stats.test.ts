@@ -96,6 +96,13 @@ describe("fetchCardSlabStats", () => {
     })
     const r = await fetchCardSlabStats({ id: "e2", collection_slug: "panini_blockchain", set_name: "Base Prizms Silver", external_id: "packcard-1618_1_2_3", player_names: ["Jayson Tatum"] }, c as never)
     expect(r.ok && r.stats?.season?.title).toBe("2021-22 season")
+    // the card's own set name wins when it names a season (Tatum's Net Marvels sits in a "2021 …" NBA product)
+    const t = client({
+      rpc: { data: { league: "nba", espn_league: "nba", rows: [avg] }, error: null },
+      prod: { data: { name: "2021 Panini Blockchain NBA Packs Prizm Entertainment" }, error: null },
+    })
+    const tr = await fetchCardSlabStats({ id: "e3", collection_slug: "panini_blockchain", set_name: "BC 2021-22 Donruss Net Marvels", external_id: "packcard-1587_290609_7625797_19", player_names: ["Jayson Tatum"] }, t as never)
+    expect(tr.ok && tr.stats?.season?.title).toBe("2021-22 season")
     // a failed product read is a failed read
     const d = client({ rpc: { data: { league: "nba", rows: [avg] }, error: null }, prod: { data: null, error: { message: "boom" } } })
     expect((await fetchCardSlabStats({ id: "e2", collection_slug: "panini_blockchain", set_name: "Base", external_id: "packcard-1618_1", player_names: ["Jayson Tatum"] }, d as never)).ok).toBe(false)
