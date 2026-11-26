@@ -13,6 +13,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~9:15 AM PT · 🔧 SHIPPED (UI copy) — UFC binder: the Flow table no longer says "No moments found for this wallet on this collection" under a collector's Aptos holdings; banner drops "RPC prices are paused" (Claude Code cloud; Trevor: "Keep going")
+
+- **Found by a rendered-DOM check** of /ufc/collection?wallet=0xaf78…fe85 (RRX69, linked by Moment identity this morning). The "On Aptos · Current FMV $6,936.71 · 1,855 moments" panel renders, with no page errors.
+- **Two false claims on the same page:**
+  - The main moment table (Flow holdings only) said "No moments found for this wallet on this collection." directly under those 1,855 Aptos Moments.
+  - The banner I wrote at 7:20 AM said "RPC prices are paused for UFC" above a $6,936.71 FMV. The binder values UFC holdings at current FMV (Trevor, 2026-11-15).
+- **Fix:**
+  - `UFC_FLOW_TABLE_EMPTY` in `lib/ufc-aptos.ts` ("No UFC Strike moments found on Flow for this wallet. This table lists Flow holdings only — UFC Strike moved to Aptos.") is used by both table branches (desktop + mobile) on UFC. It promises nothing about the Aptos panel, which unlinked wallets don't get.
+  - The banner sentence is removed.
+- Proof: `__tests__/component-CollectionMomentTable.test.tsx` has +2 cases (mobile/desktop). Planting the defect back turns 2 red. Related suites 74/74. `npm run preflight` 7/7 green.
+- Revert: `git revert` the code commit (copy only).
+
 ### 2026-11-26 ~9:15 AM PT · 📝 docs — UFC null edition_key scheduled verify: confirmed 0 unkeyed (Claude Code cloud, scheduled)
 - Read-only re-check of inbox `2026-11-24T0114Z`: UFC wmc NULL `edition_key` = 0 estate-wide; both wallets 0 (249/249, 106/106). Appended a dated ✅ note to the filing; INDEX already RESOLVED. Revert: drop the appended section.
 
