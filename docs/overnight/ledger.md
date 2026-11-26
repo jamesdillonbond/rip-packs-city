@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~8:20 PM PT · 🔧 SHIPPED (code) — Moment slab back: an NFL season shows the player's own side of the ball (Claude Code cloud; Trevor's 3-hour "keep going")
+
+- First All Day game lines landed 8:05 PM PT (52 players, 138 lines): 318 / 318 covered All Day editions resolve, each on the same US date and against one of the edition's two recorded teams. Live QA (Davante Adams, /moment/10613719?collection=nfl_all_day&slab=1): "@ CHI · W 20-17 OT · Playoffs" with 2 REC / 24 YDS — and a season line ending "1 TKL".
+- `lib/slab-stats.ts` `footballSeasonChips`: the leading category decides the side of the ball. Defense joins only when it leads; another offensive category joins only with ≥ 10 % of the lead's yards (a mobile QB's rushing, an RB's receiving stay; a WR's 2 carries and 1 special-teams tackle go). Three tests; receiver + defender fail on the old code.
+- Also measured: on Top Shot Moments whose description states "N points", the chosen game agrees on 569 / 649; every one of 14 sampled disagreements was the regex catching another number (a lead, a teammate, a record) or a Top Shot copy figure ESPN's box score disagrees with — none was a wrong game.
+- Revert: `git revert` the code commit (find by message "NFL season shows the player's own side of the ball").
+
 ### 2026-11-25 ~8:25 PM PT · 🔧 SHIPPED (code) — Panini pack market stops printing a rounded-to-zero edge as "$0.00 vs cost" (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter")
 
 - Found by a rendered-DOM sweep of 28 public pages (Playwright; every other page clean of NaN / undefined / $0.00, apart from chart-axis and Recharts measurement spans). `/panini-blockchain/packs`, New Yolk City Green: EV (mean) $14.12 on a $14 floor, edge line "$0.00 vs cost". `panini_pack_ev_board.net_rip_edge_usd` is `round(ev − cost)`, i.e. WHOLE DOLLARS, and the card printed it with cents: a rounded 0 read as an exact break-even, and "+$1.00" covered anything from +$0.50 to +$1.49.
