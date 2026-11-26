@@ -13,6 +13,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~9:05 PM PT · 🗄 APPLIED (`20261126044653`) + 🔧 script — UFC Aptos listings keyed per Moment: a Rarible bundle is one listing object holding several Moments (Claude Code cloud; Trevor: "push to main. Fix any issues you encountered")
+
+- **Failure.** The second listings run (dispatch 45756488480, ~8:45 PM PT) scanned fine after the 8:35 fix, then died on its first upsert: 21000 "ON CONFLICT DO UPDATE command cannot affect row a second time". The cause is that `ufc_aptos_listings` was keyed on `listing_address` alone, and a bundle's Moments all share one listing address. Nothing was written: count 0, cursor NULL.
+- **Migration:** PK → `(listing_address, token_data_id)`. The table was empty (count verified 0). There are no functions, and the view is untouched. Verified live: `PRIMARY KEY (listing_address, token_data_id)`.
+- **Script changes:**
+  - The upsert is `onConflict: listing_address,token_data_id`, deduped per window.
+  - The liveness re-check deletes and stamps exact (listing, token) pairs. Keyed on the address alone, it would retire or vouch for bundle siblings it never re-read.
+  - Paged reads add a `token_data_id` tiebreak.
+- Proof: `npm run preflight` 6/6 green. Verify with the next apply run: `pipeline_runs` `ufc-aptos-listings`, `count(*) from ufc_aptos_listings`.
+- Revert: `truncate public.ufc_aptos_listings; alter table public.ufc_aptos_listings drop constraint ufc_aptos_listings_pkey, add constraint ufc_aptos_listings_pkey primary key (listing_address);` then revert the script commit.
+
 ### 2026-11-25 ~8:35 PM PT · 🔧 SHIPPED (script fix + edition page) — UFC Aptos listings lane fixed after its first run failed; UFC edition pages show "Lowest ask · Aptos" (Claude Code cloud; Trevor: "push to main. Fix any issues you encountered")
 
 - **Failure.** The first run of `ufc-aptos-listings` (dispatch 45751763245, 7:59 PM PT) died with `gave up …/graphql`: the indexer 408s at OFFSET 0 on a window where the filter matches nothing, because it scans the whole 40M-version range. The 11-16 draft started at UFC's first mint (v3.18B), 4B versions before Rarible existed on Aptos. Cursor stayed NULL; nothing was written.
