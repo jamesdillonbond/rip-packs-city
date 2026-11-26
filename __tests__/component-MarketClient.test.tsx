@@ -1491,3 +1491,33 @@ describe("MarketClient — one retry on a cold-read 503/504", () => {
     expect(marketCalls()).toBe(1)
   })
 })
+
+describe("MarketClient — a league / brand pick stays in the address on every collection that has the bar", () => {
+  afterEach(() => {
+    PARAMS.collection = "nba-top-shot"
+    window.history.replaceState(null, "", "/")
+  })
+
+  it("Candy: a deep-linked ?property= survives the first URL write (it was written for Panini only)", async () => {
+    PARAMS.collection = "candy-mlb"
+    window.history.replaceState(null, "", "/?property=dc")
+    render(<MarketClient />)
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    expect(replace.mock.calls.some((c) => String(c[0]).includes("property=dc"))).toBe(true)
+  })
+
+  it("Panini: the same deep link still survives", async () => {
+    PARAMS.collection = "panini-blockchain"
+    window.history.replaceState(null, "", "/?property=nba")
+    render(<MarketClient />)
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    expect(replace.mock.calls.some((c) => String(c[0]).includes("property=nba"))).toBe(true)
+  })
+
+  it("no-change control: a collection with no bar never writes a property into its address", async () => {
+    window.history.replaceState(null, "", "/?property=dc")
+    render(<MarketClient />)
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    expect(replace.mock.calls.every((c) => !String(c[0]).includes("property="))).toBe(true)
+  })
+})

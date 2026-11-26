@@ -512,8 +512,9 @@ function MarketInner() {
     if (minDiscount) sp.set("minDiscount", minDiscount)
     if (debouncedPlayer) sp.set("player", debouncedPlayer)
     if (ownedFilter !== "all") sp.set("owned", ownedFilter)
-    if (collectionId === "panini-blockchain") {
-      // Keep the scope in the query. Until the scope index has loaded, keep whatever the visitor arrived
+    if (hasScope) {
+      // Keep the scope in the query (Panini AND Candy — this said Panini only until 11-26, so a Candy pick
+      // filtered the list and vanished from the address on the next write). Until the scope index has loaded, keep whatever the visitor arrived
       // with — this effect runs on the first paint and must not strip a deep-linked ?property=.
       let scopeSlug = paniniScope.slug
       if (!scopeSlug && !paniniScope.index) {
@@ -528,7 +529,7 @@ function MarketInner() {
     if (view === "grid") sp.set("view", "grid")
     const qs = sp.toString()
     try { router.replace(qs ? `?${qs}` : "?", { scroll: false }) } catch { /* ignore */ }
-  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, effectiveSort, page, view, router, collectionId, paniniScope.slug, paniniScope.index])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, effectiveSort, page, view, router, collectionId, hasScope, paniniScope.slug, paniniScope.index])
 
   // ── Thin-volume notice — reads /api/ready's per_collection array ─────
   const [healthRow, setHealthRow] = useState<HealthPerCollection | null>(null)
