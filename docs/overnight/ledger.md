@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~11:52 AM PT · 🔧 SHIPPED — Pinnacle pin slab back adds the live market (Floor ask · % listed); soccer lane mid-backfill read (Claude Code cloud; Trevor: "Keep going")
+
+- **Pin back:** adds **Floor ask** (`ed.floor_ask`, the same number as the page's own "Floor ask" card) and **Listed** (the page's `pctListed`). A failed listings read shows no row; tracked holders are left off because that number needs its "not every holder" caveat.
+- **Soccer lane read at ~11:45 AM:**
+  - Discovery 1,172 / 1,245 done. Pairs: 27 ok, 116 mismatch, 5 ESPN 500s (retried ≤3×).
+  - All 116 mismatches are ESPN answering with the same team in a different league, i.e. that team never played that competition (a club asked for the World Cup).
+  - 8,160 team × competition requests in total at 20/min, so the backfill ends ~7 PM PT. The 2:23 PM check is still scheduled.
+- **Revert:** `git revert` the code commit (message "pin slab back market rows").
+
 ### 2026-11-26 ~11:44 AM PT · 🗄 APPLIED (`20261126194428`, hotfix `20261126194735`) — the saved-wallet cache (dashboard tiles, Portfolio FMV, profile, share card, weekly email) counts UFC Strike Moments on linked Aptos accounts; ⚠ the first apply broke aggregate_saved_wallet_stats for ~3 min (Claude Code cloud; Trevor: "Keep going")
 - `aggregate_saved_wallet_stats` unions the Aptos Moments linked to a saved Flow address into its UFC row (valued at edition_fmv_current, same stale split as the binder). `reconcile_all_saved_wallet_stats` no longer zeroes a UFC row held only on Aptos and queues it (new SECDEF helper `ufc_aptos_holds_any`, anon/authenticated revoked). Re-aggregated the 4 affected rows at once: edogg1976 0 → 188 UFC Moments ($157.80), pashock8 0 → 14 ($8.17), awesemo 0 → 132 ($71.05), rrx69 0 → 1,855 ($4,906.27).
 - ⚠ **Incident, 11:44:28 → 11:47:35 AM PT:** `194428` put `editions.tier` (tier_type) beside `wallet_moments_cache.tier` (text) in a UNION, so every aggregate call raised 42804 — for every wallet. Caught on my first call; `194735` casts it (`e.tier::text`). Impact checked: jobid 259 had run at 11:44:00–11:44:13 (before the apply), Postgres logs show exactly one 42804 in the window (my own call), no pipeline_runs errors. Why it slipped: the reconcile pin STUBS this function and nothing pinned the real body — it is pinned now (`supabase/tests/aggregate_saved_wallet_stats.sql`, real enum column types; deleting the cast reds it with the same 42804).
