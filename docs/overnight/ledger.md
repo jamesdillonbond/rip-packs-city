@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~3:13 PM PT · 🔧 SHIPPED — **Panini squeeze board: League chips; Candy squeeze: the set picker is grouped by brand** (Cowork cloud; Trevor: "Do it all")
+
+- **Panini squeeze (`/insights/panini-squeeze`):** League chips beside the Rookies toggle, with row counts. The whole board is on the client, so narrowing is exact; a row is placed by the product id in its card key (`external_id` added to the board's default read — a stored board snapshot from before this deploy has no key, so the chips appear once it refreshes). A failed chip read shows none and filters nothing.
+- **Candy squeeze (`/insights/candy-squeeze` and its per-set pages):** the "All sets" list sits under brand headings (MLB, DC, NASCAR …) from `candy_collections.property_slug`; flat as before if that read fails.
+- **Revert:** `git revert` the code commit (find by message "insights: league chips on the Panini squeeze board"). No DB change.
+
 ### 2026-11-26 ~3:06 PM PT · 🔧 SHIPPED — **Candy Binder filters by league or brand (the chips are now a filter, not just a count)** (Cowork cloud; Trevor: "Do it all")
 
 - **What:** the Binder's "League or brand" chips (All · MLB · DC …, each with the wallet's card count) now filter the list: a pick re-reads page 1 with `property=<slug>`, and auto-pagination and Load More carry it. A new search starts unfiltered.
