@@ -444,7 +444,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse", fontFamily: mono, fontSize: 11 }}>
+            <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontFamily: mono, fontSize: 11 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontSize: 9 }}>
                   <Th>Pack</Th>
