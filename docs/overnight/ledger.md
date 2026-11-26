@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 ~12:05 PM PT · 🔧 SHIPPED — **One league / brand scope across the Panini tabs (`?property=`): Market, Packs, Sets, Sniper, Collection; Analytics says it is not split** (Cowork cloud; Trevor: "Do it all")
+
+- **What:** a "League or brand" chip row (`components/collection/PaniniScopeBar.tsx`, hook `usePaniniScope`) — All · FIFA World Cup · NBA · … with each tab's own row counts. The choice is written to `?property=<slug>` and remembered in localStorage, so it follows the visitor from tab to tab. Sniper, Packs, the Sets product picker and Collection filter their own rows by the Panini set id each row carries (`lib/panini/scope.ts`); Market passes the slug to `/api/market`, which resolves it with `panini_property_set_ids` and narrows the board at the source (exact set id re-checked on the rows). The sport chips remain only as the fallback when the scope index cannot be read.
+- **New public read:** `GET /api/panini-properties` (league / brand list + set id map; catalogue data, no session; in the proxy's public list). `/api/panini-pack-market` rows now carry `productSetId`.
+- **Honesty:** a failed index read filters nothing and a scoped arrival is told so; an unknown `?property=` on Market is a 400 and a failed lookup a 503, never the whole board under the league's name; a remembered slug the index no longer knows is dropped; Analytics (not split by league) says so and links the league's page.
+- **Tests:** `__tests__/panini-scope.test.tsx`, four cases added to `__tests__/api-market-panini-arm.test.ts`.
+- **Revert:** `git revert` the commit titled "panini: one league / brand scope across the tabs". No DB half.
+
 ### 2026-11-26 ~11:57 AM PT · 🔧 SHIPPED (fix) — a pin with none listed read "Listed <0.1%" on its slab back; now "0%" (Claude Code cloud; Trevor: "Keep going")
 
 - Found on the live check of the 11:52 AM ship: Qui-Gon Jinn vs. Darth Maul (a 1-of-1, none listed) read "<0.1%". The `< 0.1` branch also caught exactly zero. The page's own listed line only renders when something is listed, so it was not affected.
