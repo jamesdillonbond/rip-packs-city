@@ -37,6 +37,7 @@ import WalletFollowButton from "@/components/profile/WalletFollowButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
 import { collectionViewStorageKey, legacySharedFilterKey, SCOPED_VIEW_FIELDS, type ViewField } from "@/lib/collection-view-storage"
 import DealWatchCapture from "@/components/DealWatchCapture"
+import { LeagueSplitStrip } from "@/components/dashboard/LeagueSplitLine"
 import { useMobile } from "@/components/collection/use-mobile"
 import {
   type MomentRow,
@@ -1758,6 +1759,8 @@ function WalletMomentsBody() {
         {/* role=status: a failed lookup (or the UFC scan progress this box also
             carries) is announced, not only painted (2026-11-07). */}
         {error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
+        {/* 2026-11-26: Candy is nine brands — what this wallet holds of each (not a filter; see the component). */}
+        {collectionSlug === "candy-mlb" && !error && isValidAddressForChain(activeWallet, "solana") ? <LeagueSplitStrip publisher="candy" owner={activeWallet} collection={collectionSlug} /> : null}
         {candyLiveNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-live-note">{candyLiveNote}</div> : null}
         {candyOtherNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-other-note">{candyOtherNote}</div> : null}
         {/* The RESULT is announced too (2026-11-07): after Enter, focus stays in

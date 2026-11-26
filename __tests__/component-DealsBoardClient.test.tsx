@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 // DealsBoardClient is the public /insights/deals surface (~950 lines) — the
 // cross-collection "listed below FMV" board across Top Shot / All Day / Pinnacle,
@@ -161,3 +161,50 @@ describe("DealsBoardClient — an accent-resolved player drill-down", () => {
     window.history.pushState({}, "", "/")
   })
 })
+
+// 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+describe("DealsBoardClient — league / brand pills", () => {
+  const index = { properties: [{ slug: "fifa-world-cup", name: "FIFA World Cup", heading: "leagues", sort_order: 10 }, { slug: "nba", name: "NBA", heading: "leagues", sort_order: 20 }], setProperty: {} }
+  function stub(indexOk = true) {
+    const calls: string[] = []
+    vi.stubGlobal("fetch", vi.fn((input: unknown) => {
+      const url = String(input)
+      calls.push(url)
+      const isIndex = url.includes("-properties")
+      return Promise.resolve({
+        ok: isIndex ? indexOk : true,
+        status: isIndex && !indexOk ? 503 : 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => (isIndex ? index : { rows: [], meta: { fetched_at: null, data_as_of: null, total_rows: 0, elapsed_ms: 1 } }),
+        text: async () => JSON.stringify(isIndex ? index : { rows: [] }),
+      } as Response)
+    }))
+    return calls
+  }
+  it("shows no league row until Panini or Candy is picked, then sends the pick as ?property= and drops it on a collection change", async () => {
+    const calls = stub()
+    const { getByRole, queryByTestId, findByTestId } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
+    expect(queryByTestId("deals-league-pills")).toBeNull()
+    fireEvent.click(getByRole("tab", { name: "Panini" }))
+    const pills = await findByTestId("deals-league-pills")
+    expect(pills.getAttribute("aria-label")).toBe("League or brand")
+    expect([...pills.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["All", "FIFA World Cup", "NBA"])
+    expect(pills.textContent?.toLowerCase()).not.toContain("property")
+    fireEvent.click(getByRole("button", { name: "NBA" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=panini_blockchain") && u.includes("property=nba"))).toBe(true))
+    expect(getByRole("button", { name: "NBA" }).getAttribute("aria-pressed")).toBe("true")
+    calls.length = 0
+    fireEvent.click(getByRole("tab", { name: "Candy" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=candy_mlb"))).toBe(true))
+    expect(calls.some((u) => u.includes("property="))).toBe(false)
+  })
+  it("a failed league read leaves the row out and the board unfiltered", async () => {
+    const calls = stub(false)
+    const { getByRole, queryByTestId } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
+    fireEvent.click(getByRole("tab", { name: "Panini" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=panini_blockchain"))).toBe(true))
+    expect(queryByTestId("deals-league-pills")).toBeNull()
+    expect(calls.some((u) => u.includes("property="))).toBe(false)
+  })
+})
+

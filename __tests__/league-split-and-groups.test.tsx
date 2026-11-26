@@ -22,7 +22,7 @@ import { toPropertyGroups, readPaniniPropertyGroups, toPropertyPage } from "@/li
 import { groupPlural } from "@/lib/property-words"
 import PaniniPropertyBody from "@/components/entity/PaniniPropertyBody"
 import { toLeagueSplit, leagueSplitLine } from "@/lib/league-split"
-import LeagueSplitLine from "@/components/dashboard/LeagueSplitLine"
+import LeagueSplitLine, { LeagueSplitStrip } from "@/components/dashboard/LeagueSplitLine"
 import { GET } from "@/app/api/league-split/route"
 import { isPublicPath } from "@/proxy"
 
@@ -107,6 +107,25 @@ describe("league split", () => {
     cleanup()
     fj.ok = false
     const failed = render(<LeagueSplitLine publisher="candy" owner="W" />)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(failed.container.innerHTML).toBe("")
+  })
+  it("the Binder strip links every brand's page and counts what is not placed; one brand or a failed read is nothing", async () => {
+    fj.json = raw
+    const ok = render(<LeagueSplitStrip publisher="candy" owner="W" collection="candy-mlb" />)
+    await waitFor(() => expect(ok.queryByTestId("league-split-strip")).not.toBeNull())
+    const strip = ok.getByTestId("league-split-strip")
+    expect([...strip.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["/candy-mlb/property/nfl", "/candy-mlb/property/nba", "/candy-mlb/property/wnba", "/candy-mlb/property/wwe"])
+    expect(strip.textContent).toContain("203 not placed")
+    expect(strip.textContent?.toLowerCase()).not.toContain("property")
+    cleanup()
+    fj.json = { cards_total: 5, unplaced: 0, leagues: [{ slug: "mlb", name: "MLB", cards: 5 }] }
+    const one = render(<LeagueSplitStrip publisher="candy" owner="W" collection="candy-mlb" />)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(one.container.innerHTML).toBe("")
+    cleanup()
+    fj.ok = false
+    const failed = render(<LeagueSplitStrip publisher="candy" owner="W" collection="candy-mlb" />)
     await new Promise((r) => setTimeout(r, 10))
     expect(failed.container.innerHTML).toBe("")
   })

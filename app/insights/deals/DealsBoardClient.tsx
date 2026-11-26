@@ -25,6 +25,8 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
+import { fetchJson } from "@/lib/analytics/fetch-json"
+import { SCOPE_SOURCES, toScopeIndex, type PaniniScopeOption } from "@/lib/panini/scope"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -260,6 +262,25 @@ export default function DealsBoardClient({
   // public JSON API is unchanged); the board just never sends it.
   const [sort, setSort] = useState<SortKey>("discount")
   const [setFilter, setSetFilter] = useState<string | null>(null)
+  // 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+  // `leagueFor` remembers which collection the pick was made under, so switching collection drops it without
+  // an effect (a Panini league must never be sent with collection=candy_mlb).
+  const [leaguePick, setLeaguePick] = useState<{ collection: string; slug: string } | null>(null)
+  const league = leaguePick && leaguePick.collection === collection ? leaguePick.slug : ""
+  const [leagueIndex, setLeagueIndex] = useState<{ collection: string; options: PaniniScopeOption[] } | null>(null)
+  const leagueSource = collection === "panini_blockchain" ? "panini" : collection === "candy_mlb" ? "candy" : null
+  useEffect(() => {
+    if (!leagueSource) return
+    let cancelled = false
+    // A failed read leaves the row out (the board stays unfiltered and says nothing about leagues).
+    fetchJson<unknown>(SCOPE_SOURCES[leagueSource].endpoint).then((r) => {
+      if (cancelled) return
+      const index = r.ok ? toScopeIndex(r.json) : null
+      if (index) setLeagueIndex({ collection, options: index.properties })
+    })
+    return () => { cancelled = true }
+  }, [leagueSource, collection])
+  const leagueOptions = leagueIndex && leagueIndex.collection === collection ? leagueIndex.options : []
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
   const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
 
@@ -300,6 +321,7 @@ export default function DealsBoardClient({
         params.set("min_discount", setFilter || playerFilter ? "0" : "10")
         if (tier !== "ALL") params.set("tier", tier)
         if (collection !== "ALL") params.set("collection", collection)
+        if (league) params.set("property", league)
         if (setFilter) params.set("set", setFilter)
         if (playerFilter) params.set("player", playerFilter)
         const r = await fetch(`/api/public/insights/deals?${params.toString()}`, {
@@ -325,7 +347,7 @@ export default function DealsBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, tier, collection, setFilter, playerFilter])
+  }, [sort, tier, collection, league, setFilter, playerFilter])
 
   // ⚠ "Asks refresh continuously" USED TO BE FIXED COPY, and it is a claim about
   // system behaviour, not a slogan. It is TRUE in steady state (offers-sweep
@@ -495,6 +517,26 @@ export default function DealsBoardClient({
             </button>
           ))}
         </div>
+
+        {leagueOptions.length >= 2 ? (
+          <div className="rpc-dl-pill-group" role="group" aria-label="League or brand" data-testid="deals-league-pills">
+            <span className="rpc-dl-pill-label">LEAGUE</span>
+            <button type="button" aria-pressed={league === ""} className={`rpc-dl-pill ${league === "" ? "rpc-dl-pill-active" : ""}`} onClick={() => setLeaguePick(null)}>
+              All
+            </button>
+            {leagueOptions.map((o) => (
+              <button
+                key={o.slug}
+                type="button"
+                aria-pressed={league === o.slug}
+                className={`rpc-dl-pill ${league === o.slug ? "rpc-dl-pill-active" : ""}`}
+                onClick={() => setLeaguePick({ collection, slug: o.slug })}
+              >
+                {o.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="rpc-dl-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
           {TIERS.map((t) => (

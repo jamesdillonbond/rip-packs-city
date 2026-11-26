@@ -49,6 +49,7 @@
 //                                                 passes 10)
 //   confidence=HIGH|MEDIUM                         single confidence filter
 //   set=<text>                                    ilike match on set_name
+//   property=<slug>                               league / brand (2026-11-26); needs collection=panini_blockchain|candy_mlb
 //   player=<text>                                 ilike match on player_name
 //   sort=discount|fmv|ask|circulation             default discount (biggest %)
 //   limit=<1..200>                                default 50
@@ -70,6 +71,7 @@ import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
 import { fromDbSlug, getCollectionUuid } from "@/lib/collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
+import { cleanScopeSlug, paniniSetIdOf } from "@/lib/panini/scope"
 // Keep in sync with COLLECTIONS in app/insights/deals/DealsBoardClient.tsx.
 // nfl_all_day was missing until 2026-07-28 even though the view has always
 // served it — and it is the board's LARGEST leg (47% of rows at the default
@@ -114,6 +116,41 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `sort must be one of ${[...VALID_SORTS].join(",")}` }, { status: 400 });
   }
 
+  // ── League / brand scope (2026-11-26): ?property=<slug>, for Panini or Candy only ─────────────────────
+  // Resolved BEFORE the board read: an unknown slug (or one on a collection with no leagues) is a 400, a
+  // failed lookup the board's own unavailable response — never the whole collection under a league's name.
+  //   Panini → the league's product ids; rows narrowed at the source by key prefix and re-checked exactly
+  //            (LIKE's `_` is a wildcard, so a longer id sharing the prefix can come back).
+  //   Candy  → the brand's collection names; Candy's leg is small, so it is read whole (clamp-checked) and
+  //            narrowed here, keeping the board's sort. A clamped read is refused, not served short.
+  const propertyRaw = sp.get("property")?.trim() ?? "";
+  let paniniIds: Set<number> | null = null;
+  let candySets: Set<string> | null = null;
+  type ScopeChain = { select: (c: string) => ScopeChain; eq: (c: string, v: string) => ScopeChain; neq: (c: string, v: string) => ScopeChain; order: (c: string, o: { ascending: boolean }) => ScopeChain; limit: (n: number) => PromiseLike<unknown> };
+  const scopeDb = supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<unknown>; from: (t: string) => ScopeChain };
+  if (propertyRaw) {
+    const slug = cleanScopeSlug(propertyRaw);
+    const unknownLeague = () => NextResponse.json({ error: "unknown league or brand for this collection" }, { status: 400 });
+    if (!slug || (collection !== "panini_blockchain" && collection !== "candy_mlb")) return unknownLeague();
+    if (collection === "panini_blockchain") {
+      const ids = await boundedRead(scopeDb.rpc("panini_property_set_ids", { p_slug: slug }), "api/public/insights/deals/panini_property_set_ids");
+      if (ids.error) return boardUnavailable(ids.error, "insights/deals");
+      const list = (Array.isArray(ids.data) ? ids.data : []).map(Number).filter((n: number) => Number.isSafeInteger(n));
+      if (list.length === 0) return unknownLeague();
+      paniniIds = new Set(list);
+    } else {
+      const names = await boundedRead(
+        scopeDb.from("candy_collections").select("name").eq("property_slug", slug).neq("kind", "test").order("address", { ascending: true }).limit(1000),
+        "api/public/insights/deals/candy_property_names",
+      );
+      if (names.error) return boardUnavailable(names.error, "insights/deals");
+      if (!Array.isArray(names.data) || names.data.length >= 1000) return boardUnavailable(new Error("candy property names: a non-list or clamped read"), "insights/deals");
+      if (names.data.length === 0) return unknownLeague();
+      candySets = new Set((names.data as Array<{ name?: unknown }>).map((r) => r.name).filter((n): n is string => typeof n === "string"));
+    }
+  }
+  const CANDY_WINDOW = 1000;
+
   const build = (player: string | null) => {
     let q = (supabase as any)
       .from("cross_collection_deals_board")
@@ -125,13 +162,14 @@ export async function GET(req: NextRequest) {
     if (confidence) q = q.eq("confidence", confidence);
     if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
     if (player) q = q.ilike("player_name", `%${player}%`);
+    if (paniniIds) q = q.or([...paniniIds].map((id) => `external_id.like.packcard-${id}_*`).join(","));
 
     if (sort === "discount") q = q.order("discount_pct", { ascending: false });
     else if (sort === "fmv") q = q.order("fmv_usd", { ascending: false, nullsFirst: false });
     else if (sort === "ask") q = q.order("low_ask", { ascending: true });
     else if (sort === "circulation") q = q.order("circulation_count", { ascending: true, nullsFirst: false });
 
-    return boundedRead(q.limit(limit), "api/public/insights/deals/cross_collection_deals_board");
+    return boundedRead(q.limit(candySets ? CANDY_WINDOW : limit), "api/public/insights/deals/cross_collection_deals_board");
   };
 
   // #207: an accent-only miss ("doncic") is retried with the resolver's single
@@ -146,6 +184,16 @@ export async function GET(req: NextRequest) {
   if (error) {
     return boardUnavailable(error, "insights/deals");
   }
+  let scoped = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>;
+  if (paniniIds) {
+    const ids = paniniIds;
+    scoped = scoped.filter((r) => { const id = paniniSetIdOf(typeof r?.external_id === "string" ? r.external_id : null); return id != null && ids.has(id); });
+  } else if (candySets) {
+    // A window that filled cannot be told from a longer board — refuse rather than serve a brand short.
+    if (scoped.length >= CANDY_WINDOW) return boardUnavailable(new Error("candy deals window clamped under a brand scope"), "insights/deals");
+    const sets = candySets;
+    scoped = scoped.filter((r) => typeof r?.set_name === "string" && sets.has(r.set_name as string)).slice(0, limit);
+  }
 
   const res = NextResponse.json({
     meta: {
@@ -155,12 +203,12 @@ export async function GET(req: NextRequest) {
       // Two MVs feed this board (2026-10-27): the stamp is the leg(s) actually shown, older first.
       data_as_of: await readDealsAsOf(collection),
       source: "cross_collection_deals_board",
-      ...boardRowMeta(data?.length ?? 0, limit),
+      ...boardRowMeta(scoped.length, limit),
       elapsed_ms: Date.now() - startedAt,
-      filters: { collection, tier, min_discount: minDiscount, confidence, set: setFilter, player: playerFilter, sort, limit },
+      filters: { collection, tier, min_discount: minDiscount, confidence, set: setFilter, player: playerFilter, sort, limit, property: propertyRaw || null },
       ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
-    rows: data ?? [],
+    rows: scoped,
   });
   res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
   return res;
