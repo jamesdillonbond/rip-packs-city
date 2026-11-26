@@ -483,7 +483,7 @@ export const THIN_COLLECTION_MISSING_TABS =
 // tab the collection ships) and the other way by
 // __tests__/panini-publish-routes.test.ts (every tab Panini lacks is here).
 export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
-  "ufc/sniper",
+  // "ufc/sniper" left 2026-11-26: UFC's sniper is back as a board of live Aptos asks.
   ...[
     // `packs` left 2026-09-27: Panini's Packs tab is in `pages` (native pack plane).
     // `sets` left 2026-09-27: Panini's Sets tab is in `pages` (/api/panini-set-progress).
