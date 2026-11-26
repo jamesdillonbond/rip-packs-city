@@ -33,6 +33,11 @@ import { tokenMatches } from "@/lib/auth/bearer-secret"
 // Wire a ~20-min cron-job.org entry ONLY if it comes back > 0 (then verify
 // edition_offers gained Golazos rows and spot-check editionId against
 // editions.external_id). See docs/handoff-2026-07-28-golazos-offers-indexer.md.
+// ⚠ WHEN YOU WIRE IT, also DELETE the permanent cursor-stall suppression
+// (`pipeline_alert_suppression` row 'golazos_offers', made permanent 2026-11-26 by
+// migration audit_20261126_golazos_offers_suppression_permanent_by_decision):
+// from then on a frozen cursor is a stall. Do NOT delete event_cursor 'golazos_offers'
+// to silence the alert instead — the `.single()` read below errors on a missing row.
 //
 // Lifecycle (identical OffersV2 contract as AllDay/TopShot):
 //   OfferAvailable(offerId, nftType, offerAmount, offerParamsString{_type,editionId}, ...)
