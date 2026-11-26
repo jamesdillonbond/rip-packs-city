@@ -1287,6 +1287,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/panini-properties",
     // 2026-11-26: the same index for Candy's tabs (catalogue data only: get_candy_property_board).
     "/api/candy-properties",
+    // 2026-11-26: a Panini username's / Solana wallet's cards by league or brand — the same public holdings
+    // the Binder tabs show, grouped. GET-only, no session.
+    "/api/league-split",
     // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
     // the same public listing data Panini's marketplace shows) — same commit.
     "/api/panini-collection",

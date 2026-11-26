@@ -312,3 +312,51 @@ export async function readPaniniPropertyPage(slug: string, db: any = supabaseAdm
 
 /** Shared by the segment layout, generateMetadata and the page: one read per request. */
 export const fetchPaniniPropertyPage = cache((slug: string) => readPaniniPropertyPage(slug))
+
+// ── Teams / nations / clubs / clans of a league or brand (2026-11-26, migration 20261126214413) ─────────
+
+export interface PaniniPropertyGroup {
+  name: string
+  editions: number
+  priced_editions: number
+  fmv_total_usd: number | null
+}
+
+export interface PaniniPropertyGroups {
+  group_word: string | null
+  /** Cards of the league RPC has seen, and how many of them name a group — the section's honest denominator. */
+  editions_total: number
+  editions_named: number
+  groups_total: number
+  groups: PaniniPropertyGroup[]
+}
+
+/** Pure parse; null = unknown league OR not the expected shape — either way the section is left out. */
+export function toPropertyGroups(data: unknown): PaniniPropertyGroups | null {
+  const d = rec(data)
+  if (!d || !Array.isArray(d.groups)) return null
+  const groups: PaniniPropertyGroup[] = []
+  for (const r of list(d.groups)) {
+    const name = str(r.name)
+    if (!name) continue
+    groups.push({ name, editions: num(r.editions) ?? 0, priced_editions: num(r.priced_editions) ?? 0, fmv_total_usd: num(r.fmv_total_usd) })
+  }
+  return { group_word: str(d.group_word), editions_total: num(d.editions_total) ?? 0, editions_named: num(d.editions_named) ?? 0, groups_total: num(d.groups_total) ?? groups.length, groups }
+}
+
+/** An optional section: a failed read is null and the page renders without it (it states no absence). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readPaniniPropertyGroups(slug: string, db: any = supabaseAdmin): Promise<PaniniPropertyGroups | null> {
+  try {
+    const { data, error } = await withQueryDeadline<unknown>(
+      db.rpc("get_panini_property_groups", { p_slug: slug, p_limit: 12 }),
+      "panini/property-groups",
+      apiReadTimeoutMs(),
+    )
+    return error ? null : toPropertyGroups(data)
+  } catch {
+    return null
+  }
+}
+
+export const fetchPaniniPropertyGroups = cache((slug: string) => readPaniniPropertyGroups(slug))

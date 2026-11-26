@@ -13,7 +13,7 @@ import { getCollection } from "@/lib/collections"
 import { decodeSlugOrNull } from "@/lib/entity-detail-gate"
 import { collectionDisplayName, collectionEntityJsonLd, collectionOgUrl, entityUrl, NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
-import { fetchPaniniPropertyPage } from "@/lib/panini/properties"
+import { fetchPaniniPropertyGroups, fetchPaniniPropertyPage } from "@/lib/panini/properties"
 import PaniniPropertyBody, { PaniniPropertyUnavailable } from "@/components/entity/PaniniPropertyBody"
 import { fetchCandyPropertyPage } from "@/lib/candy/properties"
 import CandyPropertyBody, { CandyPropertyUnavailable } from "@/components/entity/CandyPropertyBody"
@@ -93,7 +93,8 @@ export default async function PaniniPropertyPage(props: Props) {
   const { collection, coll, slug, reader } = await load(props)
   if (!coll || !reader || slug === null) notFound()
   if (reader === "candy") return <CandyPage collection={collection} slug={slug} />
-  const res = await fetchPaniniPropertyPage(slug)
+  // The groups read is an optional section: it runs alongside and its failure leaves the section out.
+  const [res, groups] = await Promise.all([fetchPaniniPropertyPage(slug), fetchPaniniPropertyGroups(slug)])
   if (!res.ok) return <PaniniPropertyUnavailable collection={collection} />
   if (!res.page) notFound()
   const jsonLd = collectionEntityJsonLd({
@@ -106,7 +107,7 @@ export default async function PaniniPropertyPage(props: Props) {
   return (
     <div style={shell}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
-      <PaniniPropertyBody collection={collection} collectionLabel={collectionDisplayName(collection)} page={res.page} />
+      <PaniniPropertyBody collection={collection} collectionLabel={collectionDisplayName(collection)} page={res.page} groups={groups} />
     </div>
   )
 }

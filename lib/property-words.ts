@@ -15,3 +15,16 @@ const SUBJECT_PLURALS: Record<string, string> = {
 export function subjectPlural(word: string | null | undefined): string {
   return SUBJECT_PLURALS[(word ?? "").toLowerCase()] ?? "Players"
 }
+
+const GROUP_PLURALS: Record<string, string> = {
+  team: "Teams",
+  nation: "Nations",
+  club: "Clubs",
+  clan: "Clans",
+  school: "Schools",
+}
+
+/** "Teams" / "Nations" / "Clubs" / "Clans" — what a league or brand groups its cards by; null when it has none. */
+export function groupPlural(word: string | null | undefined): string | null {
+  return GROUP_PLURALS[(word ?? "").toLowerCase()] ?? null
+}

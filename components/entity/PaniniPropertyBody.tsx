@@ -12,9 +12,11 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { slugifyPlayerName } from "@/lib/entity-labels"
-import { paniniProductHref, serialLabelOfSku } from "@/lib/panini/product-url"
+import { serialLabelOfSku } from "@/lib/panini/product-url"
 import { paniniSubjectIsPlayer } from "@/lib/panini/subjects"
-import { seasonSpan, subjectPlural, type PaniniPropertyPage } from "@/lib/panini/properties"
+import { seasonSpan, subjectPlural, type PaniniPropertyGroups, type PaniniPropertyPage } from "@/lib/panini/properties"
+import { groupPlural } from "@/lib/property-words"
+import PaniniPropertyProducts from "@/components/entity/PaniniPropertyProducts"
 
 const cell: CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }
 const head: CSSProperties = { ...cell, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
@@ -42,14 +44,19 @@ export default function PaniniPropertyBody({
   collection,
   collectionLabel,
   page: p,
+  groups = null,
 }: {
   collection: string
   collectionLabel: string
   page: PaniniPropertyPage
+  /** Teams / nations / clubs / clans (optional read; null = unavailable or none — the section is left out). */
+  groups?: PaniniPropertyGroups | null
 }) {
   const unpriced = p.editions - p.priced_editions
   const seasons = seasonSpan(p)
   const subjects = subjectPlural(p.subject_word)
+  // A grouping section only when the league has a group word and at least two groups to compare.
+  const groupTitle = groups && groups.groups.length >= 2 ? groupPlural(groups.group_word) : null
   return (
     <div data-testid="panini-property">
       <Breadcrumbs items={[{ name: collectionLabel, href: `/${collection}/overview` }, { name: "Products", href: `/${collection}/product` }, { name: p.name }]} />
@@ -94,35 +101,29 @@ export default function PaniniPropertyBody({
 
       <Section title="Products">
         <div className="rpc-mono" style={sub}>Every {p.name} product RPC has seen a card from, newest season first.</div>
-        <div className="rpc-scroll-x" {...scrollRegion("Products")}>
-          <table data-testid="panini-property-products" style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>
-            <thead>
-              <tr>
-                <th scope="col" style={head}>Product</th>
-                <th scope="col" style={head}>Cards</th>
-                <th scope="col" style={head}>Sets</th>
-                <th scope="col" style={head}>Listed</th>
-                <th scope="col" style={head}>FMV total</th>
-                <th scope="col" style={head}>Sales 30d</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.products.map((r) => (
-                <tr key={r.slug}>
-                  <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>
-                    <Link href={paniniProductHref(collection, r.slug)} style={{ color: "inherit" }}>{r.name}</Link>
-                  </td>
-                  <td style={cell}>{fmtCount(r.editions)}</td>
-                  <td style={cell}>{fmtCount(r.sets)}</td>
-                  <td style={cell}>{fmtCount(r.listed_editions)}</td>
-                  <td style={cell}>{fmtUsd(r.fmv_total_usd)}</td>
-                  <td style={cell}>{fmtCount(r.sales_30d)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PaniniPropertyProducts collection={collection} products={p.products} />
       </Section>
+
+      {groups && groupTitle ? (
+        <Section title={groupTitle}>
+          <div className="rpc-mono" data-testid="panini-property-groups-note" style={sub}>
+            By the FMV total of their cards. {fmtCount(groups.editions_named)} of {fmtCount(groups.editions_total)} {p.name} cards name {groupTitle === "Teams" ? "a team" : groupTitle === "Nations" ? "a nation" : groupTitle === "Clubs" ? "a club" : groupTitle === "Clans" ? "a clan" : "a school"}
+            {groups.editions_named < groups.editions_total ? "; the rest are not counted here." : "."}
+            {groups.groups_total > groups.groups.length ? ` Top ${fmtCount(groups.groups.length)} of ${fmtCount(groups.groups_total)}.` : ""}
+          </div>
+          <div data-testid="panini-property-groups" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+            {groups.groups.map((g) => (
+              <div key={g.name} className="rpc-card" style={{ padding: 12 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 6, lineHeight: 1.2 }}>{g.name}</div>
+                <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+                  {fmtCount(g.editions)} card{g.editions === 1 ? "" : "s"} · {g.fmv_total_usd != null ? fmtUsd(g.fmv_total_usd) : "no FMV yet"}
+                  {g.fmv_total_usd != null && g.priced_editions < g.editions ? ` (${fmtCount(g.priced_editions)} priced)` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
 
       {p.top_subjects.length > 0 && (
         <Section title={`Top ${subjects}`}>

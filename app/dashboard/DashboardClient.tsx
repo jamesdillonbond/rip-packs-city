@@ -18,6 +18,7 @@ import { sumMoments, sumPortfolioFmv, countActiveCollections, groupWalletsByAddr
 import { walletTotalUsd, walletTotalCaption, type CollectionPacks, type HeldPacksTotal } from "@/lib/dashboard/held-packs";
 import { getEntityLabels } from "@/lib/entity-labels";
 import { paniniCaption, sumPaniniIdentities } from "@/lib/dashboard/panini-total";
+import LeagueSplitLine from "@/components/dashboard/LeagueSplitLine";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
 import FollowedWalletsList from "@/components/profile/FollowedWalletsList";
@@ -2645,6 +2646,8 @@ function WalletGroupCard({
                   {locked > 0 && <span>🔒 {locked.toLocaleString("en-US")}</span>}
                 </div>
               )}
+              {/* 2026-11-26: Candy is nine brands — the wallet's cards by league / brand. */}
+              {col.id === "candy-mlb" && !unknown && moments > 0 && <LeagueSplitLine publisher="candy" owner={group.addr} />}
             </Link>
           );
         })}
@@ -2736,6 +2739,8 @@ function PaniniTiles({ ids }: { ids: PaniniIdentity[] | null | undefined }) {
                 <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv != null && fmv > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>{fmv != null && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
               </div>
             </div>
+            {/* 2026-11-26: the username's cards by league / brand (full walked holdings). */}
+            {cards != null && cards > 0 && <LeagueSplitLine publisher="panini" owner={i.username} />}
           </Link>
         );
       })}
