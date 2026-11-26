@@ -97,6 +97,7 @@ import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
 import { aptosVenueName, aptosWalletDisplay, ufcSaleChain } from "@/lib/ufc-aptos"
 import ChainTag from "@/components/collection/ChainTag"
+import UfcMomentChain from "@/components/entity/UfcMomentChain"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -1304,30 +1305,10 @@ export default async function MomentPage(
             </TrackedOutboundLink>
           ) : null}
 
-          {/* UFC Strike is migrating to Aptos (Flow frozen since May 2026); its Flow moments are no
-              longer tradeable on UFC Strike / Dapper, so the marketplace CTAs
-              above are intentionally absent. Explain that rather than leaving a
-              bare page with no external link and no reason. */}
-          {(e.collection_slug === "ufc_strike" || e.collection_slug === "ufc-strike") && !marketplaceUrl && !dapperUrl && !dapperEditionUrl ? (
-            <div
-              role="note"
-              style={{
-                marginTop: 4,
-                padding: "10px 14px",
-                background: "var(--rpc-surface-raised)",
-                border: "1px solid var(--rpc-border)",
-                borderRadius: 8,
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                lineHeight: 1.6,
-                color: "var(--rpc-text-secondary)",
-                maxWidth: 520,
-              }}
-            >
-              <ChainTag chain="flow" />{" "}
-              This Moment lives on Flow, where UFC Strike trading closed in May 2026, so it has no
-              marketplace link here. UFC Strike Moments trade on Aptos.
-            </div>
+          {/* UFC Strike (2026-11-26): where THIS Moment lives — Flow or Aptos — from the Aptos indexer
+              (components/entity/UfcMomentChain.tsx). Without a serial there is no one Moment to place. */}
+          {(e.collection_slug === "ufc_strike" || e.collection_slug === "ufc-strike") && serial != null && serial > 0 ? (
+            <UfcMomentChain editionId={e.id} serial={serial} />
           ) : null}
 
           {/* Watch this edition (FMV / ask alert). Gated to the editions+

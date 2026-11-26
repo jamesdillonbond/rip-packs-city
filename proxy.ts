@@ -1326,6 +1326,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // GET-only, no session, service-role read of public chain-derived holdings; returns no Aptos
     // address and no link confidence.
     "/api/ufc/aptos-holdings",
+    // 2026-11-26: the UFC Moment page's Flow / Aptos tag (components/entity/UfcMomentChain.tsx).
+    // Moment pages are anon-public. GET-only, no session; public chain data, no owner address.
+    "/api/ufc/moment-chain",
   ])
   if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
     return true
