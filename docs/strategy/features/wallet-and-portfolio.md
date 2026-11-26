@@ -24,6 +24,16 @@ Trevor: "let them have access until we can verify easily and effectively" (full 
 - **One verified flag:** new `saved_wallets` collection rows inherit the user's existing verification for the wallet (trigger `20261115230729`).
 - **Adoption read:** scheduled one-off Wed 11-18 10:23 AM PT.
 
+## ⭐ 2026-11-26 — Binder Packs filters; "Sealed", never "Unopened" (Trevor)
+
+Trevor (11-26 11:59 AM PT): "Can we add more filters within the packs section within my binder?" — picked all four offered; then "We should also change unopened packs to sealed packs".
+
+- **Filters (binder Packs tabs + `/dashboard/packs`, one shared `components/packs/PackFilterBar.tsx`):** search by pack name · sort (newest/oldest, value, cost, P&L, name, and on Opened "Still held" = pulls still in the wallet at wallet FMV) · All / Winners / Losers · tier chips with counts. Applied in `get_wallet_pack_history` (v38–v40) BEFORE the page, so the count, the page and the tab metrics are one population.
+- **Winners / Losers = packs paid for** (v39, Trevor "Yes do that"): a $0 cost (reward pack, box pack) is in neither bucket; it still lists, sorts and totals.
+- **The filters live in the address bar** (`packs_view`, `packs_q`, `packs_tier`, `packs_result`, `packs_sort`): refresh, back and a shared link keep the view.
+- **Wording rule:** a pack still in the wallet is **Sealed** everywhere a user reads it (tab, dashboard tiles, share card, Panini tile, insights copy, the pack-history status). Internal keys (`unopened`, `held`) unchanged.
+- Detail: `docs/reference/packs.md` (the `get_wallet_pack_history` bullet, v38–v40); ledger 11-26 ~12:45 PM → ~2:55 PM PT.
+
 ## ⭐ 2026-11-24/25 — My Binder: one big number, plain stats, a table that fits (Trevor)
 
 Trevor (11-24 ~5:05 PM PT): "We need to make these figures very simple and digestible, no subtext. We also need to have this binder page be more visibly appealing."
@@ -161,6 +171,8 @@ There is no wallet SIGN-IN (#0, 08-08: identifiers only). Verification is option
 - **Parallel `#N / M`** is the moment's own serial over its own edition's run (D25, 10-13/10-17).
 - **Never delete Dune rows** in `topshot_ownership`: the Dune route sizes paid walks from them.
 - **Never publish RPC's own rank as Top Shot's** Yearbook / Blue Chip / Squad Goals rank. The scoring question is with Trevor.
+- **A pack in the wallet is "Sealed", never "Unopened" or "Held"** in user-facing copy (Trevor, 11-26).
+- **Winners / Losers count only packs paid for** — a $0 reward or box pack is in neither (Trevor, 11-26).
 
 ## Where the detail lives
 
