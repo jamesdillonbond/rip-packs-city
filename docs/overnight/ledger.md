@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~5:12 PM PT · 🗄 APPLIED (`20261126011043`) — dropped the pack-gap audit scratch objects (`audit_20261124_gwph_v34` A/B function, `audit_20261124_pack_gap_census` table) (Claude Code cloud; Trevor: "work through everything … leaving nothing left unresolved")
+- Neither had a caller or anon/authenticated access; v34's literal body is committed as `20261125054434` and the live function is v36 (`20261125151148`). Verified after the apply: 0 functions and 0 tables left with either name.
+- Closing read on the last opened-pack value gap: the 44 Top Shot/All Day opened packs whose pulls are all named but not all priced are honest blanks. Every unpriced pull is an edition with no FMV because it has no sale in the window and no listing (new 2026 WNBA/rookie parallels; All Day 4685's last sale was 2026-01-13). Nothing to fix.
+- Revert: none needed (scratch, nothing reads either). The table comes back by replaying `20261125050142`.
+
 ### 2026-11-25 ~5:10 PM PT · 📏 READ (no change) — candy owner-moved fix verified; fmv-recalc :08 fallback errors closed (Claude Code, attended)
 - **candy-listings-indexer** (`20261125154323` + route): 10:35 AM, 1:35 PM, 4:35 PM PT runs all ok, 41–46 s (was 76–81 s, failing every other run on "owner-moved retire" timeout); `owner_moved_cleared` 0, not null. Closed.
 - **fmv-recalc :08**: post-`20261125030623` fallback errors 0/21 at :07–:09 (pre 7/50) → closed under the 5 % rule. Job 924 move not yet provable (control fell too); 11-26 ~8 AM PT read on the even−odd gap stands (focus.md). Revert: n/a (read only; focus.md note).
