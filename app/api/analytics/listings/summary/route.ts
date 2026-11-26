@@ -13,6 +13,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { parseCollections } from "@/lib/analytics/window"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { ListingsSummaryResponse } from "@/lib/analytics-types"
+import { computeUfcAptosSniperFeed } from "@/lib/sniper/ufc-aptos"
+import { summarizeUfcAptosBook, withUfcAptosBook } from "@/lib/analytics/ufc-aptos-book"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 300
@@ -36,6 +38,17 @@ export async function GET(req: NextRequest) {
     if (error) {
       console.log("[analytics/listings/summary] rpc_error", error.message)
       return NextResponse.json({ error: "listings_summary_failed" }, { status: 500 })
+    }
+
+    // 2026-11-26: UFC Strike trades on Aptos; the RPC reads Flow listings only. Its row is
+    // rebuilt from the live Aptos book (lib/analytics/ufc-aptos-book.ts). A failed Aptos read
+    // fails the request — the card says "couldn't load", never "No live listings."
+    if (data && collections?.includes("ufc")) {
+      const feed = await computeUfcAptosSniperFeed({})
+      data.marketplace_listings = withUfcAptosBook(
+        data.marketplace_listings,
+        summarizeUfcAptosBook(feed.deals.map((d) => d.askPrice)),
+      )
     }
 
     console.log(

@@ -588,6 +588,13 @@ function OrderBookCard({ short }: { short: string }) {
               Re-seen in the last 24 h — recently active listings, not the whole book.
             </div>
           )}
+          {short === "ufc" && (
+            // 2026-11-26: UFC trades on Aptos — this row is the live Rarible book
+            // (app/api/analytics/listings/summary, lib/analytics/ufc-aptos-book.ts).
+            <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]" data-testid="ufc-aptos-book-note">
+              Live Aptos asks on Rarible, re-checked in the last 3 days.
+            </div>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Median ask</div>
