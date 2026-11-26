@@ -15,6 +15,30 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-11-26 (the slab's back on UFC Strike). A fighter name as a comparable key (accents and punctuation folded).
+    fn: "ufc_name_key",
+    test: "supabase/tests/espn_mma_scoreboard_drain.sql",
+    migration: "supabase/migrations/20261126191332_audit_20261126_ufc_fight_results_lane.sql",
+  },
+  {
+    // Added 2026-11-26 (the slab's back on UFC Strike). Every year 1993..now once, the current year again after a day.
+    fn: "espn_mma_scoreboard_dispatch",
+    test: "supabase/tests/espn_mma_scoreboard_drain.sql",
+    migration: "supabase/migrations/20261126191332_audit_20261126_ufc_fight_results_lane.sql",
+  },
+  {
+    // Added 2026-11-26 (the slab's back on UFC Strike). One row per fighter per bout from ESPN's yearly UFC scoreboard, each with its opponent.
+    fn: "espn_mma_scoreboard_drain",
+    test: "supabase/tests/espn_mma_scoreboard_drain.sql",
+    migration: "supabase/migrations/20261126191332_audit_20261126_ufc_fight_results_lane.sql",
+  },
+  {
+    // Added 2026-11-26 (the slab's back on UFC Strike). A UFC Strike Moment's fight: exactly one event (UFC 30 is not UFC 303), exactly one bout, else NULL.
+    fn: "get_ufc_moment_fight",
+    test: "supabase/tests/espn_mma_scoreboard_drain.sql",
+    migration: "supabase/migrations/20261126191951_audit_20261126_ufc_moment_fight_names_and_months.sql",
+  },
+  {
     // Added 2026-11-26 (the card slab on Panini soccer cards). A Panini soccer product's competition and ESPN season (only products naming ONE competition).
     fn: "panini_soccer_competition",
     test: "supabase/tests/espn_soccer_athlete_stats_drain.sql",

@@ -701,7 +701,7 @@ export default function InteractiveSlab({
           ) : null}
           {isBack && stats?.game?.link ? (
             <a href={stats.game.link} target="_blank" rel="noopener noreferrer" onClick={() => report("moment-slab-box-score")} style={{ ...slabButton, display: "inline-flex", alignItems: "center", boxSizing: "border-box", textDecoration: "none" }}>
-              ESPN box score ↗
+              {stats.game.linkLabel ?? "ESPN box score"} ↗
             </a>
           ) : null}
           {!touched ? (

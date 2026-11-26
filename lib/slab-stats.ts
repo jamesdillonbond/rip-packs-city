@@ -31,6 +31,8 @@ export interface SlabStatBlock {
   chips: StatChip[]
   /** ESPN's game page for this game (the box score), when the game is known by ESPN's id. */
   link?: string | null
+  /** The link's words — "ESPN box score" unless said otherwise (a UFC card is a fight card). */
+  linkLabel?: string | null
 }
 
 export interface SlabStats {
@@ -532,4 +534,43 @@ export function soccerCardBlock(p: SoccerCardPayload | null | undefined): SlabSt
   if (chips.length === 0 || chips.every((c) => isZeroLike(c.value))) return null
   const teams = Array.from(new Set(p.lines.map((l) => (l.team_name ?? "").trim()).filter(Boolean)))
   return { title, detail: teams.join(" / ") || null, chips }
+}
+
+// ── UFC Strike: the fight ────────────────────────────────────────────────────────────────────────
+// public.get_ufc_moment_fight (ESPN's UFC scoreboard): the result from the Moment's fighter's side,
+// the round it ended in and the clock. ESPN carries no method; the Moment's set name does ("UFC 303
+// KO TKO"), and it describes the Moment — so it is shown only on a win, where the Moment is the finish.
+
+export interface UfcFight {
+  event_id?: string | null
+  event_name?: string | null
+  event_date?: string | null
+  weight_class?: string | null
+  rounds?: number | null
+  end_period?: number | null
+  end_clock?: string | null
+  completed?: boolean | null
+  winner?: boolean | null
+  opponent_name?: string | null
+  set_name?: string | null
+}
+
+function methodFromSet(setName: string | null | undefined): string | null {
+  const s = String(setName ?? "").toUpperCase()
+  if (/\bKO\b|\bTKO\b/.test(s)) return "KO/TKO"
+  if (/\bSUBMISSION\b/.test(s)) return "SUB"
+  return null
+}
+
+export function fightBlock(f: UfcFight | null | undefined): SlabStatBlock | null {
+  if (!f || f.completed !== true || typeof f.winner !== "boolean" || !f.opponent_name) return null
+  const chips: StatChip[] = [{ label: "Result", value: f.winner ? "W" : "L" }]
+  const method = f.winner ? methodFromSet(f.set_name) : null
+  if (method) chips.push({ label: "Method", value: method })
+  if (Number.isInteger(f.end_period) && (f.end_period as number) > 0) chips.push({ label: "Round", value: `R${f.end_period}` })
+  if (f.end_clock && /^\d{1,2}:\d{2}$/.test(f.end_clock)) chips.push({ label: "Time", value: f.end_clock })
+  const event = (f.event_name ?? "").split(":")[0].trim() || null
+  const detail = [`vs ${f.opponent_name}`, f.weight_class ?? null, event, plainDate(f.event_date)].filter(Boolean).join(" · ")
+  const link = f.event_id && /^\d{4,12}$/.test(f.event_id) ? `https://www.espn.com/mma/fightcenter/_/id/${f.event_id}/league/ufc` : null
+  return { title: "This fight", detail, chips, link, linkLabel: "ESPN fight card" }
 }

@@ -13,7 +13,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
-import { asCardLeague, asEspnLeague, cardSeason, cardSlabStats, soccerCardBlock, type SoccerCardPayload, momentSeason, type MomentGameContext, type SeasonLine, type SlabStats } from "@/lib/slab-stats"
+import { asCardLeague, asEspnLeague, cardSeason, cardSlabStats, fightBlock, soccerCardBlock, type SoccerCardPayload, type UfcFight, momentSeason, type MomentGameContext, type SeasonLine, type SlabStats } from "@/lib/slab-stats"
 import { marketCapKey } from "@/lib/player-recent-games"
 
 type RpcClient = {
@@ -137,6 +137,8 @@ export async function fetchCardSlabStats(
   client: RpcClient = supabaseAdmin as unknown as RpcClient,
   timeoutMs = 4_000,
 ): Promise<CardSlabStatsRead> {
+  // A UFC Strike Moment has no season: its back is the fight (below).
+  if (card.collection_slug === "ufc_strike") return fetchFightSlabStats({ id: card.id, collection_slug: card.collection_slug }, client, timeoutMs)
   try {
     return await withBoardBudget(readCardSlabStats(card, client), "card slab stats", timeoutMs, "edition-page/")
   } catch (e) {
@@ -188,4 +190,34 @@ async function readCardSlabStats(card: CardSlabStatsEdition, client: RpcClient):
   // product called "2021 Panini Blockchain NBA Packs …"), else the product's.
   const seasonSource = league && cardSeason(league, card.set_name) != null ? card.set_name : productName ?? card.set_name
   return { ok: true, stats: cardSlabStats(league, seasonSource, payload.rows ?? []) }
+}
+
+// ── UFC Strike (2026-11-26): the fight a Moment is from ─────────────────────────────────────────
+// public.get_ufc_moment_fight (20261126191332) — the edition's event by its set name, the fighter's
+// bout in it, or NULL. Same three states: ok:false = the read failed; stats null = nothing to show.
+// A missing reader (a rolled-back migration) reads as nothing, not as a failure.
+export async function fetchFightSlabStats(
+  edition: { id: string; collection_slug: string | null },
+  client: RpcClient = supabaseAdmin as unknown as RpcClient,
+  timeoutMs = 4_000,
+): Promise<CardSlabStatsRead> {
+  if (edition.collection_slug !== "ufc_strike") return { ok: true, stats: null }
+  try {
+    return await withBoardBudget(
+      (async (): Promise<CardSlabStatsRead> => {
+        const r = await client.rpc("get_ufc_moment_fight", { p_edition_id: edition.id })
+        if (r.error) {
+          if (isFunctionMissing(r.error)) return { ok: true, stats: null }
+          return { ok: false, error: r.error.message ?? "get_ufc_moment_fight failed" }
+        }
+        const block = fightBlock(r.data as UfcFight | null)
+        return { ok: true, stats: block ? { game: block, season: null } : null }
+      })(),
+      "fight slab stats",
+      timeoutMs,
+      "moment-page/",
+    )
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }

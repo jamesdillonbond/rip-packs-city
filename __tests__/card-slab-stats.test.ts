@@ -1,7 +1,7 @@
 // 2026-11-26 (Trevor: "Yes do it all"): Panini and Candy cards get a season line on the slab's back.
 // A card has no game, so the line is the season the CARD is from — never another season.
 import { describe, it, expect } from "vitest"
-import { cardSeason, cardSlabStats, seasonBlock, soccerCardBlock, type SeasonLine } from "@/lib/slab-stats"
+import { cardSeason, cardSlabStats, fightBlock, seasonBlock, soccerCardBlock, type SeasonLine } from "@/lib/slab-stats"
 import { fetchCardSlabStats } from "@/lib/moment-detail/slab-stats-fetch"
 
 const BAT_NAMES = ["gamesPlayed", "atBats", "runs", "hits", "doubles", "triples", "homeRuns", "RBIs", "walks", "hitByPitch", "strikeouts", "stolenBases", "caughtStealing", "avg", "onBasePct", "slugAvg", "OPS", "WARBR"]
@@ -162,5 +162,42 @@ describe("soccer card backs", () => {
     expect((await fetchCardSlabStats(card, missing as never)).ok).toBe(true)
     const failed = client({ soccer: { data: null, error: { code: "57014", message: "canceling statement" } } })
     expect((await fetchCardSlabStats(card, failed as never)).ok).toBe(false)
+  })
+})
+
+describe("UFC fight backs", () => {
+  // UFC 303, Vinicius Oliveira def. Ricky Simon — the shape get_ufc_moment_fight returns
+  const FIGHT = {
+    event_id: "600041", event_name: "UFC 303: Pereira vs. Procházka 2", event_date: "2024-06-29", weight_class: "Bantamweight",
+    rounds: 3, end_period: 1, end_clock: "3:41", completed: true, winner: true, opponent_name: "Ricky Simon", set_name: "UFC 303 KO TKO",
+  }
+  it("a win shows the result, the Moment's method, the round and the clock", () => {
+    const b = fightBlock(FIGHT)
+    expect(b?.title).toBe("This fight")
+    expect(b?.chips.map((c) => `${c.label} ${c.value}`)).toEqual(["Result W", "Method KO/TKO", "Round R1", "Time 3:41"])
+    expect(b?.detail).toBe("vs Ricky Simon · Bantamweight · UFC 303 · Jun 29, 2024")
+    expect(b?.link).toBe("https://www.espn.com/mma/fightcenter/_/id/600041/league/ufc")
+    expect(b?.linkLabel).toBe("ESPN fight card")
+  })
+  it("a loss never borrows the Moment's method", () => {
+    expect(fightBlock({ ...FIGHT, winner: false })?.chips.map((c) => c.label)).toEqual(["Result", "Round", "Time"])
+  })
+  it("no result, nothing", () => {
+    expect(fightBlock({ ...FIGHT, completed: false })).toBe(null)
+    expect(fightBlock({ ...FIGHT, winner: null })).toBe(null)
+    expect(fightBlock(null)).toBe(null)
+  })
+  it("the read: a UFC edition asks the fight reader; a missing reader is nothing; a failure is a failure", async () => {
+    const card = { id: "u1", collection_slug: "ufc_strike", set_name: "UFC 303 KO TKO", player_names: ["Vinicius Oliveira"] }
+    const calls: string[] = []
+    const mk = (ans: { data: unknown; error: { code?: string; message?: string } | null }) => ({
+      rpc(fn: string) { calls.push(fn); return Promise.resolve(ans) },
+      from() { throw new Error("no table reads") },
+    })
+    const r = await fetchCardSlabStats(card, mk({ data: FIGHT, error: null }) as never)
+    expect(calls).toEqual(["get_ufc_moment_fight"])
+    expect(r.ok && r.stats?.game?.title).toBe("This fight")
+    expect(await fetchCardSlabStats(card, mk({ data: null, error: { code: "PGRST202", message: "Could not find the function" } }) as never)).toEqual({ ok: true, stats: null })
+    expect((await fetchCardSlabStats(card, mk({ data: null, error: { code: "57014", message: "canceling statement" } }) as never)).ok).toBe(false)
   })
 })
