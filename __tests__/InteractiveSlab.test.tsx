@@ -369,3 +369,64 @@ describe("InteractiveSlab box score link", () => {
     expect(getByText("(above season average)", { exact: false })).toBeTruthy()
   })
 })
+
+// ── usage beacons (2026-11-26): whether collectors pick the slab up ─────────────
+const trackMock = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/telemetry/track", () => ({ track: trackMock }))
+
+describe("InteractiveSlab usage", () => {
+  beforeEach(() => {
+    trackMock.mockClear()
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance", "setTimeout", "Date"] })
+    window.history.replaceState(null, "", "/moment/x")
+    mockMedia({})
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    // @ts-expect-error test cleanup of a jsdom gap we filled
+    delete window.matchMedia
+  })
+  const features = () => trackMock.mock.calls.map((c) => c[0])
+
+  it("sends nothing for a page view the viewer never touches", () => {
+    render(slab())
+    run(3000)
+    expect(trackMock).not.toHaveBeenCalled()
+  })
+
+  it("sends one flipped and one back-seen per page view however often it is flipped, with whether it had stats", () => {
+    const { getByText } = render(slab())
+    fireEvent.click(getByText("Flip"))
+    run(3000)
+    fireEvent.click(getByText("Show front"))
+    run(3000)
+    fireEvent.click(getByText("Flip"))
+    run(3000)
+    expect(features().filter((f) => f === "moment-slab-flipped")).toHaveLength(1)
+    expect(features().filter((f) => f === "moment-slab-back-seen")).toHaveLength(1)
+    expect(trackMock).toHaveBeenCalledWith("moment-slab-flipped", { has_game: false, has_season: false, via: "button" })
+  })
+
+  it("counts a real drag as a spin and a tap or a nudge as nothing", () => {
+    const { getByRole } = render(slab())
+    const group = getByRole("group")
+    fireEvent.pointerDown(group, { pointerId: 1, pointerType: "mouse", button: 0, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(group, { pointerId: 1, pointerType: "mouse", clientX: 110, clientY: 100 })
+    fireEvent.pointerUp(group, { pointerId: 1, pointerType: "mouse" })
+    run(3000)
+    expect(features()).not.toContain("moment-slab-spun")
+    fireEvent.pointerDown(group, { pointerId: 2, pointerType: "touch", clientX: 0, clientY: 0 })
+    fireEvent.pointerMove(group, { pointerId: 2, pointerType: "touch", clientX: 80, clientY: 0 })
+    fireEvent.pointerUp(group, { pointerId: 2, pointerType: "touch" })
+    run(3000)
+    expect(trackMock).toHaveBeenCalledWith("moment-slab-spun", { has_game: false, has_season: false, pointer: "touch" })
+  })
+
+  it("sends nothing when the slab is off", () => {
+    window.history.replaceState(null, "", "/moment/x?slab=0")
+    const { queryByText } = render(slab())
+    expect(queryByText("Flip")).toBeNull()
+    run(3000)
+    expect(trackMock).not.toHaveBeenCalled()
+  })
+})

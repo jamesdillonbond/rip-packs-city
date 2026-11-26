@@ -34,6 +34,7 @@ import {
   type SlabFinish,
 } from "@/lib/slab-3d";
 import type { SlabStatBlock, SlabStats } from "@/lib/slab-stats";
+import { track } from "@/lib/telemetry/track";
 
 export type SlabBackRow = { label: string; value: string };
 
@@ -170,13 +171,29 @@ export default function InteractiveSlab({
     raf: 0,
     acc: 0,
     back: false,
+    dragDeg: 0,
   });
+
+  // Usage (2026-11-26): whether collectors pick the slab up at all. Each kind is sent at most once
+  // per page view, with whether this Moment's back carries stats; nothing about the viewer.
+  const sent = useRef<Set<string>>(new Set());
+  const report = useCallback(
+    (feature: string, meta?: Record<string, unknown>) => {
+      if (sent.current.has(feature)) return;
+      sent.current.add(feature);
+      track(feature, { has_game: !!stats?.game, has_season: !!stats?.season, ...meta });
+    },
+    [stats],
+  );
 
   const [isBack, setIsBack] = useState(false);
   const [touched, setTouched] = useState(false);
   const [tiltState, setTiltState] = useState<"off" | "on" | "blocked">("off");
   const [canTilt, setCanTilt] = useState(false);
   const tiltBase = useRef<{ beta: number; gamma: number } | null>(null);
+  useEffect(() => {
+    if (isBack) report("moment-slab-back-seen");
+  }, [isBack, report]);
 
   const paint = useCallback(() => {
     const st = s.current;
@@ -302,18 +319,21 @@ export default function InteractiveSlab({
       try {
         const res = await ctor.requestPermission();
         setTiltState(res === "granted" ? "on" : "blocked");
+        if (res === "granted") report("moment-slab-tilt-on");
       } catch {
         setTiltState("blocked");
       }
       return;
     }
     setTiltState("on");
-  }, [tiltState]);
+    report("moment-slab-tilt-on");
+  }, [tiltState, report]);
 
   const flip = useCallback(
-    (dir: 1 | -1 = 1) => {
+    (dir: 1 | -1 = 1, via: "button" | "key" = "button") => {
       const st = s.current;
       setTouched(true);
+      report("moment-slab-flipped", { via });
       const target = flipTarget(st.phase === "settle" ? st.targetY : st.rotY, dir);
       if (reducedMotion) {
         st.rotY = target;
@@ -326,7 +346,7 @@ export default function InteractiveSlab({
       st.phase = "settle";
       kick();
     },
-    [reducedMotion, paint, kick],
+    [reducedMotion, paint, kick, report],
   );
 
   // ── pointer: drag to spin, flick to coast, hover to tilt (mouse only) ──
@@ -340,6 +360,7 @@ export default function InteractiveSlab({
     st.lastY = e.clientY;
     st.lastT = performance.now();
     st.velY = 0;
+    st.dragDeg = 0;
     if (e.pointerType !== "touch") {
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -358,6 +379,7 @@ export default function InteractiveSlab({
       const dy = e.clientY - st.lastY;
       const dt = Math.max(1, now - st.lastT);
       st.rotY += dx * 0.55;
+      st.dragDeg += Math.abs(dx * 0.55);
       st.rotX = clamp(st.rotX - dy * 0.35, -28, 28);
       // Velocity in degrees per ~16 ms frame, lightly smoothed.
       st.velY = st.velY * 0.4 + ((dx * 0.55) / dt) * 16 * 0.6;
@@ -380,6 +402,8 @@ export default function InteractiveSlab({
     const st = s.current;
     if (st.phase !== "drag" || e.pointerId !== st.pointerId) return;
     st.pointerId = -1;
+    // a real turn, not a tap or a nudge
+    if (st.dragDeg >= 20) report("moment-slab-spun", { pointer: e.pointerType || null });
     // A finger that has not moved for a moment carries no fling.
     if (performance.now() - st.lastT > 90) st.velY = 0;
     if (reducedMotion || Math.abs(st.velY) < 0.9) {
@@ -405,10 +429,11 @@ export default function InteractiveSlab({
     const st = s.current;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      flip(1);
+      flip(1, "key");
     } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
       setTouched(true);
+      report("moment-slab-flipped", { via: "key" });
       st.targetY = nearestRest(st.phase === "settle" ? st.targetY : st.rotY) + (e.key === "ArrowRight" ? 180 : -180);
       if (reducedMotion) {
         st.rotY = st.targetY;
@@ -674,7 +699,7 @@ export default function InteractiveSlab({
             </button>
           ) : null}
           {isBack && stats?.game?.link ? (
-            <a href={stats.game.link} target="_blank" rel="noopener noreferrer" style={{ ...slabButton, display: "inline-flex", alignItems: "center", boxSizing: "border-box", textDecoration: "none" }}>
+            <a href={stats.game.link} target="_blank" rel="noopener noreferrer" onClick={() => report("moment-slab-box-score")} style={{ ...slabButton, display: "inline-flex", alignItems: "center", boxSizing: "border-box", textDecoration: "none" }}>
               ESPN box score ↗
             </a>
           ) : null}
