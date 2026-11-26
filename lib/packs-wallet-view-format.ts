@@ -738,13 +738,13 @@ export function packOutcomeLabel(outcome: PackOutcome): string {
 /** What winners / losers is measured against in this tab (the chip's hover text). */
 export function packOutcomeHint(filter: PackFilter | "all"): string {
   if (filter === "all") {
-    return "Packs worth more (winners) or less (losers) than you paid: a sealed pack's value, an opened pack's pulls, a sold pack's sale. Packs with no known cost or value are in neither."
+    return "Packs worth more (winners) or less (losers) than you paid: a sealed pack's value, an opened pack's pulls, a sold pack's sale. Only packs you paid for count; free reward packs and packs with no known cost or value are in neither."
   }
   return filter === "unopened"
-    ? "Sealed packs worth more (winners) or less (losers) than you paid. Packs with no known cost or value are in neither."
+    ? "Sealed packs worth more (winners) or less (losers) than you paid. Only packs you paid for count; free reward packs and packs with no known cost or value are in neither."
     : filter === "opened"
-      ? "Opened packs whose pulls are worth more (winners) or less (losers) than you paid. Packs with no known cost or pull value are in neither."
-      : "Packs you sold for more (winners) or less (losers) than you paid. Packs with no known cost are in neither."
+      ? "Opened packs whose pulls are worth more (winners) or less (losers) than you paid. Only packs you paid for count; free reward packs and packs with no known cost or pull value are in neither."
+      : "Packs you sold for more (winners) or less (losers) than you paid. Only packs you paid for count; free reward packs and packs with no known cost are in neither."
 }
 
 /** The dashboard's status filter, as the binder tab whose labels fit it ("all" for a mixed list). */

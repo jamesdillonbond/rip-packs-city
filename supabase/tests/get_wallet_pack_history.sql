@@ -90,7 +90,7 @@
 --      page-by-page sums over the rows (V29-1), so no number moves.
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (get_wallet_pack_history v38: supabase/migrations/20261126200712_audit_20261126_pack_history_v38_binder_filters.sql;
+-- (get_wallet_pack_history v39: supabase/migrations/20261126220235_audit_20261126_pack_history_v39_outcome_paid_packs_only.sql;
 --  wallet_held_pack_value v4: supabase/migrations/20261126033201_audit_20261125_held_packs_by_collection.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -252,7 +252,8 @@ DECLARE
   -- p_tier: the pack's tier, case-folded (Top Shot writes rare, All Day writes PREMIUM).
   v_tier text := NULLIF(lower(btrim(COALESCE(p_tier, ''))), '');
   -- p_outcome: 'up' / 'down' against cost -- a sealed pack's value minus its cost, an
-  -- opened or sold pack's realized P/L. A row with neither known is in neither.
+  -- opened or sold pack's realized P/L. A row with neither known is in neither, and (v39)
+  -- neither is a pack that cost $0 (reward, out of a box).
   v_outcome text := CASE WHEN lower(p_outcome) IN ('up', 'down') THEN lower(p_outcome) END;
   -- p_sort: recent (default) | oldest | value_desc | value_asc | cost_desc | cost_asc |
   -- pl_desc | pl_asc | name. An unknown value is recent. Unknown values sort last.
@@ -1000,9 +1001,13 @@ BEGIN
         CASE WHEN v_sort = 'oldest'     THEN n.latest_event_at END ASC NULLS LAST,
         n.latest_event_at DESC NULLS LAST, n.collection_id, n.pack_nft_id) AS n_rn
     FROM narrowed n
+    -- v39 (2026-11-26, Trevor: "Yes do that"): winners / losers are packs PAID for. A $0 cost (a
+    -- reward pack, a pack out of a box) is a known cost but not a purchase, so any value read as a
+    -- gain and reward packs were most of the winners. They still list, sort and total; they are in
+    -- neither winners nor losers.
     WHERE v_outcome IS NULL
-       OR (v_outcome = 'up'   AND n.n_sort_pl > 0)
-       OR (v_outcome = 'down' AND n.n_sort_pl < 0)
+       OR (v_outcome = 'up'   AND n.buy_usd > 0 AND n.n_sort_pl > 0)
+       OR (v_outcome = 'down' AND n.buy_usd > 0 AND n.n_sort_pl < 0)
   ),
   -- v38: the tab's metrics follow the filters -- the same held / pull rows, cut to the matched packs.
   held_valued_m AS (
@@ -2669,6 +2674,27 @@ BEGIN
   PERFORM _assert_eq(r->>'total_count', '7', 'V38-8 unknown outcome = no filter');
   PERFORM _assert_eq(r->'filters'->>'sort', 'recent', 'V38-8 unknown sort = recent');
   RAISE NOTICE '✓ V38 binder filters: search / tier / outcome / sort';
+END $$;
+
+-- V39 (2026-11-26, Trevor "Yes do that"): winners / losers count only packs PAID for. Give the two $0
+-- reward packs (P4, P12, drop D2) a value: under v38 both read as winners (+$3.50 on $0); now neither.
+INSERT INTO public.pack_observed_values VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'D2', 9, 9, 3.50, now())
+  ON CONFLICT (collection_id, dist_id) DO UPDATE SET n_opened = 9, n_valued = 9, avg_value_usd = 3.50;
+DO $$
+DECLARE r jsonb; ids text;
+BEGIN
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_outcome => 'up');
+  PERFORM _assert_eq(r->>'total_count', '1', 'V39-1 a $0 reward pack with a value is not a winner -- only P7 (paid $6)');
+  PERFORM _assert_eq(r->'packs'->0->>'pack_nft_id', 'P7', 'V39-1 the winner is P7');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_outcome => 'down'))->>'total_count', '0',
+                     'V39-1 nor is it a loser');
+  -- still listed, valued and sorted with everything else
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_sort => 'value_desc');
+  PERFORM _assert_eq(r->>'total_count', '7', 'V39-2 unfiltered, the reward packs still list');
+  SELECT string_agg(COALESCE(p->>'value_usd', 'null'), ',' ORDER BY o) INTO ids FROM jsonb_array_elements(r->'packs') WITH ORDINALITY x(p, o);
+  PERFORM _assert_eq(ids, '22.50,22.50,3.50,3.50,null,null,null', 'V39-2 and still sort by value');
+  PERFORM _assert_eq(r->'tab_totals'->>'held_value_usd', '52.00', 'V39-2 and still count in the tab value');
+  RAISE NOTICE '✓ V39 winners / losers are packs paid for';
 END $$;
 
 ROLLBACK;

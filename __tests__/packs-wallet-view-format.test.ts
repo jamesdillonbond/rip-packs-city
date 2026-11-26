@@ -626,5 +626,7 @@ describe("binder Packs filters", () => {
     expect(PACK_OUTCOMES.map(packOutcomeLabel)).toEqual(["All", "Winners", "Losers"])
     expect(packOutcomeHint("unopened")).toMatch(/worth more .* than you paid/)
     expect(packOutcomeHint("sold")).toMatch(/sold for more/)
+    // v39 (Trevor 11-26): only packs paid for count -- the hint says so on every tab
+    for (const tab of [...PACK_FILTERS, "all" as const]) expect(packOutcomeHint(tab)).toMatch(/Only packs you paid for count/)
   })
 })
