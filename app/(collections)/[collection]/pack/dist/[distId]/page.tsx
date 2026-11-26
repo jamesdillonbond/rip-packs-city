@@ -1948,7 +1948,7 @@ function TierOddsPanel({
 
 // ── Packs Content Remaining (Item 1) ────────────────────────────────────────
 // Top Shot's drop pages lead with a "Packs Content Remaining" module: a ring of
-// packs still unopened + per-tier remaining bars. RPC now has the same data
+// packs still sealed + per-tier remaining bars. RPC now has the same data
 // (compute-topshot-pack-ev v20 persists remaining/original counts-by-tier +
 // total_unopened/total_pack_count into pack_distributions.metadata). Renders
 // only when there's a real indexed drop pool AND at least one of the two data
@@ -1983,7 +1983,7 @@ function PacksContentRemaining({
   const hasBars = !!remainingByTier && !!originalByTier
   if (!hasRing && !hasBars) return null
 
-  // Donut: fraction of minted packs still unopened. conic-gradient ring with a
+  // Donut: fraction of minted packs still sealed. conic-gradient ring with a
   // hollow center label, no chart lib (the artifact-brand-CSS pattern).
   const unopenedPct = hasRing ? Math.max(0, Math.min(100, (unopened! / totalMinted!) * 100)) : null
   const ring = unopenedPct != null
@@ -2056,7 +2056,7 @@ function PacksContentRemaining({
                   {unopenedPct!.toFixed(unopenedPct! >= 10 ? 0 : 1)}%
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
-                  unopened
+                  sealed
                 </span>
               </div>
             </div>
@@ -2583,7 +2583,7 @@ async function PackStreamedTop({
               <KpiCell label="Avg / pack" value={fmtUsd(lcAvgPerPack)} sub="per pack we could price" />
             )}
             {lcSealed != null && lcSealed > 0 && (
-              <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
+              <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="never opened" />
             )}
             {lcDepletion != null && lcDepletionAuthoritative && (
               <KpiCell

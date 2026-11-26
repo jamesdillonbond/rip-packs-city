@@ -74,7 +74,7 @@ describe("IssuerHeldSplitPanel", () => {
     const { container } = render(<IssuerHeldSplitPanel rows={rows} failed={false} />)
     expect(container.textContent).toContain("3,100,000")
     expect(container.textContent).toContain("545,405")
-    expect(container.textContent).toContain("1,000,000 unopened packs, 900,000 of them already bought by collectors")
+    expect(container.textContent).toContain("1,000,000 sealed packs, 900,000 of them already bought by collectors")
     expect(container.textContent).toContain("7 editions whose issuer-held count has not refreshed")
     expect(container.textContent).not.toContain("Not known yet")
   })
@@ -88,7 +88,7 @@ describe("IssuerHeldSplitPanel", () => {
         packs_owned_by_collectors: 611_294, as_of: "2026-10-05T16:00:00Z" }),
     ]
     const { container } = render(<IssuerHeldSplitPanel rows={rows} failed={false} />)
-    expect(container.textContent).toContain("611,294 unopened packs held by collectors.")
+    expect(container.textContent).toContain("611,294 sealed packs held by collectors.")
     expect(container.textContent).not.toContain("of them already bought")
   })
 })

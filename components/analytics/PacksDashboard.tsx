@@ -470,7 +470,7 @@ export default function PacksDashboard() {
                     <th scope="col" className="py-2.5 px-3 text-right" title="Expected value of the pack's pulls (FMV-weighted). Ratio = EV ÷ price.">EV</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Ratio</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Coverage</th>
-                    <th scope="col" className="py-2.5 px-3 text-right">Unopened</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Sealed</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -526,7 +526,7 @@ export default function PacksDashboard() {
                     <th scope="col" className="py-2.5 px-3 text-right">Price</th>
                     <th scope="col" className="py-2.5 px-3 text-right" title="Expected value of the pack's pulls (FMV-weighted). Ratio = EV ÷ price.">EV</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Ratio</th>
-                    <th scope="col" className="py-2.5 px-3 text-right">Unopened</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Sealed</th>
                     <th scope="col" className="py-2.5 px-3 text-right">First seen</th>
                   </tr>
                 </thead>

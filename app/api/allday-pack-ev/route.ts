@@ -472,7 +472,7 @@ export async function POST(req: NextRequest) {
     const originalByTier: TierCounts = contentRemaining?.originalCountsByTier ?? {} as TierCounts
 
     if (totalUnopened === 0) {
-      console.warn(`[allday-pack-ev] No unopened packs for ${packListingId}`)
+      console.warn(`[allday-pack-ev] No sealed packs for ${packListingId}`)
       return NextResponse.json({ error: "No pack data available" }, { status: 404 })
     }
 

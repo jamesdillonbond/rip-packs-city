@@ -44,6 +44,19 @@ import {
   type PackFilter,
   collectionPlWithheld,
   type PackCoverageTotals,
+  PACK_SORTS,
+  PACK_OUTCOMES,
+  PACK_FILTER_DEFAULTS,
+  packSortLabel,
+  packOutcomeLabel,
+  packOutcomeHint,
+  packTierLabel,
+  packTierOptions,
+  packFiltersNarrow,
+  packFilterParams,
+  type PackSort,
+  type PackOutcome,
+  type PackFilterState,
 } from "@/lib/packs-wallet-view-format"
 import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 import { currencySuffix } from "@/lib/usd-format"
@@ -203,7 +216,26 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
   // platform-wide. Verified on this wallet: held 94 + ripped 117 = 211 = all.
   const [packFilter, setPackFilter] = useState<PackFilter>("unopened")
 
-  useEffect(() => { setPage(0) }, [wallet, collection, packFilter])
+  // ── Search / tier / winners-losers / sort (Trevor 2026-11-26) ──────────
+  // Applied server-side (get_wallet_pack_history v38) before the page, so the count, the page and the
+  // tab metrics are one population. The search box is debounced; the read takes `filters`.
+  const [filters, setFilters] = useState<PackFilterState>(PACK_FILTER_DEFAULTS)
+  const [searchInput, setSearchInput] = useState("")
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setFilters((f) => (f.search === searchInput.trim() ? f : { ...f, search: searchInput.trim() }))
+    }, 300)
+    return () => clearTimeout(id)
+  }, [searchInput])
+  // A tier belongs to its tab (All Day's PREMIUM is not on the Sold tab of a Top Shot wallet), so a tab
+  // switch clears it; search, winners / losers and sort carry over.
+  useEffect(() => { setFilters((f) => (f.tier == null ? f : { ...f, tier: null })) }, [packFilter, collection])
+  // The tab's tiers, kept while a filtered read is in flight so the chips do not blink out.
+  const [tabTiers, setTabTiers] = useState<{ tab: PackFilter; tiers: Record<string, number> } | null>(null)
+  const narrowing = packFiltersNarrow(filters)
+  const clearFilters = useCallback(() => { setSearchInput(""); setFilters(PACK_FILTER_DEFAULTS) }, [])
+
+  useEffect(() => { setPage(0) }, [wallet, collection, packFilter, filters])
 
   // Monotonic request id — only the newest load()'s response is applied.
   const reqIdRef = useRef(0)
@@ -231,6 +263,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
               limit: String(PAGE_SIZE),
               offset: String(page * PAGE_SIZE),
               ...(dbSlug ? { collection: dbSlug } : {}),
+              ...packFilterParams(filters),
             }).toString(),
           { cache: "no-store" },
         ),
@@ -252,14 +285,16 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
         setError(histJson?.error ?? "Failed to load pack history")
         setHistory(null)
       } else {
-        setHistory(histJson as History)
+        const h = histJson as History
+        setHistory(h)
+        if (h.tab_totals?.tiers) setTabTiers({ tab: packFilter, tiers: h.tab_totals.tiers })
       }
     } catch (err) {
       if (myReq === reqIdRef.current) setError(err instanceof Error ? err.message : String(err))
     } finally {
       if (myReq === reqIdRef.current) setLoading(false)
     }
-  }, [wallet, dbSlug, page, packFilter])
+  }, [wallet, dbSlug, page, packFilter, filters])
 
   useEffect(() => { load() }, [load])
 
@@ -411,6 +446,20 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
         })}
       </div>
 
+      {/* Filters: search, sort, winners / losers, tier (2026-11-26). */}
+      <PackFilterBar
+        tab={packFilter}
+        accent={accent}
+        filters={filters}
+        searchInput={searchInput}
+        onSearchInput={setSearchInput}
+        onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+        tiers={tabTiers && tabTiers.tab === packFilter ? packTierOptions(tabTiers.tiers) : []}
+        matched={history && !loading && !error && narrowing ? history.total_count : null}
+        tabTotal={history?.tab_totals?.tab_packs ?? null}
+        onClear={clearFilters}
+      />
+
       {/* 2026-11-13: the tab's own metrics, over every row of the tab (not just this page).
           2026-11-24: no caption lines. A metric's coverage note ("120 of 150 with a cost") is kept,
           as the stat's hover title — the same treatment the Moments header gives Unlocked. */}
@@ -434,6 +483,11 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
           <div style={{ padding: 24, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading packs…</div>
         ) : error ? (
           <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "var(--rpc-danger-text)" }}>{error}</div>
+        ) : (!history || history.packs.length === 0) && narrowing ? (
+          <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <span>No {PACK_FILTER_LABEL[packFilter].toLowerCase()} packs match these filters.</span>
+            <button type="button" className="rpc-chip" onClick={clearFilters}>Clear filters</button>
+          </div>
         ) : !history || history.packs.length === 0 ? (
           <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>
             {packFilter === "unopened"
@@ -618,6 +672,99 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
         </Link>
       </div>
     </div>
+  )
+}
+
+function PackFilterBar({
+  tab, accent, filters, searchInput, onSearchInput, onChange, tiers, matched, tabTotal, onClear,
+}: {
+  tab: PackFilter
+  accent: string
+  filters: PackFilterState
+  searchInput: string
+  onSearchInput: (v: string) => void
+  onChange: (patch: Partial<PackFilterState>) => void
+  tiers: { tier: string; count: number }[]
+  matched: number | null
+  tabTotal: number | null
+  onClear: () => void
+}) {
+  const chip = (on: boolean): React.CSSProperties => ({
+    fontFamily: mono,
+    fontSize: 11,
+    padding: "5px 10px",
+    minHeight: 30,
+    borderRadius: 999,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    background: on ? accentFill(accent) : "transparent",
+    color: on ? labelOn(accent) : "var(--rpc-text-secondary)",
+    border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
+  })
+  const field: React.CSSProperties = {
+    fontFamily: mono,
+    fontSize: 12,
+    minHeight: 34,
+    padding: "6px 10px",
+    borderRadius: 4,
+    background: "var(--rpc-surface)",
+    color: "var(--rpc-text-primary)",
+    border: "1px solid var(--rpc-border)",
+  }
+  const tabWord = PACK_FILTER_LABEL[tab].toLowerCase()
+  return (
+    <section aria-label="Filter packs" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(e) => onSearchInput(e.target.value)}
+          placeholder="Search pack name"
+          aria-label="Search pack name"
+          maxLength={80}
+          data-testid="pack-search"
+          style={{ ...field, flex: "1 1 200px", minWidth: 0 }}
+        />
+        <select
+          value={filters.sort}
+          onChange={(e) => onChange({ sort: e.target.value as PackSort })}
+          aria-label="Sort packs"
+          data-testid="pack-sort"
+          style={{ ...field, flex: "0 1 auto", cursor: "pointer" }}
+        >
+          {PACK_SORTS.map((s) => <option key={s} value={s}>{packSortLabel(tab, s)}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <span role="group" aria-label="Winners or losers" title={packOutcomeHint(tab)} style={{ display: "inline-flex", gap: 6 }}>
+          {PACK_OUTCOMES.map((o: PackOutcome) => (
+            <button key={o} type="button" aria-pressed={filters.outcome === o} onClick={() => onChange({ outcome: o })} style={chip(filters.outcome === o)}>
+              {packOutcomeLabel(o)}
+            </button>
+          ))}
+        </span>
+        {tiers.length > 1 && (
+          <span role="group" aria-label="Pack tier" style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", marginLeft: 4, paddingLeft: 10, borderLeft: "1px solid var(--rpc-border)" }}>
+            {tiers.map(({ tier, count }) => {
+              const on = filters.tier === tier
+              return (
+                <button key={tier} type="button" aria-pressed={on} onClick={() => onChange({ tier: on ? null : tier })} style={chip(on)}>
+                  {packTierLabel(tier)} <span style={{ opacity: 0.7 }}>{count.toLocaleString("en-US")}</span>
+                </button>
+              )
+            })}
+          </span>
+        )}
+        {matched != null && (
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", fontFamily: mono, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            <span data-testid="pack-filter-count">
+              {matched.toLocaleString("en-US")}{tabTotal != null ? ` of ${tabTotal.toLocaleString("en-US")}` : ""} {tabWord} packs
+            </span>
+            <button type="button" className="rpc-chip" onClick={onClear}>Clear</button>
+          </span>
+        )}
+      </div>
+    </section>
   )
 }
 

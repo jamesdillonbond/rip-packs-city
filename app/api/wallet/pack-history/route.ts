@@ -1,6 +1,6 @@
 // app/api/wallet/pack-history/route.ts
 //
-// GET /api/wallet/pack-history?wallet=&collection=&status=&limit=&offset=
+// GET /api/wallet/pack-history?wallet=&collection=&status=&limit=&offset=&q=&tier=&outcome=&sort=
 //
 // Auth: requires a Supabase user session; verifies the requested wallet
 // is SAVED on the user's account (saved_wallets; verification no longer gates — 09-06, #59).
@@ -31,6 +31,16 @@ const sb: any = supabaseAdmin
 // meaning for existing callers (app/dashboard/packs).
 const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held", "transferred", "other"])
 
+// 2026-11-26 (get_wallet_pack_history v38, Trevor: filters in the binder's Packs section). Applied in the
+// RPC BEFORE the page, so total_count, the page and tab_totals agree. An unknown value is a 400 here,
+// never silently dropped: a binder that asked for "winners" and got every pack would read as an answer.
+export const PACK_HISTORY_SORTS = new Set([
+  "recent", "oldest", "value_desc", "value_asc", "cost_desc", "cost_asc", "pl_desc", "pl_asc", "name",
+])
+export const PACK_HISTORY_OUTCOMES = new Set(["up", "down"])
+const MAX_SEARCH_LEN = 80
+const TIER_RE = /^[a-z0-9][a-z0-9 _-]{0,29}$/
+
 // #228 lever (b′) for this route, 2026-11-10 — the one /api/wallet-summary and /api/collection-snapshot took.
 // Two `RPC_READ_TIMEOUT` at the 8 s default (latest 11:49 AM PT 11-10, pack-summary and pack-history
 // together for one reader). pg_stat_statements holds PostgREST calls of `get_wallet_pack_history` up to
@@ -59,6 +69,10 @@ export async function GET(req: NextRequest) {
   const statusRaw = (url.searchParams.get("status") ?? "").trim().toLowerCase()
   const limitRaw = parseInt(url.searchParams.get("limit") ?? "50", 10)
   const offsetRaw = parseInt(url.searchParams.get("offset") ?? "0", 10)
+  const searchRaw = (url.searchParams.get("q") ?? "").trim()
+  const tierRaw = (url.searchParams.get("tier") ?? "").trim().toLowerCase()
+  const outcomeRaw = (url.searchParams.get("outcome") ?? "").trim().toLowerCase()
+  const sortRaw = (url.searchParams.get("sort") ?? "").trim().toLowerCase()
 
   if (!wallet) {
     return NextResponse.json({ error: "wallet required" }, { status: 400 })
@@ -86,6 +100,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "invalid status: " + statusRaw }, { status: 400 })
     }
     status = statusRaw
+  }
+
+  if (searchRaw.length > MAX_SEARCH_LEN) {
+    return NextResponse.json({ error: `q longer than ${MAX_SEARCH_LEN} characters` }, { status: 400 })
+  }
+  if (tierRaw && !TIER_RE.test(tierRaw)) {
+    return NextResponse.json({ error: "invalid tier: " + tierRaw }, { status: 400 })
+  }
+  if (outcomeRaw && outcomeRaw !== "all" && !PACK_HISTORY_OUTCOMES.has(outcomeRaw)) {
+    return NextResponse.json({ error: "invalid outcome: " + outcomeRaw }, { status: 400 })
+  }
+  if (sortRaw && !PACK_HISTORY_SORTS.has(sortRaw)) {
+    return NextResponse.json({ error: "invalid sort: " + sortRaw }, { status: 400 })
   }
 
   // Wallet ownership check (same shape as /api/wallet/pack-summary).
@@ -144,6 +171,10 @@ export async function GET(req: NextRequest) {
       p_status: status,
       p_limit: limit,
       p_offset: offset,
+      p_search: searchRaw || null,
+      p_tier: tierRaw || null,
+      p_outcome: outcomeRaw && outcomeRaw !== "all" ? outcomeRaw : null,
+      p_sort: sortRaw || null,
     }), "api/wallet/pack-history/get_wallet_pack_history", PACK_HISTORY_READ_BUDGET_MS)
     if (error) {
       console.error("[wallet/pack-history]", error.message)

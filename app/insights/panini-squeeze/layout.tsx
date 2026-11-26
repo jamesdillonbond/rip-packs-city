@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 
 const TITLE = "Panini WC Prizm Squeeze — Which 2026 World Cup Cards Are Still Sealed";
 const DESCRIPTION =
-  "Which 2026 Panini Prizm World Cup Soccer cards are still sealed in unopened packs — remaining supply, rip %, FMV and sealed-dollar exposure across every player and parallel. A floor, not a census. Free. No signup.";
+  "Which 2026 Panini Prizm World Cup Soccer cards are still sealed in packs — remaining supply, rip %, FMV and sealed-dollar exposure across every player and parallel. A floor, not a census. Free. No signup.";
 
 // `robots` is the ONLY launch-gated field here. While PANINI_PUBLIC is false the
 // surface is also unreachable anonymously (proxy.ts) and absent from the sitemap

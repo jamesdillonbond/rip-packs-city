@@ -269,7 +269,7 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     kind: "dataset",
     name: "Panini WC Prizm Squeeze",
     description:
-      "Which 2026 Panini Prizm World Cup Soccer cards are still sealed in unopened packs — remaining supply, rip %, FMV and sealed-dollar exposure across every player and parallel. A floor, not a census.",
+      "Which 2026 Panini Prizm World Cup Soccer cards are still sealed in packs — remaining supply, rip %, FMV and sealed-dollar exposure across every player and parallel. A floor, not a census.",
     publicApi: true,
   },
   {

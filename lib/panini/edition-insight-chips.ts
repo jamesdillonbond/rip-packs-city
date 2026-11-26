@@ -4,7 +4,7 @@
 // Insights" chips; All Day, Candy and Pinnacle got theirs; Panini edition pages had none, although four Panini
 // boards hold per-edition rows. Each chip is shown ONLY when its fact is true of THIS edition and states it:
 //   · deal     — on the public Below FMV board's Panini leg (mv_panini_public_deals) → /insights/deals
-//   · sealed   — copies still in unopened packs on the WC Prizm squeeze board (panini_squeeze_board; a floor, so
+//   · sealed   — copies still in sealed packs on the WC Prizm squeeze board (panini_squeeze_board; a floor, so
 //                the chip says "at least") → /insights/panini-squeeze
 //   · mover    — the lowest confirmed ask moved ≥ 10 % over the board's complete 7-day window
 //                (mv_panini_floor_movers, window_complete only) → the Floor movers tab

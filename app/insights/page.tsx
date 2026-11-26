@@ -122,7 +122,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Market Cap",
     blurb:
-      "What every collection, player, team, set and badge is worth on the supply collectors actually hold — fair market value times circulating copies, burned Moments and unopened packs taken out.",
+      "What every collection, player, team, set and badge is worth on the supply collectors actually hold — fair market value times circulating copies, burned Moments and sealed packs taken out.",
     cta: "Open market cap",
     available: true,
   },
@@ -158,7 +158,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Top Shot Pack Market",
     blurb:
-      "What a sealed NBA Top Shot pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read Top Shot's own site never surfaces.",
+      "What a sealed NBA Top Shot pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of sealed packs, ranked by discount-to-retail, resale premium, and volume. A read Top Shot's own site never surfaces.",
     cta: "Open Top Shot pack market",
     available: true,
   },
@@ -167,7 +167,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "All Day Pack Market",
     blurb:
-      "What a sealed NFL All Day pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read All Day's own site never surfaces.",
+      "What a sealed NFL All Day pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of sealed packs, ranked by discount-to-retail, resale premium, and volume. A read All Day's own site never surfaces.",
     cta: "Open All Day pack market",
     available: true,
   },

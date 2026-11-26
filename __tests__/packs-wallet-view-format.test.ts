@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import {
   packValueLabel, packUnrealizedUsd, packHeldPullsLabel, packHeldFmvLabel, packRoiLabel, packHoldLabel,
+  packFilterParams, packFiltersNarrow, packSortLabel, packTierOptions, packTierLabel, packOutcomeLabel, packOutcomeHint,
+  PACK_FILTER_DEFAULTS, PACK_SORTS, PACK_OUTCOMES,
   packTabMetrics, pullsHeldLine,
   PACK_FILTER_STATUS,
   PACK_FILTER_LABEL,
@@ -40,7 +42,7 @@ describe("PACK_FILTER_STATUS", () => {
 
 describe("PACK_FILTER_LABEL / PACK_FILTERS", () => {
   it("labels each filter", () => {
-    expect(PACK_FILTER_LABEL.unopened).toBe("Unopened")
+    expect(PACK_FILTER_LABEL.unopened).toBe("Sealed")
     expect(PACK_FILTER_LABEL.opened).toBe("Opened")
     expect(PACK_FILTER_LABEL.sold).toBe("Sold")
   })
@@ -574,5 +576,52 @@ describe("collectionPlWithheld", () => {
   it("withholds when either side is missing — never a P&L without its coverage", () => {
     expect(collectionPlWithheld(null, { packs_purchased: 1, packs_ripped: 1 })).toBe(true)
     expect(collectionPlWithheld(wallet, null)).toBe(true)
+  })
+})
+
+// 2026-11-26 (get_wallet_pack_history v38): the binder Packs filters -- search, tier, winners / losers, sort.
+describe("binder Packs filters", () => {
+  it("sends nothing for the defaults, so an unfiltered read is the v37 read", () => {
+    expect(packFilterParams(PACK_FILTER_DEFAULTS)).toEqual({})
+    expect(packFiltersNarrow(PACK_FILTER_DEFAULTS)).toBe(false)
+  })
+
+  it("trims and caps the search, folds the tier, and names only what narrows or re-orders", () => {
+    const p = packFilterParams({ search: "  Rookie Debut ", tier: "PREMIUM", outcome: "up", sort: "value_desc" })
+    expect(p).toEqual({ q: "Rookie Debut", tier: "premium", outcome: "up", sort: "value_desc" })
+    expect(packFilterParams({ ...PACK_FILTER_DEFAULTS, search: "x".repeat(200) }).q).toHaveLength(80)
+    expect(packFilterParams({ ...PACK_FILTER_DEFAULTS, search: "   " })).toEqual({})
+  })
+
+  it("a sort alone does not narrow; search, tier or winners / losers do", () => {
+    expect(packFiltersNarrow({ ...PACK_FILTER_DEFAULTS, sort: "pl_desc" })).toBe(false)
+    expect(packFiltersNarrow({ ...PACK_FILTER_DEFAULTS, search: "base" })).toBe(true)
+    expect(packFiltersNarrow({ ...PACK_FILTER_DEFAULTS, tier: "rare" })).toBe(true)
+    expect(packFiltersNarrow({ ...PACK_FILTER_DEFAULTS, outcome: "down" })).toBe(true)
+  })
+
+  it("names value and gain the way each tab's columns do", () => {
+    expect(packSortLabel("unopened", "value_desc")).toBe("Value: high to low")
+    expect(packSortLabel("opened", "value_desc")).toBe("Pull value: high to low")
+    expect(packSortLabel("sold", "value_asc")).toBe("Sold for: low to high")
+    expect(packSortLabel("unopened", "pl_desc")).toBe("Unrealized: best first")
+    expect(packSortLabel("sold", "pl_asc")).toBe("P&L: worst first")
+    // every sort has a label in every tab
+    for (const tab of PACK_FILTERS) for (const s of PACK_SORTS) expect(packSortLabel(tab, s)).toBeTruthy()
+  })
+
+  it("orders tier chips by count, ties by name, and drops empty or zero tiers", () => {
+    expect(packTierOptions({ rare: 45, common: 379, fandom: 5, legendary: 5, "": 3, ultimate: 0 })).toEqual([
+      { tier: "common", count: 379 }, { tier: "rare", count: 45 }, { tier: "fandom", count: 5 }, { tier: "legendary", count: 5 },
+    ])
+    expect(packTierOptions(null)).toEqual([])
+    expect(packTierLabel("PREMIUM")).toBe("Premium")
+    expect(packTierLabel("rare")).toBe("Rare")
+  })
+
+  it("labels winners / losers and says what each tab measures them against", () => {
+    expect(PACK_OUTCOMES.map(packOutcomeLabel)).toEqual(["All", "Winners", "Losers"])
+    expect(packOutcomeHint("unopened")).toMatch(/worth more .* than you paid/)
+    expect(packOutcomeHint("sold")).toMatch(/sold for more/)
   })
 })

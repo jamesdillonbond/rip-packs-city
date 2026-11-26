@@ -141,6 +141,40 @@ describe("GET /api/wallet/pack-history", () => {
     expect(state.rpcParams.p_limit).toBe(200)
   })
 
+  // 2026-11-26 (v38): the binder's Packs filters. Applied in the RPC before the page; an unknown value is a
+  // 400, never dropped -- a binder that asked for winners and got every pack would read as an answer.
+  it("passes search / tier / outcome / sort to the RPC, normalised", async () => {
+    verified()
+    const res = await GET(req("https://t/api/wallet/pack-history?wallet=0xabc&status=held&q=%20Rookie%20Debut%20&tier=RARE&outcome=UP&sort=value_desc"))
+    expect(res.status).toBe(200)
+    expect(state.rpcParams.p_search).toBe("Rookie Debut")
+    expect(state.rpcParams.p_tier).toBe("rare")
+    expect(state.rpcParams.p_outcome).toBe("up")
+    expect(state.rpcParams.p_sort).toBe("value_desc")
+  })
+
+  it("sends NULL for every absent filter, and outcome=all as no filter", async () => {
+    verified()
+    await GET(req("https://t/api/wallet/pack-history?wallet=0xabc&outcome=all"))
+    expect(state.rpcParams.p_search).toBeNull()
+    expect(state.rpcParams.p_tier).toBeNull()
+    expect(state.rpcParams.p_outcome).toBeNull()
+    expect(state.rpcParams.p_sort).toBeNull()
+  })
+
+  it.each([
+    ["sort=cheapest", "invalid sort"],
+    ["outcome=sideways", "invalid outcome"],
+    ["tier=%25rare", "invalid tier"],
+    ["q=" + "x".repeat(81), "longer than 80"],
+  ])("400s on %s, before any read", async (qs, msg) => {
+    verified()
+    const res = await GET(req("https://t/api/wallet/pack-history?wallet=0xabc&" + qs))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain(msg)
+    expect(state.rpcParams).toBeNull()
+  })
+
   it("schedules a background holdings sync for the wallet, and only after the ownership check", async () => {
     verified()
     const rpcNames: string[] = []

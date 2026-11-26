@@ -2586,7 +2586,7 @@ function WalletGroupCard({
             cardUnknown ||
             (coveredSet != null && col.supabaseCollectionId != null && !coveredSet.has(col.supabaseCollectionId));
           const moments = stat?.moment_count ?? 0;
-          // Unopened packs (2026-11-25): counted into the collection's FMV at their capped low ask —
+          // Sealed packs (2026-11-25): counted into the collection's FMV at their capped low ask —
           // the same figure the Portfolio FMV already includes. Known only when this wallet's pack
           // read carried the per-collection split; a collection absent from a known split holds none.
           const packsKnown = packs != null && !unknown && col.dbChain === "flow";
@@ -2629,7 +2629,7 @@ function WalletGroupCard({
                 </div>
                 {packsKnown && (
                   <div>
-                    <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Unopened Packs</div>
+                    <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Sealed Packs</div>
                     <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: packCount > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>{packCount.toLocaleString("en-US")}</div>
                   </div>
                 )}

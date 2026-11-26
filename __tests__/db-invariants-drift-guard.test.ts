@@ -1121,7 +1121,9 @@ const PINS = [
     // v35 (same night): a box pack's $0 is not a cost basis -- held_unrealized skips it.
     // v36 (2026-11-25): Pinnacle (no secondary pack market) and Golazos (from 2022-10-26) packs inside their drop window priced at retail.
     // v37 (2026-11-25): held tab_totals gain held_by_collection (per collection_id held packs + capped asks).
-    migration: "supabase/migrations/20261126033201_audit_20261125_held_packs_by_collection.sql",
+    // v38 (2026-11-26, Trevor: binder Packs filters): p_search / p_tier / p_outcome / p_sort, applied before
+    // the page; tab_totals follow them and gain tab_packs + tiers. Signature changed (old 5-arg overload dropped).
+    migration: "supabase/migrations/20261126200712_audit_20261126_pack_history_v38_binder_filters.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

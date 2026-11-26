@@ -229,7 +229,7 @@ export default function MarketCapBoardClient({
       <p style={{ margin: "10px 0 0", maxWidth: 760, fontSize: 15, lineHeight: 1.5, color: "var(--rpc-text-secondary)" }}>
         What every collection, player, team, set and badge is worth on the{" "}
         <strong style={{ color: "var(--rpc-text-primary)" }}>supply collectors actually hold</strong> — fair market value
-        times circulating copies, with burned Moments and unopened or unreleased packs taken out.
+        times circulating copies, with burned Moments and sealed or unreleased packs taken out.
       </p>
 
       <div className="rpc-mono" style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 16, fontSize: 11, color: "var(--rpc-text-muted)" }}>

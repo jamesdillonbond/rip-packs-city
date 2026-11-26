@@ -12,7 +12,7 @@
 // unopened / total pack counts for every dist, re-read every ~2 days.
 //
 // WHAT THE NUMBER IS — and is not.
-//   per100Now    = 100 × remaining_T / unopened packs   (average, today)
+//   per100Now    = 100 × remaining_T / sealed packs   (average, today)
 //   per100Launch = 100 × original_T  / total packs      (average, at launch)
 //   vsLaunch     = per100Now / per100Launch
 // It is an AVERAGE density, not a per-pack probability: Dapper's slot rules decide

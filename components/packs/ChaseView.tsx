@@ -93,7 +93,7 @@ export default function ChaseView({ collection, accent }: Props) {
     <div>
       <p className="mb-3 text-xs text-[color:var(--rpc-text-secondary)]" style={{ maxWidth: 720 }}>
         Where the {tierLabel} moments of each drop are still sealed, from Dapper&apos;s live pack counts. The figure is an
-        average across the packs still unopened, compared with the same drop at launch. It is not a per-pack chance:
+        average across the packs still sealed, compared with the same drop at launch. It is not a per-pack chance:
         Dapper&apos;s slot rules decide how those moments are spread, and most packs hold none.
       </p>
 

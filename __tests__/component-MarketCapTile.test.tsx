@@ -247,7 +247,7 @@ describe("MarketCapTile — Top Shot edition issuer-held split", () => {
     const t = container.textContent ?? ""
     expect(t).toContain("Issuer-Held")
     expect(t).toContain("pack / reserve split not known yet")
-    expect(t).not.toContain("0 in unopened packs")
+    expect(t).not.toContain("0 in sealed packs")
     expect(t).not.toMatch(/reserve, never packed/)
   })
 
@@ -255,7 +255,7 @@ describe("MarketCapTile — Top Shot edition issuer-held split", () => {
     state.data = [ED]
     state.byFn[SPLIT_FN] = { data: [{ edition_external_id: "261:8705", hidden: 50, in_packs: 6, reserve: 44, drops_with_packs: 2, split_status: "ok", as_of: "2026-10-05T16:00:00Z" }], error: null }
     const { container } = await renderTile({ group: "edition", collectionDbSlug: "nba_top_shot", match: "261:8705" })
-    expect(container.textContent).toContain("6 in unopened packs (2 drops) · 44 reserve, never packed")
+    expect(container.textContent).toContain("6 in sealed packs (2 drops) · 44 reserve, never packed")
   })
 
   it("a FAILED split read says so — and the cap still renders", async () => {

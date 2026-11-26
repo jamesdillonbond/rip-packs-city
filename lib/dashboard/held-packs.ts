@@ -21,7 +21,7 @@ export interface HeldPackValueRow {
   capped_ask_count?: number | null
   capped_ask_usd?: number | string | null
   unreferenced_ask_count?: number | null
-  // v4 (2026-11-25, Trevor: "show Unopened Packs totals here, with it counting into that
+  // v4 (2026-11-25, Trevor: "show Sealed Packs totals here, with it counting into that
   // collection's total fmv"): the same held packs and capped asks, keyed by collection_id.
   by_collection?: Record<string, { packs?: number | null; capped_ask_n?: number | null; capped_ask_usd?: number | string | null }> | null
 }

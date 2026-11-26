@@ -30,7 +30,7 @@ export async function fetchMarketCapTileRow(
 }
 
 /**
- * One Top Shot edition's issuer-held split (inside unopened packs vs reserve), same
+ * One Top Shot edition's issuer-held split (inside sealed packs vs reserve), same
  * budget. `null` = not a Top Shot edition; THROWS on a failed or slow read.
  */
 export async function fetchIssuerSplitTileRow(externalId: string): Promise<IssuerSplitEditionRow | null> {

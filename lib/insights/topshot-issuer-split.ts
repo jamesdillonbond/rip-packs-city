@@ -1,6 +1,6 @@
 // lib/insights/topshot-issuer-split.ts
 //
-// Top Shot's issuer-held supply, split into Moments inside unopened packs (sold or
+// Top Shot's issuer-held supply, split into Moments inside sealed packs (sold or
 // unsold) and reserve never put into any pack. Reads get_topshot_issuer_held_split()
 // (migration 20261003224608) and get_topshot_issuer_held_split_edition()
 // (20261003232935), which sum Atlas DistributionService pack data against

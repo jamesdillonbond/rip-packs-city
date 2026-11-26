@@ -712,7 +712,7 @@ export default function PaniniBoardsTabs({
         ) : (
           <>
             <Note>
-              Editions where a few collectors own most of the copies that have left packs. Shares are of owned copies — unopened
+              Editions where a few collectors own most of the copies that have left packs. Shares are of owned copies — sealed
               and burnt copies are left out — and only for editions where RPC has read every serial and at least 10 copies are owned.
               <b> Stacked</b>: one collector owns {pct(STACKED_SHARE)} or more. <b>Cornered</b>: the top three own {pct(CORNERED_SHARE)} or more.
               {data.holders_eligible != null && data.holders_stacked != null && data.holders_cornered != null
@@ -720,7 +720,7 @@ export default function PaniniBoardsTabs({
                 : ""}
               {" "}Holders are counted, never named. Updated daily{data.holders[0]?.computed_at ? ` (${ptDate(data.holders[0].computed_at)})` : ""}.
             </Note>
-            <Table head={["Player", "Set · Parallel", "Owned", "Holders", "Top holder", "Top 3", "Unopened", "Grip"]}>
+            <Table head={["Player", "Set · Parallel", "Owned", "Holders", "Top holder", "Top 3", "Sealed", "Grip"]}>
               {data.holders.map((r) => (
                 <tr key={r.external_id}>
                   <td style={td}>{r.player_name ?? "—"}</td>

@@ -90,7 +90,8 @@
 --      page-by-page sums over the rows (V29-1), so no number moves.
 --
 -- The get_wallet_pack_history DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261122025253_audit_20261122_pack_ask_capped_by_references.sql -- get_wallet_pack_history v33 and wallet_held_pack_value v3).
+-- (get_wallet_pack_history v38: supabase/migrations/20261126200712_audit_20261126_pack_history_v38_binder_filters.sql;
+--  wallet_held_pack_value v4: supabase/migrations/20261126033201_audit_20261125_held_packs_by_collection.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -233,7 +234,7 @@ AS $function$
 $function$;
 
 -- >>> BEGIN verbatim get_wallet_pack_history (body byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.get_wallet_pack_history(p_wallet text, p_collection_slug text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
+CREATE OR REPLACE FUNCTION public.get_wallet_pack_history(p_wallet text, p_collection_slug text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0, p_search text DEFAULT NULL::text, p_tier text DEFAULT NULL::text, p_outcome text DEFAULT NULL::text, p_sort text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -244,6 +245,19 @@ DECLARE
   v_wallet text := lower(coalesce(p_wallet, ''));
   v_safe_limit  int := LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200);
   v_safe_offset int := GREATEST(COALESCE(p_offset, 0), 0);
+  -- v38 (2026-11-26, Trevor: "add more filters within the packs section within my binder" --
+  -- search, sort, pack tier, winners / losers). All NULL = the v37 read, row for row.
+  -- p_search: a substring of the pack name, LIKE wildcards escaped (a typed % or _ is literal).
+  v_search text := NULLIF(replace(replace(replace(btrim(COALESCE(p_search, '')), '\', '\\'), '%', '\%'), '_', '\_'), '');
+  -- p_tier: the pack's tier, case-folded (Top Shot writes rare, All Day writes PREMIUM).
+  v_tier text := NULLIF(lower(btrim(COALESCE(p_tier, ''))), '');
+  -- p_outcome: 'up' / 'down' against cost -- a sealed pack's value minus its cost, an
+  -- opened or sold pack's realized P/L. A row with neither known is in neither.
+  v_outcome text := CASE WHEN lower(p_outcome) IN ('up', 'down') THEN lower(p_outcome) END;
+  -- p_sort: recent (default) | oldest | value_desc | value_asc | cost_desc | cost_asc |
+  -- pl_desc | pl_asc | name. An unknown value is recent. Unknown values sort last.
+  v_sort text := CASE WHEN lower(p_sort) IN ('oldest', 'value_desc', 'value_asc', 'cost_desc', 'cost_asc',
+                                            'pl_desc', 'pl_asc', 'name') THEN lower(p_sort) ELSE 'recent' END;
   v_ts uuid;
   v_ad uuid;
   v_gz uuid;
@@ -957,35 +971,82 @@ BEGIN
                                  GREATEST(dm.atlas_last_usd, dm.opened_few_usd)) AS ref_usd) ref
     WHERE v_want_held AND f.status = 'held'
   ),
+  -- v38: the binder's filters, over the tab's rows. Each row carries the value and gain
+  -- the binder shows for its tab (sealed: value / value - cost under held_valued's rule;
+  -- opened: pull value / P&L; sold: sale price / P&L), so a sort or a winners / losers
+  -- filter means what the row on screen says. n_rn is the row's place in the chosen order;
+  -- the page and the aggregate both read it, so they cannot disagree.
+  narrowed AS (
+    SELECT f.*,
+      CASE WHEN f.status = 'held'   THEN hv.value_usd
+           WHEN f.status = 'ripped' THEN f.pull_value_usd
+           WHEN f.status IN ('flipped', 'sold') THEN f.sell_price END AS n_sort_value,
+      CASE WHEN f.status = 'held' THEN hv.value_usd - hv.buy_usd ELSE f.realized_pl_usd END AS n_sort_pl
+    FROM filtered f
+    LEFT JOIN held_valued hv ON hv.collection_id = f.collection_id AND hv.pack_nft_id = f.pack_nft_id
+    WHERE (v_search IS NULL OR f.pack_name ILIKE '%' || v_search || '%')
+      AND (v_tier IS NULL OR lower(f.pack_tier) = v_tier)
+  ),
+  matched AS MATERIALIZED (
+    SELECT n.*,
+      row_number() OVER (ORDER BY
+        CASE WHEN v_sort = 'value_desc' THEN n.n_sort_value END DESC NULLS LAST,
+        CASE WHEN v_sort = 'value_asc'  THEN n.n_sort_value END ASC  NULLS LAST,
+        CASE WHEN v_sort = 'cost_desc'  THEN n.buy_usd      END DESC NULLS LAST,
+        CASE WHEN v_sort = 'cost_asc'   THEN n.buy_usd      END ASC  NULLS LAST,
+        CASE WHEN v_sort = 'pl_desc'    THEN n.n_sort_pl    END DESC NULLS LAST,
+        CASE WHEN v_sort = 'pl_asc'     THEN n.n_sort_pl    END ASC  NULLS LAST,
+        CASE WHEN v_sort = 'name'       THEN lower(n.pack_name) END ASC NULLS LAST,
+        CASE WHEN v_sort = 'oldest'     THEN n.latest_event_at END ASC NULLS LAST,
+        n.latest_event_at DESC NULLS LAST, n.collection_id, n.pack_nft_id) AS n_rn
+    FROM narrowed n
+    WHERE v_outcome IS NULL
+       OR (v_outcome = 'up'   AND n.n_sort_pl > 0)
+       OR (v_outcome = 'down' AND n.n_sort_pl < 0)
+  ),
+  -- v38: the tab's metrics follow the filters -- the same held / pull rows, cut to the matched packs.
+  held_valued_m AS (
+    SELECT hv.* FROM held_valued hv
+    WHERE EXISTS (SELECT 1 FROM matched m WHERE m.collection_id = hv.collection_id AND m.pack_nft_id = hv.pack_nft_id)
+  ),
+  held_pulls_m AS (
+    SELECT hp.* FROM held_pulls hp
+    WHERE EXISTS (SELECT 1 FROM matched m WHERE m.collection_id = hp.collection_id AND m.pack_nft_id = hp.pack_nft_id)
+  ),
   -- v27: the tab's own metrics over EVERY row of the filter (the page is 25). Every
   -- sum is paired with how many rows it covers; an unknown never counts as 0.
   tab_totals AS (
     SELECT jsonb_build_object(
-      'packs',             (SELECT count(*) FROM filtered),
-      'cost_usd',          (SELECT round(sum(buy_usd)::numeric, 2) FROM filtered),
-      'cost_known',        (SELECT count(buy_usd) FROM filtered),
-      'realized_pl_usd',   (SELECT round(sum(realized_pl_usd)::numeric, 2) FROM filtered),
-      'realized_pl_known', (SELECT count(realized_pl_usd) FROM filtered),
+      -- v38: the tab before the binder's filters, and its tiers (case-folded, with counts) for the tier chips
+      'tab_packs',         (SELECT count(*) FROM filtered),
+      'tiers',             (SELECT COALESCE(jsonb_object_agg(t.tier, t.n), '{}'::jsonb)
+                              FROM (SELECT lower(pack_tier) AS tier, count(*) AS n FROM filtered
+                                     WHERE pack_tier IS NOT NULL AND btrim(pack_tier) <> '' GROUP BY 1) t),
+      'packs',             (SELECT count(*) FROM matched),
+      'cost_usd',          (SELECT round(sum(buy_usd)::numeric, 2) FROM matched),
+      'cost_known',        (SELECT count(buy_usd) FROM matched),
+      'realized_pl_usd',   (SELECT round(sum(realized_pl_usd)::numeric, 2) FROM matched),
+      'realized_pl_known', (SELECT count(realized_pl_usd) FROM matched),
       -- Unopened
-      'held_packs',        (SELECT count(*) FROM held_valued),
-      'held_value_usd',    (SELECT round(sum(value_usd)::numeric, 2) FROM held_valued),
-      'held_valued',       (SELECT count(value_usd) FROM held_valued),
-      'held_valued_by_ask', (SELECT count(*) FROM held_valued WHERE value_basis IN ('ask', 'ask_capped')),
-      'held_ask_oldest_checked_at', (SELECT min(ask_checked_at) FROM held_valued WHERE value_basis IN ('ask', 'ask_capped')),
-      'held_unrealized_usd', (SELECT round(sum(value_usd - buy_usd)::numeric, 2) FROM held_valued
+      'held_packs',        (SELECT count(*) FROM held_valued_m),
+      'held_value_usd',    (SELECT round(sum(value_usd)::numeric, 2) FROM held_valued_m),
+      'held_valued',       (SELECT count(value_usd) FROM held_valued_m),
+      'held_valued_by_ask', (SELECT count(*) FROM held_valued_m WHERE value_basis IN ('ask', 'ask_capped')),
+      'held_ask_oldest_checked_at', (SELECT min(ask_checked_at) FROM held_valued_m WHERE value_basis IN ('ask', 'ask_capped')),
+      'held_unrealized_usd', (SELECT round(sum(value_usd - buy_usd)::numeric, 2) FROM held_valued_m
                               WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
-      'held_unrealized_n',   (SELECT count(*) FROM held_valued WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
+      'held_unrealized_n',   (SELECT count(*) FROM held_valued_m WHERE value_usd IS NOT NULL AND buy_usd IS NOT NULL),
       -- v29 (2026-11-13): each basis summed apart, over EVERY held row -- what
       -- wallet_held_pack_value used to rebuild by re-running this function once per
       -- 200-row page. Per-row rounding first, as the page rows carry them.
-      'held_listed',         (SELECT count(ask_usd) FROM held_valued),
-      'held_floor_ask_usd',  (SELECT round(COALESCE(sum(round(ask_usd::numeric, 2)), 0), 2) FROM held_valued),
+      'held_listed',         (SELECT count(ask_usd) FROM held_valued_m),
+      'held_floor_ask_usd',  (SELECT round(COALESCE(sum(round(ask_usd::numeric, 2)), 0), 2) FROM held_valued_m),
       -- v33: the same asks, each capped at 3x its drop's best reference; listed packs
       -- with no reference are counted apart and add nothing.
-      'held_capped_ask_n',   (SELECT count(capped_ask_usd) FROM held_valued),
-      'held_capped_ask_usd', (SELECT round(COALESCE(sum(round(capped_ask_usd::numeric, 2)), 0), 2) FROM held_valued),
-      'held_ask_capped_n',   (SELECT count(*) FROM held_valued WHERE value_basis = 'ask_capped'),
-      'held_ask_unreferenced_n', (SELECT count(*) FROM held_valued WHERE ask_unreferenced),
+      'held_capped_ask_n',   (SELECT count(capped_ask_usd) FROM held_valued_m),
+      'held_capped_ask_usd', (SELECT round(COALESCE(sum(round(capped_ask_usd::numeric, 2)), 0), 2) FROM held_valued_m),
+      'held_ask_capped_n',   (SELECT count(*) FROM held_valued_m WHERE value_basis = 'ask_capped'),
+      'held_ask_unreferenced_n', (SELECT count(*) FROM held_valued_m WHERE ask_unreferenced),
       -- v37 (2026-11-25, Trevor: "show Unopened Packs totals here, with it counting into that
       -- collection's total fmv"): the same held counts and capped asks, per collection_id, so the
       -- dashboard's wallet tiles can carry each collection's own sealed packs.
@@ -993,32 +1054,31 @@ BEGIN
                                  'packs', g.n, 'capped_ask_n', g.cn, 'capped_ask_usd', g.cu)), '{}'::jsonb)
                                FROM (SELECT collection_id, count(*) AS n, count(capped_ask_usd) AS cn,
                                             round(COALESCE(sum(round(capped_ask_usd::numeric, 2)), 0), 2) AS cu
-                                       FROM held_valued GROUP BY collection_id) g),
-      'held_last_sale_n',    (SELECT count(last_sale_usd) FROM held_valued),
-      'held_last_sale_usd',  (SELECT round(COALESCE(sum(round(last_sale_usd::numeric, 2)), 0), 2) FROM held_valued),
-      'held_rip_ev_n',       (SELECT count(rip_ev_usd) FROM held_valued),
-      'held_rip_ev_usd',     (SELECT round(COALESCE(sum(round(rip_ev_usd::numeric, 2)), 0), 2) FROM held_valued),
-      'held_opened_avg_n',   (SELECT count(*) FROM held_valued WHERE rip_ev_usd IS NULL AND opened_avg_usd IS NOT NULL),
-      'held_opened_avg_usd', (SELECT round(COALESCE(sum(opened_avg_usd) FILTER (WHERE rip_ev_usd IS NULL), 0), 2) FROM held_valued),
+                                       FROM held_valued_m GROUP BY collection_id) g),
+      'held_last_sale_n',    (SELECT count(last_sale_usd) FROM held_valued_m),
+      'held_last_sale_usd',  (SELECT round(COALESCE(sum(round(last_sale_usd::numeric, 2)), 0), 2) FROM held_valued_m),
+      'held_rip_ev_n',       (SELECT count(rip_ev_usd) FROM held_valued_m),
+      'held_rip_ev_usd',     (SELECT round(COALESCE(sum(round(rip_ev_usd::numeric, 2)), 0), 2) FROM held_valued_m),
+      'held_opened_avg_n',   (SELECT count(*) FROM held_valued_m WHERE rip_ev_usd IS NULL AND opened_avg_usd IS NOT NULL),
+      'held_opened_avg_usd', (SELECT round(COALESCE(sum(opened_avg_usd) FILTER (WHERE rip_ev_usd IS NULL), 0), 2) FROM held_valued_m),
       -- Opened
-      'opened_packs',      (SELECT count(*) FROM filtered WHERE status = 'ripped'),
-      'pull_value_usd',    (SELECT round(sum(pull_value_usd)::numeric, 2) FROM filtered WHERE status = 'ripped'),
-      'pull_valued',       (SELECT count(pull_value_usd) FROM filtered WHERE status = 'ripped'),
-      'opened_with_pull_list', (SELECT count(*) FROM held_pulls),
-      'pulls_listed',      (SELECT COALESCE(sum(pulls_listed), 0) FROM held_pulls),
-      'pulls_held',        (SELECT COALESCE(sum(pulls_held), 0) FROM held_pulls),
-      'pulls_held_priced', (SELECT COALESCE(sum(pulls_held_priced), 0) FROM held_pulls),
-      'held_fmv_usd',      (SELECT round(COALESCE(sum(held_fmv_sum), 0)::numeric, 2) FROM held_pulls),
+      'opened_packs',      (SELECT count(*) FROM matched WHERE status = 'ripped'),
+      'pull_value_usd',    (SELECT round(sum(pull_value_usd)::numeric, 2) FROM matched WHERE status = 'ripped'),
+      'pull_valued',       (SELECT count(pull_value_usd) FROM matched WHERE status = 'ripped'),
+      'opened_with_pull_list', (SELECT count(*) FROM held_pulls_m),
+      'pulls_listed',      (SELECT COALESCE(sum(pulls_listed), 0) FROM held_pulls_m),
+      'pulls_held',        (SELECT COALESCE(sum(pulls_held), 0) FROM held_pulls_m),
+      'pulls_held_priced', (SELECT COALESCE(sum(pulls_held_priced), 0) FROM held_pulls_m),
+      'held_fmv_usd',      (SELECT round(COALESCE(sum(held_fmv_sum), 0)::numeric, 2) FROM held_pulls_m),
       -- Sold
-      'sold_packs',        (SELECT count(*) FROM filtered WHERE status IN ('flipped', 'sold')),
-      'proceeds_usd',      (SELECT round(sum(sell_price)::numeric, 2) FROM filtered WHERE status IN ('flipped', 'sold')),
-      'proceeds_known',    (SELECT count(sell_price) FROM filtered WHERE status IN ('flipped', 'sold'))
+      'sold_packs',        (SELECT count(*) FROM matched WHERE status IN ('flipped', 'sold')),
+      'proceeds_usd',      (SELECT round(sum(sell_price)::numeric, 2) FROM matched WHERE status IN ('flipped', 'sold')),
+      'proceeds_known',    (SELECT count(sell_price) FROM matched WHERE status IN ('flipped', 'sold'))
     ) AS t
   ),
   page AS (
-    SELECT * FROM filtered
-    ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
-    LIMIT v_safe_limit OFFSET v_safe_offset
+    SELECT * FROM matched
+    WHERE n_rn > v_safe_offset AND n_rn <= v_safe_offset + v_safe_limit
   ),
   -- market context, PAGE rows only: current floor ask, latest EV snapshot, last
   -- recorded secondary sale of the same distribution. All NULL when unknown.
@@ -1083,7 +1143,7 @@ BEGIN
     ) lsale ON true
   )
   SELECT
-    (SELECT COUNT(*) FROM filtered),
+    (SELECT COUNT(*) FROM matched),
     COALESCE(jsonb_agg(
       jsonb_build_object(
         'pack_nft_id', pack_nft_id, 'collection_id', collection_id,
@@ -1158,7 +1218,7 @@ BEGIN
            -- v27: a sealed pack's value and its basis (ask | last_sale | rip_ev | opened_avg)
            'value_usd', CASE WHEN value_usd IS NULL THEN NULL ELSE ROUND(value_usd::numeric, 2) END,
            'value_basis', value_basis)
-      ORDER BY latest_event_at DESC NULLS LAST, collection_id, pack_nft_id
+      ORDER BY n_rn
     ), '[]'::jsonb),
     (SELECT t FROM tab_totals)
   INTO v_total, v_packs, v_tab
@@ -1168,6 +1228,9 @@ BEGIN
     'wallet', v_wallet,
     'collection_slug', p_collection_slug,
     'status_filter', p_status,
+    -- v38: the binder's filters as applied (search unescaped as typed; NULL = not filtered)
+    'filters', jsonb_build_object('search', NULLIF(btrim(COALESCE(p_search, '')), ''), 'tier', v_tier,
+                                  'outcome', v_outcome, 'sort', v_sort),
     'limit', v_safe_limit,
     'offset', v_safe_offset,
     'total_count', v_total,
@@ -2532,6 +2595,80 @@ BEGIN
   v := public.wallet_held_pack_value('0xnobody37');
   PERFORM _assert(v->'by_collection' = '{}'::jsonb OR v ? 'error',
                   'V37-3 a wallet with no held packs reads an empty by_collection, never null. got ' || v::text);
+END $$;
+
+-- V38 (2026-11-26, Trevor: "add more filters within the packs section within my binder"): search,
+-- pack tier, winners / losers and sort, all applied BEFORE the page so the count, the page and the
+-- tab metrics agree. Fixture wallet 0xwallet, Top Shot: held = P3 P4 P6 P7 P12 P13 P14 (P7 cost $6,
+-- value $22.50; P14 value $22.50, no cost); sold = P1 (+15) P10 (+8) P2 P16 (no cost).
+UPDATE public.pack_distributions SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"tier": "Rare"}'::jsonb
+ WHERE title = 'Fresh Threads Pack';
+DO $$
+DECLARE
+  r jsonb; ids text; all_ids text; paged text := ''; i int;
+BEGIN
+  -- V38-1 no filter = the v37 order (latest event first) and the default sort is named
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', NULL, 50, 0);
+  SELECT string_agg(p->>'pack_nft_id', ',' ORDER BY o) INTO ids FROM jsonb_array_elements(r->'packs') WITH ORDINALITY x(p, o);
+  SELECT string_agg(p->>'pack_nft_id', ',' ORDER BY (p->>'latest_event_at')::timestamptz DESC NULLS LAST, p->>'collection_id', p->>'pack_nft_id')
+    INTO all_ids FROM jsonb_array_elements(r->'packs') p;
+  PERFORM _assert_eq(ids, all_ids, 'V38-1 no filter keeps the latest-event order');
+  PERFORM _assert_eq(r->'filters'->>'sort', 'recent', 'V38-1 default sort is recent');
+  PERFORM _assert_eq((r->'tab_totals'->>'tab_packs'), (r->>'total_count'), 'V38-1 unfiltered: tab_packs = total_count');
+
+  -- V38-2 sort by value, high first: priced rows first, unpriced last
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_sort => 'value_desc');
+  SELECT string_agg(COALESCE(p->>'value_usd', 'null'), ',' ORDER BY o) INTO ids FROM jsonb_array_elements(r->'packs') WITH ORDINALITY x(p, o);
+  PERFORM _assert_eq(ids, '22.50,22.50,null,null,null,null,null', 'V38-2 value_desc puts the two valued packs first');
+
+  -- V38-3 winners on the Sealed tab: value above cost; a pack with no cost is neither
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_outcome => 'up');
+  PERFORM _assert_eq(r->>'total_count', '1', 'V38-3 one sealed winner (P7: $22.50 vs $6)');
+  PERFORM _assert_eq(r->'packs'->0->>'pack_nft_id', 'P7', 'V38-3 it is P7');
+  PERFORM _assert_eq(r->'tab_totals'->>'held_packs', '1', 'V38-3 tab metrics follow the filter');
+  PERFORM _assert_eq(r->'tab_totals'->>'tab_packs', '7', 'V38-3 tab_packs is the tab before filters');
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_outcome => 'down');
+  PERFORM _assert_eq(r->>'total_count', '0', 'V38-3 no sealed loser');
+  PERFORM _assert_eq((r->'packs')::text, '[]', 'V38-3 an empty match is [], never null');
+  PERFORM _assert_eq(r->'tab_totals'->>'packs', '0', 'V38-3 empty match: packs 0');
+
+  -- V38-4 winners on the Sold tab, best first
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0, p_outcome => 'up', p_sort => 'pl_desc');
+  SELECT string_agg(p->>'pack_nft_id', ',' ORDER BY o) INTO ids FROM jsonb_array_elements(r->'packs') WITH ORDINALITY x(p, o);
+  PERFORM _assert_eq(ids, 'P1,P10', 'V38-4 sold winners by P&L: P1 (+15) then P10 (+8)');
+  PERFORM _assert_eq(r->'tab_totals'->>'realized_pl_usd', '23.00', 'V38-4 the P&L total covers the matched packs only');
+
+  -- V38-5 search: case-insensitive substring; LIKE wildcards are literal
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_search => '  FRESH thr ');
+  PERFORM _assert_eq(r->>'total_count', '2', 'V38-5 "FRESH thr" finds both Fresh Threads packs');
+  PERFORM _assert_eq(r->'filters'->>'search', 'FRESH thr', 'V38-5 search echoed trimmed, as typed');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_search => '%'))->>'total_count', '0',
+                     'V38-5 a typed % matches a literal %, not everything');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_search => '_'))->>'total_count', '0',
+                     'V38-5 a typed _ matches a literal _, not any character');
+
+  -- V38-6 tier: case-folded both sides; the tier list is over the whole tab
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_tier => 'RARE');
+  PERFORM _assert_eq(r->>'total_count', '2', 'V38-6 tier RARE matches the two "Rare" packs');
+  PERFORM _assert_eq(r->'tab_totals'->>'held_value_usd', '45.00', 'V38-6 held value over the matched packs');
+  PERFORM _assert_eq((r->'tab_totals'->'tiers')::text, '{"rare": 2}', 'V38-6 tiers: case-folded counts');
+  PERFORM _assert_eq(r->'tab_totals'->>'tab_packs', '7', 'V38-6 tab_packs ignores the tier filter');
+
+  -- V38-7 pages of a sorted read stitch into the whole sorted read
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_sort => 'name');
+  SELECT string_agg(p->>'pack_nft_id', ',' ORDER BY o) INTO all_ids FROM jsonb_array_elements(r->'packs') WITH ORDINALITY x(p, o);
+  FOR i IN 0..3 LOOP
+    SELECT paged || COALESCE(string_agg(',' || (p->>'pack_nft_id'), '' ORDER BY o), '') INTO paged
+      FROM jsonb_array_elements((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, i * 2, p_sort => 'name'))->'packs') WITH ORDINALITY x(p, o);
+  END LOOP;
+  PERFORM _assert_eq(ltrim(paged, ','), all_ids, 'V38-7 name-sorted pages of 2 = the whole name-sorted list');
+  PERFORM _assert_eq(split_part(all_ids, ',', 1), 'P7', 'V38-7 name sort: Fresh Threads (newest first on a tie) leads');
+
+  -- V38-8 an unknown sort or outcome is the default, never an error
+  r := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 50, 0, p_outcome => 'sideways', p_sort => 'bogus');
+  PERFORM _assert_eq(r->>'total_count', '7', 'V38-8 unknown outcome = no filter');
+  PERFORM _assert_eq(r->'filters'->>'sort', 'recent', 'V38-8 unknown sort = recent');
+  RAISE NOTICE '✓ V38 binder filters: search / tier / outcome / sort';
 END $$;
 
 ROLLBACK;

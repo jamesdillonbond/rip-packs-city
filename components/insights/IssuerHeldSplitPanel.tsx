@@ -1,7 +1,7 @@
 // components/insights/IssuerHeldSplitPanel.tsx
 //
 // "Issuer-held, split" panel on /insights/market-cap: Top Shot Moments the issuer
-// still holds, divided into those inside unopened packs (sold or unsold) and reserve
+// still holds, divided into those inside sealed packs (sold or unsold) and reserve
 // never put into any pack. Server-rendered (no hooks), RPC tokens only.
 //
 // Three states, never two: `failed` (the read died — say so), a split that is not
@@ -38,7 +38,7 @@ export default function IssuerHeldSplitPanel({ rows, failed }: { rows: IssuerSpl
       </h2>
       <p style={{ margin: "8px 0 0", maxWidth: 760, fontSize: 14, lineHeight: 1.5, color: "var(--rpc-text-secondary)" }}>
         Moments Top Shot still holds are left out of market cap. They are of two kinds: Moments sealed inside packs that
-        exist and are unopened (sold or still for sale), and reserve that was minted but never put into any pack.
+        exist and are still sealed (sold or still for sale), and reserve that was minted but never put into any pack.
       </p>
 
       {failed || total == null ? (
@@ -58,7 +58,7 @@ export default function IssuerHeldSplitPanel({ rows, failed }: { rows: IssuerSpl
                 <tr>
                   <th scope="col" style={th("left")}>Tier</th>
                   <th scope="col" style={th("right")}>Issuer-held</th>
-                  <th scope="col" style={th("right")}>In unopened packs</th>
+                  <th scope="col" style={th("right")}>In sealed packs</th>
                   <th scope="col" style={th("right")}>Reserve, never packed</th>
                 </tr>
               </thead>
@@ -89,8 +89,8 @@ export default function IssuerHeldSplitPanel({ rows, failed }: { rows: IssuerSpl
                     2026-10-25): an unsold pack is not "unopened", so the two are one population and
                     "N of them already bought" read the same number twice as if it were a share. */}
                 {total.packs_owned_by_collectors === total.packs_unopened
-                  ? <>{fmtCount(total.packs_unopened)} unopened packs held by collectors.{" "}</>
-                  : <>{fmtCount(total.packs_unopened)} unopened packs, {fmtCount(total.packs_owned_by_collectors)} of them already bought by collectors.{" "}</>}
+                  ? <>{fmtCount(total.packs_unopened)} sealed packs held by collectors.{" "}</>
+                  : <>{fmtCount(total.packs_unopened)} sealed packs, {fmtCount(total.packs_owned_by_collectors)} of them already bought by collectors.{" "}</>}
               </>
             )}
             Pack counts are Top Shot&apos;s own per-drop figures, read from the marketplace one drop at a time and refreshed daily;

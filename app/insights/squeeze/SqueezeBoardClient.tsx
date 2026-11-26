@@ -808,7 +808,7 @@ export default function SqueezeBoardClient({
                 <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Squeeze</th>
                 <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Buyable</th>
                 {isTopShot ? (
-                  <th scope="col" className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
+                  <th scope="col" className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; sealed-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
                 ) : null}
                 <th scope="col" className="rpc-sq-th-num">FMV</th>
                 <th scope="col" className="rpc-sq-th-num">Low ask</th>
@@ -856,10 +856,10 @@ export default function SqueezeBoardClient({
                   {isTopShot ? (
                   <td className="rpc-sq-td-num" data-testid="top5-share">
                     {/* 2026-10-25: a complete census with 0 collector holders (every copy in
-                        an unopened-pack / vault account; 35 editions at the time) read a bare
+                        a sealed-pack / vault account; 35 editions at the time) read a bare
                         "0%" beside Locked 1 — true by the definition, unreadable without it. */}
                     {r.holders === 0 && typeof r.top5_share_pct === "number" ? (
-                      <span title="No collector holds a copy: every one sits in a system account (unopened pack or platform vault), which this share excludes.">none held</span>
+                      <span title="No collector holds a copy: every one sits in a system account (sealed pack or platform vault), which this share excludes.">none held</span>
                     ) : typeof r.top5_share_pct === "number" ? (
                       <span title={`${fmtPct(r.top5_share_pct)} of circulation is held by the 5 largest collector wallets${typeof r.holders === "number" ? ` · ${fmtInt(r.holders)} holders` : ""}`}>
                         {fmtPct(r.top5_share_pct)}
@@ -935,7 +935,7 @@ export default function SqueezeBoardClient({
           <p>
             <strong>Top 5 hold</strong> = the combined share of circulation held
             by the five largest <em>collector</em> wallets, from the on-chain
-            owner census (Top Shot&rsquo;s unopened-pack account and Dapper&rsquo;s
+            owner census (Top Shot&rsquo;s sealed-pack account and Dapper&rsquo;s
             buyback account are excluded &mdash; neither is a collector). It is
             shown only for editions whose census is complete
             {censusCoverage ? ` (${censusCoverage} of the rows shown)` : ""};

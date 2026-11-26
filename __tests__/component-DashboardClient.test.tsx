@@ -523,14 +523,14 @@ describe("DashboardClient — Saved Wallets tiles (2026-11-25)", () => {
     // $40,893 of Moments + $15,887.71 of sealed packs
     // the tile AND the Portfolio FMV hero read the same one number
     expect((await screen.findAllByText("$56,781")).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getAllByText("Unopened Packs").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Sealed Packs").length).toBeGreaterThan(0)
   })
 
   it("an answer with no per-collection split shows no pack figure and leaves FMV at the Moments figure", async () => {
     withTiles({})
     render(<DashboardClient />)
     expect(await screen.findByText("$40,893")).toBeTruthy()
-    expect(screen.queryByText("Unopened Packs")).toBeNull()
+    expect(screen.queryByText("Sealed Packs")).toBeNull()
   })
 
   it("offers a Panini tile that links to the Panini username panel when none is linked", async () => {

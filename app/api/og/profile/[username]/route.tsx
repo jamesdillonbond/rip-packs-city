@@ -830,7 +830,7 @@ export async function renderProfileCard(
       // Only for a profile with a wallet to ask about — like TEAMS, an
       // always-present tile would be an empty box for everyone else.
       ...(walletsOk && walletAddrs.length > 0
-        ? [{ label: "PACKS UNOPENED", value: heldPacks != null ? heldPacks.toLocaleString("en-US") : "—" }]
+        ? [{ label: "SEALED PACKS", value: heldPacks != null ? heldPacks.toLocaleString("en-US") : "—" }]
         : []),
       {
         label: "TROPHY CASE",

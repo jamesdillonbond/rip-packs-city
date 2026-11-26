@@ -5,7 +5,7 @@
 // wallets. Two views, never mixed:
 //   · PROFILE (a collector walk has read this username's public Panini profile —
 //     linked on an RPC profile): the whole collection AS OF THAT WALK, with its
-//     time, whether it read every card, and the profile's unopened-pack count
+//     time, whether it read every card, and the profile's sealed-pack count
 //   · SEEN (never walked): the cards RPC has seen under the username on the market
 //
 // Honesty rules this component keeps (see the route header for the why):
@@ -257,7 +257,7 @@ function ProfileBody({ username, profile, valueHistory }: { username: string; pr
           value={count(profile.cardsHeld)}
           sub={w.reportedTotal != null && !complete ? `of ${count(w.reportedTotal)} on the profile` : `${count(profile.editions)} editions`}
         />
-        <Tile label="Unopened packs" value={count(w.unopenedPacks)} sub={w.unopenedPacks == null ? "not read yet" : undefined} />
+        <Tile label="Sealed packs" value={count(w.unopenedPacks)} sub={w.unopenedPacks == null ? "not read yet" : undefined} />
         <Tile
           label="FMV of priced cards"
           value={usd(profile.fmvHeldUsd)}

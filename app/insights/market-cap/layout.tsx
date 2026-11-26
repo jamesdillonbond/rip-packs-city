@@ -14,7 +14,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 
 const TITLE = "Market Cap — Collections, Players, Teams, Sets and Badges"
 const DESCRIPTION =
-  "Market cap for NBA Top Shot, NFL All Day, Panini and every Flow collection we price: fair market value times the supply collectors actually hold, with burned Moments and unopened packs taken out. By collection, player, team, set, series, tier and badge. Free. No signup."
+  "Market cap for NBA Top Shot, NFL All Day, Panini and every Flow collection we price: fair market value times the supply collectors actually hold, with burned Moments and sealed packs taken out. By collection, player, team, set, series, tier and badge. Free. No signup."
 
 export const metadata: Metadata = {
   // The root metadata template appends " | Rip Packs City".
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: TITLE,
     description:
-      "FMV x collector-held supply — burned Moments and unopened packs excluded — by collection, player, team, set and badge.",
+      "FMV x collector-held supply — burned Moments and sealed packs excluded — by collection, player, team, set and badge.",
     url: `${SITE_URL}/insights/market-cap`,
     siteName: "Rip Packs City",
     images: [
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: TITLE,
     description:
-      "FMV x collector-held supply — burned Moments and unopened packs excluded — by collection, player, team, set and badge.",
+      "FMV x collector-held supply — burned Moments and sealed packs excluded — by collection, player, team, set and badge.",
     images: [`${SITE_URL}/api/og/insights/market-cap?v=${OG_CARD_VERSION}`],
     creator: "@RipPacksCity",
   },

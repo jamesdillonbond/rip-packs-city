@@ -308,7 +308,7 @@ export function PaniniProductMarketCapTile({ res }: { res: { ok: boolean; cap: P
         </div>
       )}
       <div className="rpc-mono" data-testid="panini-product-mcap-note" style={{ marginTop: 10, fontSize: 10, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>
-        The sum of this product&rsquo;s edition market caps — FMV × collector-held supply, burned cards and Panini&rsquo;s unopened stock taken out.
+        The sum of this product&rsquo;s edition market caps — FMV × collector-held supply, burned cards and Panini&rsquo;s sealed stock taken out.
         {unpriced > 0 ? ` ${fmtCount(unpriced)} of ${fmtCount(c.editions)} editions have no price yet and are not in it.` : ""}
         {partialSupply ? ` ${fmtCount(c.editions - c.editions_supply_known)} editions have no supply split yet.` : ""}{" "}
         <Link href="/insights/market-cap" style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline", textUnderlineOffset: 3 }}>All market caps →</Link>

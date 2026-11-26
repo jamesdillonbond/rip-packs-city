@@ -163,7 +163,7 @@ export default async function TopShotPackMarketPage() {
         </h1>
         <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.55, maxWidth: 720 }}>
           What a <strong>sealed</strong> NBA Top Shot pack actually trades for — and whether it resells above or below the
-          price it dropped at. We roll up the complete on-chain secondary sale history of unopened packs and rank them by
+          price it dropped at. We roll up the complete on-chain secondary sale history of sealed packs and rank them by
           discount-to-retail, resale premium, and trading volume. Only packs with 5+ secondary sales qualify.
         </p>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -221,7 +221,7 @@ export default async function TopShotPackMarketPage() {
       {/* ── Methodology / footer ──────────────────────────────────────────── */}
       <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
         <p style={{ margin: 0 }}>
-          Method: secondary resale of <strong>sealed</strong> (unopened) packs only, from the complete on-chain sale
+          Method: secondary resale of <strong>sealed</strong> packs only, from the complete on-chain sale
           history via <code>v_topshot_pack_market</code>. Median 90d is the trailing-90-day median secondary price; vs
           retail = median 90d ÷ the pack&rsquo;s original drop price (premium packs with no fixed retail have no ratio and
           appear only under Most traded). Prices in USD. Opened % is the authoritative pack depletion from

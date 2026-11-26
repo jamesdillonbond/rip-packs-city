@@ -126,7 +126,7 @@ export function parseCollectorWalkBody(body: unknown): { ok: true; value: Collec
     // that does not auto-pull, so the receiver holds the line: such a walk is `public` (the
     // walker's own rule — a collected answer arrived).
     const profileState = claimedState === "not_found" && holdings.length > 0 ? "public" : claimedState
-    // A count that was not read is null — never 0 (a 0 here would publish "no unopened packs").
+    // A count that was not read is null — never 0 (a 0 here would publish "no sealed packs").
     const reportedTotal = b.reported_total == null ? null : nonNegInt(b.reported_total)
     const unopenedPacks = b.unopened_packs == null ? null : nonNegInt(b.unopened_packs)
     if (b.reported_total != null && reportedTotal == null) return { ok: false, reason: "reported_total must be a non-negative integer or null" }

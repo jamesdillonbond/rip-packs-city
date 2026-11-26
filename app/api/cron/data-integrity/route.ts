@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
     //    stamps on every clean walk. That guard fails SILENTLY and in the
     //    comfortable direction: stop stamping and every floor reads NULL, the
     //    guard switches off for every wallet, and packs the user has already
-    //    parted with go back to rendering as unopened packs in their inventory.
+    //    parted with go back to rendering as sealed packs in their inventory.
     //    Nothing throws, and the SQL pin cannot see it — that test sets the
     //    column by hand. This is the only thing watching the writer.
     //    [] = clean. Read the LENGTH; count(*) on a jsonb-array check is 1

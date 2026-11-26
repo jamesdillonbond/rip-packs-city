@@ -27,7 +27,7 @@ export const PACK_FILTER_STATUS: Record<PackFilter, string> = {
 }
 
 export const PACK_FILTER_LABEL: Record<PackFilter, string> = {
-  unopened: "Unopened",
+  unopened: "Sealed",
   opened: "Opened",
   sold: "Sold",
 }
@@ -691,6 +691,96 @@ export interface PackTabTotals {
   sold_packs?: number
   proceeds_usd?: number | null
   proceeds_known?: number
+  /** v38: the tab before the binder's filters (packs = after them). */
+  tab_packs?: number
+  /** v38: the tab's tiers, case-folded, with how many packs carry each (before the filters). */
+  tiers?: Record<string, number> | null
+}
+
+// ── Binder Packs filters (2026-11-26, get_wallet_pack_history v38) ─────────────────────────────
+// Trevor: "Can we add more filters within the packs section within my binder?" -- search by pack name,
+// sort, pack tier, winners / losers. All four are applied in the RPC before the page, so the count,
+// the page and the tab's metrics stay one population.
+
+export type PackSort =
+  | "recent" | "oldest" | "value_desc" | "value_asc" | "cost_desc" | "cost_asc" | "pl_desc" | "pl_asc" | "name"
+
+export const PACK_SORTS: readonly PackSort[] = [
+  "recent", "oldest", "value_desc", "value_asc", "cost_desc", "cost_asc", "pl_desc", "pl_asc", "name",
+]
+
+export type PackOutcome = "all" | "up" | "down"
+
+export const PACK_OUTCOMES: readonly PackOutcome[] = ["all", "up", "down"]
+
+/** The sort menu's label in this tab -- "value" and "gain" mean what that tab's columns show. */
+export function packSortLabel(filter: PackFilter, sort: PackSort): string {
+  const value = filter === "unopened" ? "Value" : filter === "opened" ? "Pull value" : "Sold for"
+  const gain = filter === "unopened" ? "Unrealized" : "P&L"
+  switch (sort) {
+    case "recent": return "Newest"
+    case "oldest": return "Oldest"
+    case "value_desc": return `${value}: high to low`
+    case "value_asc": return `${value}: low to high`
+    case "cost_desc": return "Cost: high to low"
+    case "cost_asc": return "Cost: low to high"
+    case "pl_desc": return `${gain}: best first`
+    case "pl_asc": return `${gain}: worst first`
+    case "name": return "Name A–Z"
+  }
+}
+
+export function packOutcomeLabel(outcome: PackOutcome): string {
+  return outcome === "up" ? "Winners" : outcome === "down" ? "Losers" : "All"
+}
+
+/** What winners / losers is measured against in this tab (the chip's hover text). */
+export function packOutcomeHint(filter: PackFilter): string {
+  return filter === "unopened"
+    ? "Sealed packs worth more (winners) or less (losers) than you paid. Packs with no known cost or value are in neither."
+    : filter === "opened"
+      ? "Opened packs whose pulls are worth more (winners) or less (losers) than you paid. Packs with no known cost or pull value are in neither."
+      : "Packs you sold for more (winners) or less (losers) than you paid. Packs with no known cost are in neither."
+}
+
+/** "rare" -> "Rare", "premium" -> "Premium". */
+export function packTierLabel(tier: string): string {
+  const t = tier.trim()
+  return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t
+}
+
+/** Tier chips, most packs first; ties by name so the order never shuffles between reads. */
+export function packTierOptions(tiers: Record<string, number> | null | undefined): { tier: string; count: number }[] {
+  if (!tiers) return []
+  return Object.entries(tiers)
+    .filter(([k, v]) => k.trim() !== "" && Number.isFinite(v) && v > 0)
+    .map(([tier, count]) => ({ tier, count }))
+    .sort((a, b) => b.count - a.count || a.tier.localeCompare(b.tier))
+}
+
+export interface PackFilterState {
+  search: string
+  tier: string | null
+  outcome: PackOutcome
+  sort: PackSort
+}
+
+export const PACK_FILTER_DEFAULTS: PackFilterState = { search: "", tier: null, outcome: "all", sort: "recent" }
+
+/** True when any filter narrows the tab (a sort alone does not narrow). */
+export function packFiltersNarrow(f: PackFilterState): boolean {
+  return f.search.trim() !== "" || f.tier != null || f.outcome !== "all"
+}
+
+/** The query params /api/wallet/pack-history takes for these filters; defaults are omitted. */
+export function packFilterParams(f: PackFilterState): Record<string, string> {
+  const out: Record<string, string> = {}
+  const q = f.search.trim().slice(0, 80)
+  if (q) out.q = q
+  if (f.tier) out.tier = f.tier.toLowerCase()
+  if (f.outcome !== "all") out.outcome = f.outcome
+  if (f.sort !== "recent") out.sort = f.sort
+  return out
 }
 
 export interface PackTabMetric {

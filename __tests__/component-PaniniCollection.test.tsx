@@ -91,7 +91,7 @@ describe("PaniniCollection", () => {
     const c = await lookUp("Jamesdillonbond")
     await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-profile-note"]')).not.toBeNull())
     expect(c.textContent).toContain("Cards held")
-    expect(c.textContent).toContain("Unopened packs12")
+    expect(c.textContent).toContain("Sealed packs12")
     expect(c.textContent).toContain("Every card on the profile was read")
     expect(c.textContent).toContain("1:00 PM PT")
     expect(c.textContent).not.toContain("hasn't seen a card")
@@ -132,9 +132,9 @@ describe("PaniniCollection", () => {
   it("an unread pack count is 'not read yet', not 0", async () => {
     mockFetch(200, payload({ profile: walked({}, { unopenedPacks: null }) }))
     const c = await lookUp("jamesdillonbond")
-    await waitFor(() => expect(c.textContent).toContain("Unopened packs"))
+    await waitFor(() => expect(c.textContent).toContain("Sealed packs"))
     expect(c.textContent).toContain("not read yet")
-    expect(c.textContent).not.toContain("Unopened packs0")
+    expect(c.textContent).not.toContain("Sealed packs0")
   })
 
   it("a private profile says private — not 'holds nothing'", async () => {

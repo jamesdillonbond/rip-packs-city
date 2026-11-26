@@ -76,7 +76,7 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     field: "\"Top 5 hold\" column and the \"Top-5 holder share\" sort",
     aliases: ["top 5 hold", "top 5", "top five", "top-5", "holder share", "holder concentration", "concentration", "stacking", "stacker", "stackers", "whale", "whales", "holders", "one user holding", "ownership concentration", "wallet concentration"],
     meaning:
-      "The combined share of an edition's circulation held by its 5 largest COLLECTOR wallets, from RPC's on-chain owner census (Top Shot's unopened-pack account and the Dapper buyback account are excluded — they are not collectors). It is the stacking signal: an edition can have a low squeeze % and still be tightly held. Shown only where the census covers the whole edition; \"—\" means no complete census yet, never 0%, and the board states how many of its rows have one. Sort the board by \"Top-5 holder share (desc)\" to rank editions by it. Top Shot only. Added 2026-10-03.",
+      "The combined share of an edition's circulation held by its 5 largest COLLECTOR wallets, from RPC's on-chain owner census (Top Shot's sealed-pack account and the Dapper buyback account are excluded — they are not collectors). It is the stacking signal: an edition can have a low squeeze % and still be tightly held. Shown only where the census covers the whole edition; \"—\" means no complete census yet, never 0%, and the board states how many of its rows have one. Sort the board by \"Top-5 holder share (desc)\" to rank editions by it. Top Shot only. Added 2026-10-03.",
     source: "app/insights/squeeze/SqueezeBoardClient.tsx (top5_share_pct, holders; sort 'concentration') + supabase/migrations/20261003184843 (topshot_edition_concentration)",
   },
   {

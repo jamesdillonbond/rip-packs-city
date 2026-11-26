@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
           MARKET CAP
         </div>
         <div style={{ marginTop: 10, fontSize: 22, color: "rgba(255,255,255,0.65)", letterSpacing: 0.5, lineHeight: 1.35, display: "flex", maxWidth: 1000 }}>
-          Fair market value x the supply collectors actually hold — burned Moments and unopened packs taken out.
+          Fair market value x the supply collectors actually hold — burned Moments and sealed packs taken out.
         </div>
 
         <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 12 }}>

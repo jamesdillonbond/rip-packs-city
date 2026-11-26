@@ -360,7 +360,7 @@ describe("WalletPacksView", () => {
     vi.stubGlobal("fetch", fetchMock)
     const { getByText, queryByLabelText } = render(<WalletPacksView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
-    expect(queryByLabelText("Unopened pack metrics")).toBeNull()
+    expect(queryByLabelText("Sealed pack metrics")).toBeNull()
   })
 
   // 2026-11-13: a summary timeout (seen live, cold read past its 15 s limit) rendered the
@@ -409,5 +409,46 @@ describe("WalletPacksView", () => {
     fireEvent.click(getByText("Sold"))
     await waitFor(() => expect(fetchMock.mock.calls.filter((c: unknown[]) => String(c[0]).includes("status=sold_any")).length).toBe(1))
     expect(sumCalls).toBe(1)
+  })
+
+  // 2026-11-26 (Trevor: "add more filters within the packs section within my binder"): search, sort,
+  // tier and winners / losers go to the server with the read; a narrowed empty read says so and clears.
+  it("sends sort / winners / tier / search with the read, and a narrowed empty read offers Clear", async () => {
+    ownerKey = "0xowner"
+    const historyUrls: string[] = []
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url) => {
+        historyUrls.push(url)
+        const narrowed = url.includes("q=")
+        return res(200, {
+          packs: narrowed ? [] : [heldRow],
+          total_count: narrowed ? 0 : 1,
+          tab_totals: { packs: narrowed ? 0 : 1, tab_packs: 7, tiers: { common: 5, rare: 2 } },
+        })
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, getByTestId, getByLabelText, findByText, findByRole } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(historyUrls.length).toBe(1))
+    expect(historyUrls[0]).not.toMatch(/[?&](q|tier|outcome|sort)=/) // defaults send nothing
+
+    fireEvent.change(getByLabelText("Sort packs"), { target: { value: "value_desc" } })
+    await waitFor(() => expect(historyUrls.at(-1)).toContain("sort=value_desc"))
+
+    fireEvent.click(getByText("Winners"))
+    await waitFor(() => expect(historyUrls.at(-1)).toContain("outcome=up"))
+
+    fireEvent.click(await findByRole("button", { name: /^Rare/ }))
+    await waitFor(() => expect(historyUrls.at(-1)).toContain("tier=rare"))
+
+    fireEvent.change(getByTestId("pack-search"), { target: { value: " Rookie " } })
+    await waitFor(() => expect(historyUrls.at(-1)).toContain("q=Rookie"), { timeout: 2000 })
+    await findByText("No sealed packs match these filters.")
+    expect(getByTestId("pack-filter-count").textContent).toBe("0 of 7 sealed packs")
+
+    fireEvent.click(getByText("Clear filters"))
+    await waitFor(() => expect(historyUrls.at(-1)).not.toMatch(/[?&](q|tier|outcome|sort)=/))
+    await findByText("Base Pack")
   })
 })

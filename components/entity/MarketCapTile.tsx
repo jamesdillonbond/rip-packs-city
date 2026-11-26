@@ -71,7 +71,7 @@ function IssuerSplitCell({ split }: { split: IssuerSplitState }) {
       value={fmtCount(r.hidden)}
       sub={
         known
-          ? `${fmtCount(r.in_packs)} in unopened packs${r.drops_with_packs ? ` (${fmtCount(r.drops_with_packs)} drop${r.drops_with_packs === 1 ? "" : "s"})` : ""} · ${fmtCount(r.reserve)} reserve, never packed`
+          ? `${fmtCount(r.in_packs)} in sealed packs${r.drops_with_packs ? ` (${fmtCount(r.drops_with_packs)} drop${r.drops_with_packs === 1 ? "" : "s"})` : ""} · ${fmtCount(r.reserve)} reserve, never packed`
           : splitStatusShort(r.split_status)
       }
     />
