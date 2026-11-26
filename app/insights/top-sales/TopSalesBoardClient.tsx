@@ -34,6 +34,8 @@ import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
+import { fetchJson } from "@/lib/analytics/fetch-json"
+import { SCOPE_SOURCES, toScopeIndex, type PaniniScopeOption } from "@/lib/panini/scope"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -402,6 +404,24 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
   }, [])
 
   const [collection, setCollection] = useState<CollectionFilter>("all")
+  // 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+  // The pick remembers the collection it was made under, so switching collection drops it.
+  const [leaguePick, setLeaguePick] = useState<{ collection: string; slug: string } | null>(null)
+  const league = leaguePick && leaguePick.collection === collection ? leaguePick.slug : ""
+  const [leagueIndex, setLeagueIndex] = useState<{ collection: string; options: PaniniScopeOption[] } | null>(null)
+  const leagueSource = collection === "panini_blockchain" ? "panini" : collection === "candy_mlb" ? "candy" : null
+  useEffect(() => {
+    if (!leagueSource) return
+    let cancelled = false
+    // A failed read leaves the row out (the board stays unfiltered and says nothing about leagues).
+    fetchJson<unknown>(SCOPE_SOURCES[leagueSource].endpoint).then((r) => {
+      if (cancelled) return
+      const index = r.ok ? toScopeIndex(r.json) : null
+      if (index) setLeagueIndex({ collection, options: index.properties })
+    })
+    return () => { cancelled = true }
+  }, [leagueSource, collection])
+  const leagueOptions = leagueIndex && leagueIndex.collection === collection ? leagueIndex.options : []
   const [window, setWindow] = useState<WindowFilter>("7d")
   const [sort, setSort] = useState<SortKey>("price")
 
@@ -441,6 +461,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
         params.set("sort", sort)
         params.set("window", window)
         if (collection !== "all") params.set("collection", collection)
+        if (league) params.set("property", league)
         const r = await fetch(`/api/public/insights/top-sales?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -465,7 +486,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
     }
     run()
     return () => ctrl.abort()
-  }, [collection, window, sort])
+  }, [collection, league, window, sort])
 
   const heroRows = useMemo(() => {
     // Hero leads with the highest-value sales regardless of the active sort, so
@@ -632,6 +653,26 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
             </button>
           ))}
         </div>
+
+        {leagueOptions.length >= 2 ? (
+          <div className="rpc-ts-pill-group" role="group" aria-label="League or brand" data-testid="top-sales-league-pills">
+            <span className="rpc-ts-pill-label">LEAGUE</span>
+            <button type="button" aria-pressed={league === ""} className={`rpc-ts-pill ${league === "" ? "rpc-ts-pill-active" : ""}`} onClick={() => setLeaguePick(null)}>
+              All
+            </button>
+            {leagueOptions.map((o) => (
+              <button
+                key={o.slug}
+                type="button"
+                aria-pressed={league === o.slug}
+                className={`rpc-ts-pill ${league === o.slug ? "rpc-ts-pill-active" : ""}`}
+                onClick={() => setLeaguePick({ collection, slug: o.slug })}
+              >
+                {o.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="rpc-ts-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Window">
           <span className="rpc-ts-pill-label">WINDOW</span>

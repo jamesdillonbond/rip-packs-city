@@ -117,8 +117,15 @@ export function parseSort(raw: string | null | undefined): TopSalesSort {
   return raw === "recent" ? "recent" : "price"
 }
 
+/**
+ * A league / brand scope the ROUTE has already verified (2026-11-26): Panini as the league's product ids,
+ * Candy as a publisher_properties slug. Only meaningful with that publisher's `collection`.
+ */
+export type TopSalesScope = { paniniSetIds: number[] } | { candyProperty: string }
+
 export type FetchTopSalesOpts = {
   collection?: string | null
+  scope?: TopSalesScope | null
   window?: TopSalesWindow
   sort?: TopSalesSort
   limit?: number
@@ -136,12 +143,20 @@ export async function fetchTopSales(
   const limit = Math.max(1, Math.min(200, opts.limit ?? 100))
 
   const since = window === "7d" ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() : null
+  const scope = opts.scope ?? null
+  const paniniIds = scope && "paniniSetIds" in scope && collection === PANINI_TOP_SALES_COLLECTION ? scope.paniniSetIds : null
+  const candyProperty = scope && "candyProperty" in scope && collection === "candy_mlb" ? scope.candyProperty : null
   // One query shape for both views, so the merge below compares like with like.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const build = (view: string, eqCollection: string | null): PromiseLike<{ data: any[] | null; error: { message: string } | null }> => {
+    // Candy under a brand scope reads the view's own rows for that brand (migration 20261126222256).
+    const viaBrand = candyProperty && view === "v_insights_top_sales"
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q = (supabaseAdmin as any).from(view).select(SELECT_COLS)
+    const db = supabaseAdmin as any
+    let q = (viaBrand ? db.rpc("insights_top_sales_for_candy_property", { p_slug: candyProperty }) : db.from(view)).select(SELECT_COLS)
     if (eqCollection) q = q.eq("collection", eqCollection)
+    // Panini under a league scope: narrowed by product-id prefix here, re-checked exactly below.
+    if (paniniIds && view === OWN_VIEW[PANINI_TOP_SALES_COLLECTION]) q = q.or(paniniIds.map((id) => `external_id.like.packcard-${id}_*`).join(","))
     // Default board window is 7d (fresher, the "this week's whales" framing); the
     // views themselves are already bounded to 30d so the 30d branch needs no filter.
     if (since) q = q.gte("sold_at", since)
@@ -161,6 +176,8 @@ export async function fetchTopSales(
   const wantPanini = ownViews.some(([coll]) => coll === PANINI_TOP_SALES_COLLECTION)
   const readUncatalogued = async (): Promise<UncataloguedSales> => {
     if (!wantPanini) return { status: "not_applicable" }
+    // Under a league scope the count would be the whole collection's — a different subject. Unknown, not 0.
+    if (paniniIds) return { status: "unread", error: "not split by league or brand" }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let q = (supabaseAdmin as any).from(UNCATALOGUED_VIEW).select("sku, price_usd, sold_at", { count: "exact" })
@@ -195,7 +212,15 @@ export async function fetchTopSales(
     return (Number(b.price_usd ?? -Infinity) - Number(a.price_usd ?? -Infinity)) || t(b.sold_at) - t(a.sold_at)
   }
   const flowRaw = (flow.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[]
-  const ownRaw = own.flatMap((r) => (r.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[])
+  const idSet = paniniIds ? new Set(paniniIds) : null
+  const ownRaw = own
+    .flatMap((r) => (r.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[])
+    // LIKE's `_` is a wildcard, so a longer product id sharing the prefix can come back — keep exact ids only.
+    .filter((r) => {
+      if (!idSet || r.collection !== PANINI_TOP_SALES_COLLECTION) return true
+      const m = /^packcard-(\d+)_/.exec(String(r.external_id ?? ""))
+      return !!m && idSet.has(Number(m[1]))
+    })
   const raw = [...flowRaw, ...ownRaw].sort(byOrder).slice(0, limit)
 
   // Only chain addresses go to the resolver; a Panini username is already a name.

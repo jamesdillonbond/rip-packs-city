@@ -38,6 +38,7 @@ import {
 } from "@/lib/insights/top-sales"
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
+import { resolveLeagueScope } from "@/lib/insights/league-scope"
 export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   const sp = new URL(req.url).searchParams
@@ -54,11 +55,20 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // 2026-11-26: ?property=<slug> narrows Panini or Candy to one league / brand. Resolved first: an unknown
+  // slug is a 400 and a failed lookup the board's unavailable response — never the whole collection.
+  const property = sp.get("property")
+  const league = await resolveLeagueScope(collection, property, "api/public/insights/top-sales")
+  if (!league.ok) {
+    if (league.kind === "unknown") return NextResponse.json({ error: "unknown league or brand for this collection" }, { status: 400 })
+    return boardUnavailable(league.error, "insights/top-sales")
+  }
+
   let rows
   let fetchedAt
   let uncatalogued
   try {
-    ;({ rows, fetchedAt, uncatalogued } = await fetchTopSales({ collection, window, sort, limit }))
+    ;({ rows, fetchedAt, uncatalogued } = await fetchTopSales({ collection, window, sort, limit, scope: league.scope }))
   } catch (e) {
     return boardUnavailable(e, "insights/top-sales")
   }
@@ -74,7 +84,7 @@ export async function GET(req: NextRequest) {
       source: "v_insights_top_sales",
       ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
-      filters: { collection, window, sort, limit },
+      filters: { collection, window, sort, limit, property: property?.trim() || null },
       // Panini sales the board cannot render (card not catalogued) — 2026-11-23. A consumer
       // ranking "the top N" must check this before claiming its list is complete.
       uncatalogued,

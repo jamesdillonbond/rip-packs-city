@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 // TopSalesBoardClient is the whole public /insights/top-sales surface (~1,046
 // lines) — a $100+ sales leaderboard across Top Shot + All Day, ranked by price,
@@ -231,3 +231,31 @@ describe("TopSalesBoardClient — a failed filter refetch shows no stale subject
     expect(container.textContent).not.toContain("Victor Wembanyama")
   })
 })
+
+// 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+describe("TopSalesBoardClient — league / brand pills", () => {
+  const index = { properties: [{ slug: "mlb", name: "MLB", heading: "leagues", sort_order: 10 }, { slug: "dc", name: "DC", heading: "entertainment", sort_order: 110 }], setProperty: {} }
+  it("appears for Candy, sends the pick as ?property=, and is dropped when the collection changes", async () => {
+    const calls: string[] = []
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      const url = String(input)
+      calls.push(url)
+      const isIndex = url.includes("-properties")
+      return { ok: true, status: 200, headers: new Headers({ "content-type": "application/json" }), json: async () => (isIndex ? index : { rows: [], meta: {} }), text: async () => JSON.stringify(isIndex ? index : { rows: [] }) } as unknown as Response
+    }))
+    const { getByRole, queryByTestId, findByTestId } = render(<TopSalesBoardClient initialRows={[]} initialFetchedAt={null} />)
+    expect(queryByTestId("top-sales-league-pills")).toBeNull()
+    fireEvent.click(getByRole("tab", { name: "Candy" }))
+    const pills = await findByTestId("top-sales-league-pills")
+    expect([...pills.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["All", "MLB", "DC"])
+    expect(pills.textContent?.toLowerCase()).not.toContain("property")
+    fireEvent.click(getByRole("button", { name: "DC" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=candy_mlb") && u.includes("property=dc"))).toBe(true))
+    calls.length = 0
+    fireEvent.click(getByRole("tab", { name: "Top Shot" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=nba_top_shot"))).toBe(true))
+    expect(calls.some((u) => u.includes("property="))).toBe(false)
+    expect(queryByTestId("top-sales-league-pills")).toBeNull()
+  })
+})
+
