@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseEspnStats, matchEspnSearch, espnSearchHits, pickProbedCandidate, baseSlug, espnStatsUrl, espnSearchUrl, slugToQuery, chunk } from "../scripts/lib/espn-player-stats.mjs"
+import { parseEspnStats, matchEspnSearch, espnSearchHits, pickProbedCandidate, baseSlug, espnStatsUrl, espnSearchUrl, slugToQuery, chunk, espnAthleteUrl, athleteCheck } from "../scripts/lib/espn-player-stats.mjs"
 
 // The pure half of the ESPN stats feed (batch 47, 2026-09-25). Properties: a
 // payload without a categories array is a FAILED read (throws), not zero rows;
@@ -159,18 +159,43 @@ describe("matchEspnSearch — ESPN search v2 (batch 56: retired players and the 
       .toMatchObject({ espn_id: null, matched_by: "unresolved:ambiguous:2" })
   })
 
-  it("pickProbedCandidate: exactly one candidate with seasons is the person; a phantom (0) loses; two real players stay ambiguous", () => {
+  it("pickProbedCandidate: exactly one NAMED candidate with seasons is the person; a phantom (0) loses; two real players stay ambiguous", () => {
     expect(pickProbedCandidate([
-      { id: "4905397", espn_league: "nba", seasons: 0 }, { id: "4905397", espn_league: "wnba", seasons: 0 },
-      { id: "4230557", espn_league: "nba", seasons: 5 }, { id: "4230557", espn_league: "wnba", seasons: 0 },
+      { id: "4905397", espn_league: "nba", seasons: 0, named: false }, { id: "4905397", espn_league: "wnba", seasons: 0, named: false },
+      { id: "4230557", espn_league: "nba", seasons: 5, named: true }, { id: "4230557", espn_league: "wnba", seasons: 0, named: false },
     ])).toEqual({ espn_id: "4230557", espn_league: "nba", matched_by: "espn-search:stats-probe" })
-    // a WNBA player filed under fiba resolves to her wnba stats path
-    expect(pickProbedCandidate([{ id: "2566110", espn_league: "nba", seasons: 0 }, { id: "2566110", espn_league: "wnba", seasons: 3 }]))
+    expect(pickProbedCandidate([{ id: "2566110", espn_league: "nba", seasons: 0, named: false }, { id: "2566110", espn_league: "wnba", seasons: 3, named: true }]))
       .toEqual({ espn_id: "2566110", espn_league: "wnba", matched_by: "espn-search:stats-probe" })
-    expect(pickProbedCandidate([{ id: "97", espn_league: "nba", seasons: 12 }, { id: "2994", espn_league: "nba", seasons: 4 }]))
+    expect(pickProbedCandidate([{ id: "97", espn_league: "nba", seasons: 12, named: true }, { id: "2994", espn_league: "nba", seasons: 4, named: true }]))
       .toMatchObject({ espn_id: null, matched_by: "unresolved:ambiguous:2" })
-    expect(pickProbedCandidate([{ id: "1", espn_league: "nba", seasons: 0 }])).toMatchObject({ espn_id: null, matched_by: "unresolved:none" })
+    expect(pickProbedCandidate([{ id: "1", espn_league: "nba", seasons: 0, named: false }])).toMatchObject({ espn_id: null, matched_by: "unresolved:none" })
     expect(pickProbedCandidate(undefined)).toMatchObject({ espn_id: null })
+  })
+  it("pickProbedCandidate never takes an id that is someone else in that league, however many seasons it has (Tim Thomas → wnba/22 Sue Wicks)", () => {
+    expect(pickProbedCandidate([{ id: "22", espn_league: "wnba", seasons: 7, named: false }, { id: "22", espn_league: "nba", seasons: 0, named: false }]))
+      .toMatchObject({ espn_id: null, matched_by: "unresolved:none" })
+    // an unchecked probe (no `named`) never counts either
+    expect(pickProbedCandidate([{ id: "31", espn_league: "nba", seasons: 3 }])).toMatchObject({ espn_id: null })
+    // the wrong person does not make the right one ambiguous
+    expect(pickProbedCandidate([{ id: "22", espn_league: "wnba", seasons: 7, named: false }, { id: "1984", espn_league: "nba", seasons: 13, named: true }]))
+      .toEqual({ espn_id: "1984", espn_league: "nba", matched_by: "espn-search:stats-probe" })
+  })
+  it("athleteCheck: only the person searched for is ok; someone else is a mismatch; no athlete is missing; a failed read is failed", () => {
+    const page = (displayName: string) => ({ athlete: { displayName } })
+    expect(athleteCheck(200, page("Tim Thomas"), ["Tim Thomas"])).toBe("ok")
+    expect(athleteCheck(200, page("Sue Wicks"), ["Tim Thomas"])).toBe("mismatch")
+    expect(athleteCheck(200, page("Stephen Curry"), ["Steph Curry", "stephen curry"])).toBe("ok")
+    expect(athleteCheck(200, page("Dario Saric"), ["Dario Šarić"])).toBe("ok")
+    expect(athleteCheck(200, page("Otto Porter Jr."), ["Otto Porter"])).toBe("ok")
+    expect(athleteCheck(404, null, ["Candace Parker"])).toBe("missing")
+    expect(athleteCheck(503, null, ["Candace Parker"])).toBe("failed")
+    expect(athleteCheck(200, {}, ["Candace Parker"])).toBe("failed")
+    expect(athleteCheck(200, page(""), ["Candace Parker"])).toBe("failed")
+  })
+  it("espnAthleteUrl is the per-league athlete page and refuses a league the identity cannot be keyed in", () => {
+    expect(espnAthleteUrl("nba", "22", "wnba")).toBe("https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba/athletes/22")
+    expect(espnAthleteUrl("nfl", "3139477")).toBe("https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/3139477")
+    expect(() => espnAthleteUrl("nba", "22", "nfl")).toThrow()
   })
   it("a hit without an athlete id in its uid is skipped, not taken with an empty id; the batch-47 items shape still parses", () => {
     expect(espnSearchHits(v2([{ uid: "s:40~l:46", displayName: "No Id", defaultLeagueSlug: "nba" }]))).toEqual([])

@@ -25,7 +25,7 @@
  *   slow ESPN ends in a logged, partial run instead of a SIGKILL with no row)
  */
 
-import { ESPN_LEAGUES, chunk, espnSearchUrl, espnStatsUrl, matchEspnSearch, parseEspnStats, pickProbedCandidate, slugToQuery } from "./lib/espn-player-stats.mjs"
+import { ESPN_LEAGUES, athleteCheck, chunk, espnAthleteUrl, espnSearchUrl, espnStatsUrl, matchEspnSearch, parseEspnStats, pickProbedCandidate, slugToQuery } from "./lib/espn-player-stats.mjs"
 
 const BASE_URL = (process.env.BASE_URL || "https://www.rippackscity.com").replace(/\/$/, "")
 const TOKEN = process.env.INGEST_SECRET_TOKEN
@@ -123,13 +123,36 @@ async function resolveEspnIds(league, stats) {
               if (pr.status === 200) {
                 try { seasons = new Set(parseEspnStats(pr.json, c.id).map((row) => row.season)).size } catch { seasons = 0 }
               }
-              probed.push({ id: c.id, espn_league: el, seasons })
+              // seasons prove SOMEONE played under this id here, not who: the
+              // athlete page must name the person (ids are per league).
+              let named = false
+              if (seasons > 0) {
+                await sleep(ESPN_DELAY_MS)
+                const ar = await espnGet(espnAthleteUrl(league, c.id, el))
+                named = athleteCheck(ar.status, ar.json, spellings) === "ok"
+              }
+              probed.push({ id: c.id, espn_league: el, seasons, named })
               await sleep(ESPN_DELAY_MS)
             }
           }
           const picked = pickProbedCandidate(probed)
           if (picked.espn_id) m = { ...picked, candidates: [] }
           else if (picked.matched_by.startsWith("unresolved:ambiguous")) m = { ...m, matched_by: picked.matched_by }
+        }
+        // A search hit by name is checked the same way: ESPN's search has
+        // served ids that do not exist under the league's athlete path
+        // (college ids — 13 found 2026-11-26) and an id is never taken unless
+        // the athlete page there names the person.
+        if (m.espn_id && m.matched_by !== "espn-search:stats-probe") {
+          await sleep(ESPN_DELAY_MS)
+          const ar = await espnGet(espnAthleteUrl(league, m.espn_id, m.espn_league))
+          const check = athleteCheck(ar.status, ar.json, spellings)
+          if (check === "failed") {
+            failed = true
+            stats.errors.push(`athlete ${m.espn_league}/${m.espn_id}: HTTP ${ar.status}`)
+            break
+          }
+          if (check !== "ok") m = { espn_id: null, espn_league: null, matched_by: `unresolved:athlete-${check}`, candidates: [] }
         }
         if (m.espn_id) {
           verdict = { ...m, matched_by: i === 0 ? m.matched_by : `${m.matched_by}:alias:${t.aliases[i - 1]}` }

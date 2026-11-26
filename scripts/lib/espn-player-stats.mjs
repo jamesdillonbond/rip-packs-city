@@ -38,6 +38,40 @@ export function espnStatsUrl(league, espnId, espnLeague = league) {
   return `https://site.web.api.espn.com/apis/common/v3/sports/${sport}/${el}/athletes/${encodeURIComponent(espnId)}/stats`
 }
 
+/**
+ * ESPN's athlete page for one (league, id) — the identity check for a candidate.
+ * ESPN athlete ids are scoped PER LEAGUE: Tim Thomas's id from another league's
+ * search hit is Sue Wicks under wnba/22 and Paul Anthony under nba/22
+ * (measured 2026-11-26), so an id is only ever taken after the athlete this
+ * page names is the person searched for.
+ */
+export function espnAthleteUrl(league, espnId, espnLeague = league) {
+  const sport = ESPN_SPORT[league]
+  if (!sport) throw new Error(`espnAthleteUrl: unknown league ${league}`)
+  const el = String(espnLeague || league)
+  if (!ESPN_LEAGUES[league].includes(el)) throw new Error(`espnAthleteUrl: ${el} is not an ESPN league of ${league}`)
+  return `https://site.web.api.espn.com/apis/common/v3/sports/${sport}/${el}/athletes/${encodeURIComponent(espnId)}`
+}
+
+/**
+ * The verdict of the athlete check for a candidate id, from the athlete page's
+ * HTTP status and payload:
+ *   "ok"       — ESPN names this id as one of the spellings searched for;
+ *   "mismatch" — ESPN answered with SOMEONE ELSE at this id (never take it);
+ *   "missing"  — ESPN has no athlete at this id in this league (a college id);
+ *   "failed"   — the read failed (5xx, network, unreadable): try again next run.
+ */
+export function athleteCheck(status, payload, names) {
+  if (status === 404) return "missing"
+  if (status !== 200) return "failed"
+  const a = payload && typeof payload === "object" ? payload.athlete : null
+  const shown = a && typeof a === "object" ? (a.displayName || a.fullName) : null
+  if (typeof shown !== "string" || shown.trim() === "") return "failed"
+  const got = baseSlug(shown)
+  const wanted = (Array.isArray(names) ? names : [names]).map((n) => baseSlug(n)).filter(Boolean)
+  return wanted.includes(got) ? "ok" : "mismatch"
+}
+
 export function espnSearchUrl(league, name, limit = 10) {
   if (!ESPN_SPORT[league]) throw new Error(`espnSearchUrl: unknown league ${league}`)
   const q = new URLSearchParams({ query: name, type: "player", limit: String(limit) })
@@ -185,15 +219,19 @@ export function matchEspnSearch(payload, league, displayName) {
 /**
  * The verdict of a stats PROBE over search candidates: `probed` is one entry
  * per (candidate, espn league) tried with the season count its stats page
- * showed (0 for an answered empty). Exactly one candidate with seasons is
- * the person; none or several is still unresolved — a duplicate ESPN entry
- * (a G League affiliate copy, a phantom with no team) has no seasons, two
- * real players both do.
+ * showed (0 for an answered empty) and `named` — whether that league's athlete
+ * page at that id names the person searched for (athleteCheck "ok"). Exactly
+ * one NAMED candidate with seasons is the person; none or several is still
+ * unresolved — a duplicate ESPN entry (a G League affiliate copy, a phantom
+ * with no team) has no seasons, two real players both do, and an id that is
+ * someone else in this league (2026-11-26: Michael Cage → nba/31 Dalibor
+ * Bagaric, Michael Cooper → nba/142 John Celestand, Tim Thomas → wnba/22 Sue
+ * Wicks) never counts however many seasons it has.
  */
 export function pickProbedCandidate(probed) {
   const withSeasons = new Map()
   for (const p of Array.isArray(probed) ? probed : []) {
-    if (!p || !p.id || !(p.seasons > 0)) continue
+    if (!p || !p.id || !(p.seasons > 0) || p.named !== true) continue
     if (!withSeasons.has(p.id)) withSeasons.set(p.id, p.espn_league)
   }
   if (withSeasons.size === 1) {
