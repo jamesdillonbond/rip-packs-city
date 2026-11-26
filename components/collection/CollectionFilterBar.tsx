@@ -29,6 +29,9 @@ export default function CollectionFilterBar(props: {
   collectionSlug: string
 }) {
   const { view, dispatchView, availablePlayers, availableSets, availableSeries, availableRarities, collectionSlug } = props
+  // Pinnacle holds Pins, Panini and Candy hold Cards, the rest hold Moments (Trevor, 11-25). Until 11-26 the
+  // box said "Filter moments…" on a Candy or Panini Binder.
+  const searchUnit = isPinnacleUrlSlug(collectionSlug) ? "pins" : collectionSlug === "candy-mlb" || collectionSlug === "panini-blockchain" ? "cards" : "moments"
   return (
     <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-7">
       {/* Player / Set / Series lists run to hundreds on a big wallet: past
@@ -47,7 +50,7 @@ export default function CollectionFilterBar(props: {
         <option value="unlocked">Unlocked</option>
       </select>
       )}
-      <input aria-label={isPinnacleUrlSlug(collectionSlug) ? "Filter pins" : "Filter moments"} value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder={isPinnacleUrlSlug(collectionSlug) ? "Filter pins…" : "Filter moments…"} className="rpc-filter-input col-span-2 sm:col-span-1" />
+      <input aria-label={`Filter ${searchUnit}`} value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder={`Filter ${searchUnit}…`} className="rpc-filter-input col-span-2 sm:col-span-1" />
       <LeagueFilter value={view.leagueFilter} onChange={function(v) { dispatchView({ type: "SET", field: "leagueFilter", value: v }) }} visible={collectionSlug === "nba-top-shot"} />
     </div>
   )

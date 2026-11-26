@@ -66,6 +66,16 @@ describe("CollectionFilterBar", () => {
     expect(dispatchView).toHaveBeenCalledWith({ type: "SET", field: "searchWithin", value: "lebron" })
   })
 
+  it("names the unit the collection holds: cards on Candy and Panini, pins on Pinnacle, moments elsewhere", () => {
+    expect(renderBar("candy-mlb").queryByPlaceholderText("Filter cards…")).toBeTruthy()
+    cleanup()
+    expect(renderBar("panini-blockchain").queryByPlaceholderText("Filter cards…")).toBeTruthy()
+    cleanup()
+    expect(renderBar("candy-mlb").queryByPlaceholderText("Filter moments…")).toBeNull()
+    cleanup()
+    expect(renderBar("nfl-all-day").queryByPlaceholderText("Filter moments…")).toBeTruthy()
+  })
+
   it("shows the league filter only for Top Shot", () => {
     expect(renderBar("nba-top-shot").queryByTestId("league-filter")).toBeTruthy()
     cleanup()

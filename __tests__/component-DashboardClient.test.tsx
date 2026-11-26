@@ -1258,6 +1258,14 @@ describe("DashboardClient — verify by listing", () => {
         json(200, { challenge: null, message: "No eligible Moment to list for this wallet." }),
     })
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(true))
+    // 2026-11-26: wait for this modal's OWN start beacon before the test ends. It used to end at the first
+    // request, so the beacon fired late and landed in the NEXT test's fetch mock — which then read this
+    // test's outcome as its own ("expected 'unavailable', got 'minted'", CI on 9e8ee66, intermittent).
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/telemetry") && String((c[1] as RequestInit | undefined)?.body ?? "").includes("verify-challenge-start")),
+      ).toBe(true),
+    )
   })
 
   // 2026-11-18: 0 challenges in the 3 days after the button came back, and nothing could
