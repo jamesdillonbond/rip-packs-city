@@ -113,6 +113,7 @@ The 2026 rookie class on @NBATopShot: top 10 by sales since release 📈
 All 38 rookies: $98,114 across 2,971 sales.
 ```
 
+- **Posted 11-25** (first with the ESPN live check; archive `docs/social/posts/2026-11-25/`): https://x.com/rippackscity/status/2125692265284894921
 - **Since release, every edition** (parallels and Ultimates included): `/api/public/insights/rookie-sales` (`lib/insights/rookie-sales.ts`). Not the rookies board's 30-day views — the first 2026 rookie sale was 10-22, so the two part ways from 11-21.
 - **Hashtags:** `TEAM_HASHTAG` in `x-draft.mjs` holds only hashtags Trevor confirmed live; a team missing from it gets none and a warning.
 - **ESPN live check** (11-25): the draft re-derives every top-10 player's games / PPG / RPG / APG from ESPN's live box scores (`facts.espn_check`) and warns on any line that differs from RPC's stored one — ESPN corrects box scores days after a game (Darryn Peterson 11-25: 15.8 / 4.1 shown, 15.9 / 4.0 true). On a warning, put ESPN's line on the image and tell Trevor. RPC re-reads box scores hourly since 11-25 (`espn_gamelog_restat`), so a warning means the correction is newer than the last re-read.
