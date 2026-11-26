@@ -195,6 +195,8 @@ const PAGES: PageCheck[] = [
   // the same reason). Re-add it in the commit that removes that redirect.
   // 2026-09-25: the team-hub directory — in the sitemap from the same commit.
   { path: "/teams", name: "team hubs directory" },
+  // 2026-11-26: the coverage map — every league and brand, and where its cards live.
+  { path: "/leagues", name: "leagues and brands map" },
   // 2026-10-22: a player hub (not in the sitemap — reached from search and the
   // per-collection player pages). Lillard is the case it was built for: Top
   // Shot + Panini on one page.

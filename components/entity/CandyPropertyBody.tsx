@@ -242,6 +242,7 @@ export default function CandyPropertyBody({
             <Link href="/teams" data-testid="candy-property-teams" style={{ color: "var(--rpc-text-primary)" }}>{p.name} team hubs →</Link>
           ) : null}
           <Link href={`/${collection}/overview`} style={{ color: "var(--rpc-text-primary)" }}>Everything Candy covers →</Link>
+          <Link href="/leagues" style={{ color: "var(--rpc-text-primary)" }}>All leagues and brands →</Link>
         </div>
       </Section>
     </div>

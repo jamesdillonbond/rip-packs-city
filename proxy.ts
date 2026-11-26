@@ -561,6 +561,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // /help — help, FAQ and contact (2026-10-24). A visitor who cannot sign in is
   // exactly who needs it, so it must never bounce to /login.
   if (pathname === "/help" || pathname.startsWith("/help/")) return true
+  // /leagues — the coverage map (2026-11-26): every league and brand RPC tracks and where its cards live.
+  // Read-only directory of public pages, sitemap-listed; exact match (there are no child routes).
+  if (pathname === "/leagues") return true
   // /sniper — the cross-collection Sniper hub, the bottom bar's SNIPER tab
   // (2026-09-28). Exact match: collection snipers live at /{collection}/sniper.
   if (pathname === "/sniper") return true

@@ -452,6 +452,15 @@ export default function HomePageMarketing() {
             >
               Every published collection — Flow and Solana — in one analytics surface.
             </div>
+            {/* 2026-11-26: Panini and Candy each cover many leagues and brands — the map of all of them. */}
+            <Link
+              href="/leagues"
+              data-testid="home-leagues-link"
+              className="rpc-tap44"
+              style={{ display: "inline-block", marginTop: 12, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}
+            >
+              See every league and brand we cover →
+            </Link>
           </div>
 
           <div className="rpc-home-collection-grid">

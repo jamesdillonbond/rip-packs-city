@@ -115,6 +115,15 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
             </Link>
           );
         })}
+        {/* 2026-11-26: Panini and Candy each hold many leagues and brands — the map of where each lives. */}
+        <Link
+          href="/leagues"
+          data-testid="collection-switcher-leagues"
+          className="rpc-tap44"
+          style={{ display: "flex", alignItems: "center", padding: "4px 10px", borderRadius: 20, border: "1px dashed var(--rpc-border-subtle)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}
+        >
+          All leagues →
+        </Link>
       </div>
     </div>
   );

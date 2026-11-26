@@ -234,6 +234,7 @@ export default function PaniniPropertyBody({
             <Link href="/teams" data-testid="panini-property-teams" style={{ color: "var(--rpc-text-primary)" }}>{p.name} team hubs →</Link>
           ) : null}
           <Link href={`/${collection}/product`} style={{ color: "var(--rpc-text-primary)" }}>All Panini products →</Link>
+          <Link href="/leagues" style={{ color: "var(--rpc-text-primary)" }}>All leagues and brands →</Link>
         </div>
       </Section>
     </div>

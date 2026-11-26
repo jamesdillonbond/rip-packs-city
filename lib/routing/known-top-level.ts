@@ -36,6 +36,7 @@ export const STATIC_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
   "help",
   "go",
   "insights",
+  "leagues",
   "legal",
   "login",
   "market",

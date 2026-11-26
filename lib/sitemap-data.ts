@@ -127,6 +127,8 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   // renders indexable (Panini panel = a second collection, 10-22) are listed in
   // segment 3 from list_indexable_franchise_hubs(); the rest stay out.
   { path: '/teams',                            changeFrequency: 'weekly',  priority: 0.6 },
+  // 2026-11-26: the coverage map (app/leagues/page.tsx) — every league and brand, and where its cards live.
+  { path: '/leagues',                          changeFrequency: 'weekly',  priority: 0.6 },
   // /nba/fast-break added 2026-08-01: public (proxy.ts) and the header comment
   // at the top of this file had claimed it was covered since the file was
   // written — it never was. /pricing was added the same day and REMOVED

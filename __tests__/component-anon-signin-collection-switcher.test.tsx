@@ -71,7 +71,8 @@ describe("CollectionSwitcher", () => {
   it("renders a chip per published collection and links supported pages to that page", () => {
     pathname = "/nba-top-shot/sniper"
     const { container } = render(<CollectionSwitcher activeCollectionId="nba-top-shot" />)
-    const links = Array.from(container.querySelectorAll("a"))
+    // The trailing "All leagues →" chip (2026-11-26) is the coverage map, not a collection.
+    const links = Array.from(container.querySelectorAll("a")).filter((a) => a.getAttribute("href") !== "/leagues")
     expect(links.length).toBeGreaterThan(0)
     // All 5 published collections support "sniper", so each renders a link to /{id}/sniper
     for (const a of links) {
@@ -94,7 +95,8 @@ describe("CollectionSwitcher", () => {
   it("falls back to overview when the path has no recognizable page segment", () => {
     pathname = "/nba-top-shot"
     const { container } = render(<CollectionSwitcher activeCollectionId="nba-top-shot" />)
-    const links = Array.from(container.querySelectorAll("a"))
+    // The trailing "All leagues →" chip (2026-11-26) is the coverage map, not a collection.
+    const links = Array.from(container.querySelectorAll("a")).filter((a) => a.getAttribute("href") !== "/leagues")
     for (const a of links) {
       expect(a.getAttribute("href")).toMatch(/\/overview$/)
     }

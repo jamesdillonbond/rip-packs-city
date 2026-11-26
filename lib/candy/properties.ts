@@ -300,5 +300,6 @@ export function groupCandyCollections(collections: CandyPropertyCollection[]): {
   const tail = (k: string) => (/^(More from|Rewards and)/.test(k) ? 1 : 0)
   return [...by.entries()]
     .sort((a, b) => tail(a[0]) - tail(b[0]) || volume(b[1]) - volume(a[1]) || a[0].localeCompare(b[0]))
-    .map(([k, rows]) => ({ program: k || null, rows }))
+    // Natural order inside a line, so "#2" sits before "#10" and a title's issues read in sequence.
+    .map(([k, rows]) => ({ program: k || null, rows: [...rows].sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true })) }))
 }

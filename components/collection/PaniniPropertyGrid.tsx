@@ -65,6 +65,9 @@ export function PaniniPropertyGridView({ collection, properties }: { collection:
           </div>
         )
       })}
+      <div className="rpc-mono" style={{ marginTop: 12, fontSize: 11 }}>
+        <Link prefetch={false} href="/leagues" data-testid="panini-property-all" style={{ color: "var(--rpc-text-secondary)" }}>Every league and brand on Rip Packs City →</Link>
+      </div>
     </section>
   )
 }

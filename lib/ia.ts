@@ -110,6 +110,8 @@ export const IA_GROUPS: readonly IaGroup[] = [
       // (There is no /players index page — players are reached by search and
       // from every team / edition page; the hub is Teams.)
       { label: "Teams", href: "/teams", hint: "Franchise hubs across every collection" },
+      // 2026-11-26: the coverage map — one tile per league / brand, listing every collection that has it.
+      { label: "Leagues and brands", href: "/leagues", hint: "Everything RPC covers, and where it lives" },
       { label: "My teams", href: "/my-teams", auth: true },
       { label: "Dame Time challenge", href: "/trophy-challenges/dame-time" },
       { label: "Special-serial owners", href: "/special-serial-owners", auth: true },
