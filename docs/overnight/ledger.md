@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-25 ~6:35 PM PT · 🗄 APPLIED (`20261126021525`, `20261126021927`) + 🔧 SHIPPED (code) — Moment slab: badges on the back; game-line lane at 48/tick; All Day non-game plays show no stats (Claude Code cloud; Trevor: "Keep going and proceeding on this, and anything relevant, for the next 3 hours")
+
+- `20261126021525_audit_20261125_moment_gamelog_dispatch_48`: per-tick batch 24 → 48 after two clean ticks (48/48 ok, drains 874 / 554 ms). Backfill ~2.5 days → ~21 h.
+- `20261126021927_audit_20261125_moment_game_lines_allday_needs_a_game`: 355 / 6,079 dated All Day editions have no home/away team — 280 Player Melts dated 2023-09-10, Team Melts, Draft Picks, unfilled placeholders — so their date names no game. Reader returns NULL for them; targets/drain skip them. Verified: 0 melts with a context; Lillard unchanged. Also measured from the sandbox against ESPN: 69 / 69 All Day games match on the US date, 0 conflicts; 68 / 69 opponents match (Washington rename).
+- Code: `components/InteractiveSlab.tsx` badge row (up to three of the edition's badges, wrapping, then "+N"), fed from the page's existing get_edition_badges_unified read. Worst case (long name + 4 badges + finish + 3 rows) scales to 83 % at 320 px. Tests added. Preflight green incl. component coverage.
+- Revert: `git revert` the code commit; DB: re-apply `moment_gamelog_dispatch` / `moment_gamelog_targets` / `moment_gamelog_drain` from 20261126020013 and `get_moment_game_context` from 20261126020836.
+
 ### 2026-11-25 ~6:15 PM PT · 🗄 APPLIED (`20261126020013`, `20261126020836`) — Moment game lines: ESPN game-log lane live + reader matches the Moment's exact date (Claude Code cloud; Trevor: "Yes apply it")
 
 - `20261126020013_audit_20261125_moment_game_lines` (was staged in docs/proposals/): tables `player_gamelog_lines` / `_fetches` / `_requests` (RLS on, no anon/authenticated), `moment_gamelog_targets/dispatch/drain`, reader `get_moment_game_context` (service_role only), pg_cron `rpc-moment-gamelog-dispatch` (:02 every 10 min) + `rpc-moment-gamelog-drain` (:05), watchlist `moment-game-lines` (info). anon EXECUTE false on all, read with has_function_privilege.
