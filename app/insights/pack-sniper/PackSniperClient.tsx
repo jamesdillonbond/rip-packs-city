@@ -209,8 +209,14 @@ function RecencyChips({ d, mounted }: { d: Deal; mounted: boolean }) {
           AT 24H LOW
         </span>
       ) : null}
-      {mounted && d.askChangedAt ? (
-        <span className="rpc-ps-listed-rel">{relTime(d.askChangedAt)}</span>
+      {/* 2026-11-26: the age is when the LOWEST ASK last changed (a new cheaper listing, a sale or a
+          delist), not when the pack was listed. Bare "2m ago" beside "Just listed (2h): 0" read as a
+          contradiction on the live board, so a non-new row says what moved. */}
+      {mounted && d.askChangedAt && relTime(d.askChangedAt) ? (
+        <span className="rpc-ps-listed-rel" title="When this pack's lowest ask last changed">
+          {d.isNew ? "listed " : "ask moved "}
+          {relTime(d.askChangedAt)}
+        </span>
       ) : null}
     </>
   )

@@ -198,10 +198,25 @@ describe("magnitude ladders", () => {
     expect(t).toContain("480×")
   })
 
-  it("renders a relative listed time once mounted", async () => {
+  // Re-pinned 2026-11-26: the age is the ASK's last change, so a row that is not new says
+  // "ask moved"; only a new row says "listed" (live: "2m ago" under "Just listed (2h): 0").
+  it("renders the ask's age once mounted, naming what moved", async () => {
     const iso = new Date(Date.now() - 3 * 3600_000).toISOString()
     const { findByText } = mount([deal({ askChangedAt: iso })])
-    expect(await findByText("3h ago")).toBeTruthy()
+    expect(await findByText("ask moved 3h ago")).toBeTruthy()
+  })
+
+  it("⛔ only a NEW row's age reads as a listing time", async () => {
+    const iso = new Date(Date.now() - 20 * 60_000).toISOString()
+    const { container, findByText } = mount([
+      deal({ distId: "n", title: "Fresh", isNew: true, askChangedAt: iso }),
+      deal({ distId: "o", title: "Old", isNew: false, askChangedAt: iso }),
+    ])
+    await findByText("Fresh")
+    const t = container.textContent ?? ""
+    expect(t).toContain("listed 20m ago")
+    expect(t).toContain("ask moved 20m ago")
+    expect(t.match(/listed 20m ago/g)?.length).toBe(1)
   })
 
   it("renders 'just now' under a minute and days beyond 24h", async () => {
