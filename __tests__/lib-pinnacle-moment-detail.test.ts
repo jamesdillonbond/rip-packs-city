@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { load, isLegacyKey, decodeId, topOwnersState } from "@/lib/pinnacle/moment-detail"
+import { load, isLegacyKey, decodeId, topOwnersState, topOwnersThinNote } from "@/lib/pinnacle/moment-detail"
 
 // The read behind /pinnacle/moment/[id] — the shareable Pinnacle pin URL.
 //
@@ -496,4 +496,16 @@ describe("topOwnersState", () => {
     expect(topOwnersState({ ...base, owners: [], holders: 0, systemCopies: 100 })).toBe("system_only")
   })
   it("full coverage with collectors → list", () => expect(topOwnersState({ ...base, seenCopies: 95 })).toBe("list"))
+})
+
+describe("topOwnersThinNote (2026-11-26)", () => {
+  const fmt = (n: number | null) => (n == null ? "—" : n.toLocaleString("en-US"))
+  it("⛔ never claims RPC as a whole can name 0 owners — it names the owner map, and points at the wallet count", () => {
+    // Live: "RPC can name the current owner of 0 of 3,012 copies" sat under
+    // "Tracked holders 34 · 174 copies" on the same pin page.
+    const t = topOwnersThinNote({ seenCopies: 0, totalMinted: 3012 }, fmt)
+    expect(t).not.toMatch(/^RPC can name/)
+    expect(t).toContain("on-chain owner map covers 0 of 3,012 copies")
+    expect(t).toContain("wallets RPC indexes")
+  })
 })

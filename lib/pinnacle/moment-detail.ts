@@ -243,6 +243,18 @@ export function topOwnersState(d: TopOwnersData | null): "failed" | "thin" | "sy
   return d.owners.length === 0 ? "system_only" : "list"
 }
 
+/**
+ * PURE. The "thin" Top Owners note (2026-11-26). It used to read "RPC can name the current owner of
+ * 0 of 3,012 copies", directly under a Tracked holders card that read "34 of the wallets RPC indexes ·
+ * 174 copies" for the same pin (/disney-pinnacle/edition/OEV1-SWSA-LUKE-S2). Both were true of
+ * different instruments: the count is the on-chain OWNER MAP (mint events since the Dec 2025 floor),
+ * and the card is the wallet cache. The note now names its instrument so the page does not contradict
+ * itself.
+ */
+export function topOwnersThinNote(d: Pick<TopOwnersData, "seenCopies" | "totalMinted">, fmt: (n: number | null) => string): string {
+  return `RPC's on-chain owner map covers ${fmt(d.seenCopies)} of ${fmt(d.totalMinted)} copies of this pin, too few to rank owners; pins minted before December 2025 are not in it yet. The holder count above comes from the wallets RPC indexes.`
+}
+
 export type RenderData = {
   kind: "render"
   ed: CatalogRow

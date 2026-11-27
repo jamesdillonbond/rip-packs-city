@@ -37,7 +37,7 @@ import SupportChatConnected from "@/components/SupportChatConnected"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-import { load, decodeId, PINNACLE_COLLECTION_ID, topOwnersState, type LegacyData, type TopOwnersData } from "@/lib/pinnacle/moment-detail"
+import { load, decodeId, PINNACLE_COLLECTION_ID, topOwnersState, topOwnersThinNote, type LegacyData, type TopOwnersData } from "@/lib/pinnacle/moment-detail"
 import { OG_INHERITED, TWITTER_INHERITED, breadcrumbJsonLd } from "@/lib/seo"
 import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -736,7 +736,7 @@ function TopOwnersSection({ data }: { data: TopOwnersData | null }) {
         <div className="rpc-pm-ladder-note">
           {state === "system_only"
             ? "Every copy RPC can see is held by Disney Pinnacle's own accounts (unsold stock or locked pins)."
-            : `RPC can name the current owner of ${fmtInt(data.seenCopies)} of ${fmtInt(data.totalMinted)} copies of this pin — too few to rank owners. Pins minted before December 2025 are not covered yet.`}
+            : topOwnersThinNote(data, fmtInt)}
         </div>
       </section>
     )
