@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 5:03 PM PT — 🗄 APPLIED `20261127010311` — pack pages: the sealed-resale panel's "Retail" is the drop price too (Claude Code cloud, autonomous pass)
+
+- **Same defect as `20261127005234`, in the per-page reader.** `get_pack_market_row` (the pack page's "Sealed pack resale" panel, Top Shot and All Day) took `retail_price` from `mv_pack_ev_latest.pack_price`, which is the secondary ask. `/nba-top-shot/pack/dist/8596` (a case topper) still read "Retail $209 · trades 1.20× retail — secondary premium" after the board fix.
+- **Now:** Top Shot reads the normalized `metadata.retail_price_usd` (as `pack_table_rows` and the board do); All Day reads `allday_pack_supply.pack_price` (the All Day board's source). 0 and sentinels are NULL, and the page already hides retail and verdict on NULL. Verified by direct call: 8596 gives retail NULL; Holiday of Hoops: Trade Ticket gives $10.00 / 0.77×; All Day 413 gives $45; anon EXECUTE is false (same signature, so the ACL is kept). The file is byte-exact to `schema_migrations` (md5 `c52efe3f…`). The pack page renders from a 10-min ISR.
+- **Revert:** `CREATE OR REPLACE` `get_pack_market_row` from `20260924122704`.
+
 ### 2026-11-26 · 4:53 PM PT — 🗄 APPLIED `20261127005234` — Top Shot pack market: "Retail" is the drop price again, not today's lowest ask (Claude Code cloud, autonomous pass)
 
 - **Found live:** `/insights/topshot-pack-market` ("rank them by discount-to-retail") listed "Holiday of Hoops: Trade Ticket · Retail **$69.99** · median $7.74 · 0.11×". Its drop price is **$10.00**, so the real ratio is 0.77×. On pack pages, dist 8596 (a case topper with no standalone retail) read "Retail $209 · trades 1.20× retail — secondary premium" beside the page's own "No standalone retail price".
