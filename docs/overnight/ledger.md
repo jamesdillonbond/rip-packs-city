@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 4:46 PM PT — Pack Sniper: a row's age says "ask moved", not a bare "2m ago" that read as "listed" (Claude Code cloud, autonomous pass)
+
+- **Found live** on `/insights/pack-sniper`: the "Just listed (2h)" tile read **0**, while rows showed "2m ago", "1h ago" and so on. The chip was `askChangedAt`, when the pack's lowest ask last changed (a cheaper listing, a sale or a delist), unlabelled, so it read as a listing time. A new row (first seen within 2 h, the tile's own rule) now reads "listed 20m ago"; every other row reads "ask moved 2m ago", and the chip has a title. The sort and tile logic are unchanged.
+- **Proof:** `component-PackSniperClient-display.test.tsx` re-pins the old "3h ago" case to "ask moved 3h ago" (the premise changed, not the property), and adds a pinned case that only a new row says "listed". 39 tests across the three sniper suites green, `tsc` clean.
+- **Revert:** revert the commit "pack sniper: a row's age names what moved" (by message).
+
 ### 2026-11-26 · 4:44 PM PT — Pinnacle pin page: the Top Owners note names its instrument and no longer contradicts Tracked holders (Claude Code cloud, autonomous pass)
 
 - **Found live** on `/disney-pinnacle/edition/OEV1-SWSA-LUKE-S2`: "Tracked holders 34 · of the wallets RPC indexes · 174 copies", and further down "RPC can name the current owner of **0** of 3,012 copies of this pin". Both figures are true, but they come from different instruments. The 0 is the on-chain owner map (mint events since the Dec 2025 floor, which does not cover this 2023 pin); the card is the wallet cache. The sentence claimed the map's blind spot for RPC as a whole.
