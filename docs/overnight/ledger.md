@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 7:29 AM PT — Panini Analytics by league: a small share reads "<1%"
+
+Found looking at the live table: Serie A (,702 of 34k) read "0%" beside 347 sales. A share under half a percent now reads "<1%". Display only.
+
+**Revert:** revert the commit "panini analytics: small share reads <1%" (by message).
+
 ### 2026-11-27 · 7:27 AM PT — Panini Analytics: a "By league · last 30 days" table
 
 The Panini Analytics tab said its figures were not split by league. It now carries a table of the last 30 days by league / brand — sales, volume, share, products — from `get_panini_property_board` (the hourly rollup already read by the league pages), each row linking the league's page; a failed read says so, a league with no sale is left out. The charts and top lists are unchanged and still cover all of Panini. No DB change. Morning check of the 11-26 work: brand lane 16 runs / 0 failed, `kind` drift 0, largest-holder reads 0.4–1.5 s.
