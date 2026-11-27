@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 1:29 PM PT — 🗄 APPLIED `20261127212929` — dropped the empty, superseded `topshot_pack_pull_import` (Trevor: "Do it")
+
+- Never held a row; its only dependents were its own two functions (`load_topshot_pack_pull_import`, `topshot_retired_spork_open_txs`), dropped with it. Superseded by `pack_reveal_import` (`20261127205829`). Guarded: refuses if the table holds a row.
+- **Revert:** re-apply `20261127203636_audit_20261127_topshot_pack_pull_import_for_retired_sporks.sql`.
+
 ### 2026-11-27 · 1:06 PM PT — 🗄 APPLIED `20261127205829` + All Day sold-pack open reads (193 pulls) — the retired-spork import now covers Top Shot AND All Day
 
 - `20261127205829`: `pack_reveal_import` + `load_pack_reveal_import()`, keyed by (collection, pack) because Top Shot and All Day pack ids overlap. Positive control (rolled back): 7 live `PackNFT.Revealed` events → 27 pulls, 27 named. Non-destructive: the tx-keyed `topshot_pack_pull_import` (`20261127203636`) is left empty for a confirmed drop. Dune SQL now reads both collections (`docs/integrations/dune-topshot-pack-reveals.sql`).
