@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 1:43 PM PT — 🗄 APPLIED `20261127213526` + `20261127213601` — Sold-tab lanes retry rate-limited reads, seed lane hourly, reader shows imported serials; Dune backfill scheduled 12-14
+
+- `20261127213526` (1:35 PM): the open-tx dispatcher never re-asked a pack whose read came back HTTP 429 (13 stuck); now anything but a final outcome is asked again an hour on. `rpc-sold-pack-pull-seed` → hourly (:09): it ran 55–120 s every 10 min (3 of 14 killed at the 120 s cap) while seeding 0.
+- `20261127213601` (1:36 PM): `get_wallet_sold_pack_outcomes` falls back to `pack_reveal_import.serial_number` (positive control in a rolled-back txn: planted serial shown; settings intact; ~1 s for 100 packs).
+- Both are md5-asserted splices; their files gained an `IF v_src IS NULL` guard after apply (the migration parse check replays on an empty DB, where `md5(NULL)` slipped past the base check). Applied objects unchanged. The `20261127212929` file's header was restored byte-exact.
+- Scheduled task `trig_01815CPvwQcCAskR67UZdSVd` (12-14 10:23 AM PT, automatic approval): run the Dune `PackNFT.Revealed` read and load it. Known-issue #263 filed.
+- **Revert:** re-apply `dispatch_sold_pack_open_tx_reads` / `get_wallet_sold_pack_outcomes` from `20261127194434` (md5 `09ba7f0d…` / `37e42cc8…`); `SELECT cron.schedule('rpc-sold-pack-pull-seed', '9-59/10 * * * *', 'SELECT public.run_seed_sold_pack_pulls()')`.
+
 ### 2026-11-27 · 2:10 PM PT — X images: Top Shot renders trimmed on solid pixels (they read smaller than the cards)
 
 Trevor, 11-27: "Top shot looks smaller". `cleanArt()` trimmed at alpha > 8, which counts a Top Shot render's soft glow as artwork (Fudd 1/1: 50–545 px tall at > 8, 87–508 at > 100), so the slab drew ~15 % shorter than the cards. Now trims at alpha > 100. `scripts/social/x-image.mjs`; checked by rendering the grail image (Top Shot slabs now the cards' height).
