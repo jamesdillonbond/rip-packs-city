@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:40 PM PT — 🗄 APPLIED `20261127232440` — Top Shot forward test scores the new parallel hold as its own arm; docs for the 11-27 pack-EV thread; 12-04 check scheduled
+
+- `topshot_ask_only_forward_test()` gained a `parcap` arm tested before `compcap` (the `_parcap_compcap` tag would otherwise have been scored inside `compcap`, blurring both rules). md5-guarded CREATE OR REPLACE of the 20261127184110 body, one CASE arm added; ACL unchanged (anon false, read back). Baseline for the new arm: `ask:other` since 11-01 n 263, MdAE 0.588, bias −0.562.
+- Docs: packs.md new last section (depletion chip, Atlas pool table never stores remaining = 0, measured survivor gate, ask-share marker, reward-pack verdict); database.md 11-27 bullet for the parallel hold + the stale-resale extension measured and NOT shipped; focus.md 12-14 read additions; strategy/collections/nba-top-shot.md 11-27 bullet.
+- Scheduled a standalone one-shot routine "Pack EV + parallel-hold check (12-04)" (`trig_01Pg62QxAdcUPH7aegJZj2qs`, Fri 12-04 10:37 AM PT, cloud, read-only unless a falsifier trips — it reports, never reverts).
+- **Revert:** re-apply the `topshot_ask_only_forward_test` body from `20261127184110` (prosrc md5 c9d176eb02eb5a01231d4bd2373efa11); revert the commit "Docs + forward-test arm for the 11-27 pack-EV thread"; delete the routine.
+
 ### 2026-11-27 · 3:30 PM PT — 📄 docs — laptop Cowork VM `/sessions` disk cleared (100 % → 1 %); inbox `2026-11-26T1936Z` resolved
 
 - **What:** ran `fix-sessions-vhdx-FORCE.cmd` on the laptop via computer use (Trevor approved): `sessiondata.vhdx` renamed to `.bak-20261127-1515` at 3:15 PM PT, Claude relaunched, `/sessions` 1 % (304K). A full `git clone --filter=blob:none` fit again (218M). The `.bak` (9.72 GB) is in the Recycle Bin via `recycle-old-vm-disk-backups.cmd`. No repo code or DB change; this commit only appends a ✅ RESOLVED section to the inbox filing and marks its INDEX line.
