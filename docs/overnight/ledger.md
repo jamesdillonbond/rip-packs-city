@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 12:50 PM PT — 🗄 APPLIED `20261127203636` — landing table for Top Shot pack contents from retired sporks (empty; source needs Dune credits)
+
+- 18,564 Top Shot packs saved wallets sold were opened before 2025-10-14 (68k moments) and have no pull rows; no Flow node serves those blocks. Probed dead 11-27: mainnet26 host (DNS), Atlas (Top Shot pulls read "0"), Top Shot public GraphQL (530), Find Labs historical API (503); Flowscan's API needs a credential we do not hold. Source found: PackNFT's `Revealed(id, salt, nfts)` event lists a pack's full contents; Dune has it.
+- `20261127203636` adds `topshot_pack_pull_import` (empty) + `load_topshot_pack_pull_import()` (positive control in a rolled-back txn: a real parallel pull landed named; a deposit to another address was rejected). Its pack-keyed successor (matches the Revealed source) is in `docs/integrations/pending/` — `apply_migration` asked to confirm dropping the empty table and the question timed out. Dune SQL: `docs/integrations/dune-topshot-pack-reveals.sql`.
+- **Revert:** `DROP FUNCTION public.load_topshot_pack_pull_import(); DROP FUNCTION public.topshot_retired_spork_open_txs(integer, integer); DROP TABLE public.topshot_pack_pull_import;` (no rows were ever written).
+
 ### 2026-11-27 · 12:55 PM PT — 🗄 APPLIED `20261127203006` — Top Shot "+EV" resting on never-sold asks gets the existing "from asks" basis note
 
 - The only Top Shot pack +EV against a live ask (Fit Check (Diced), "+58.3 %") was 100 % one never-sold /10 Moment priced at 0.9 × its own ask. `topshot_pool_skew.ask_value_share` (new column, same hourly job) = share of remaining value on never-sold ASK_ONLY editions. Board: the existing Pinnacle "from asks" marker ("N % of this pack's EV rests on asking prices for Moments that have never sold") on POSITIVE-margin rows only, ≥ 50 % — 1 row today (414 pools are ask-heavy, but on −EV rows the note would not change a decision, so it stays off). Pack page: "· N% from asks on never-sold Moments" on the +EV sub line. Previously-sold editions relabelled ASK_ONLY are not counted (they backtest well).
