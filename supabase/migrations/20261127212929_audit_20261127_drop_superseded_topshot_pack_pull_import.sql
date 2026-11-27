@@ -1,6 +1,6 @@
 -- audit_20261127_drop_superseded_topshot_pack_pull_import
 --
--- 2026-11-27 (PT, ~1:29 PM; Claude Code cloud; Trevor: "Do it" -- to dropping the empty superseded table).
+-- 2026-11-27 (PT, ~1:30 PM; Claude Code cloud; Trevor: "Do it" -- to dropping the empty superseded table).
 --
 -- WHY: 20261127203636 created topshot_pack_pull_import (keyed by open-tx deposits) and two functions
 -- over it. 20261127205829 replaced it with pack_reveal_import (keyed by collection + pack, read from
