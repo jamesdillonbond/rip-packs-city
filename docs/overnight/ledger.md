@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:55 PM PT — X posts: Spurs #PorVida confirmed; six team hashtags recorded as not showing a logo
+
+Trevor checked the grail post's hashtags in the composer: only #PorVida shows a logo. `TEAM_HASHTAG` gains "San Antonio Spurs": "#PorVida"; the six that did not (#LetsGoBucs, #DallasWings, #FeverRising, #NYGiants, #RiseUpDC, #RepBX) are noted beside it and in `docs/social/x-calendar.md`, with Trevor's rule that the hashtag follows the team on the card/Moment. Nothing on the site reads `scripts/social/`.
+
+**Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 2:25 PM PT — X posts: three buyer handles Trevor confirmed today go into X_HANDLES
 
 tadtweets → @tadtweets (Candy), cle_287 → @cle_287 (Top Shot), ViciousFrenchie → @St1ngray2 (Panini), from today's handle lookup Trevor confirmed. `scripts/social/x-draft.mjs` `X_HANDLES`, `docs/social/x-calendar.md`. Nothing on the site reads `scripts/social/`.
