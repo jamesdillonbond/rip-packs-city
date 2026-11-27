@@ -12,7 +12,7 @@
 // link out to the deep view. Gated to Top Shot + NFL All Day (the only
 // collections with meaningful pack-ownership data).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
@@ -56,6 +56,11 @@ import {
 import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 import PackFilterBar from "@/components/packs/PackFilterBar"
 import { currencySuffix } from "@/lib/usd-format"
+import { fetchJson } from "@/lib/analytics/fetch-json"
+import {
+  soldOpenerLabel, soldOutcomeIsHit, soldOutcomeValueLabel, soldOutcomeVsSaleLabel, soldPullLabel,
+  type SoldPackOutcome,
+} from "@/lib/packs-sold-outcomes"
 
 interface SummaryCollection {
   collection_id: string
@@ -193,6 +198,9 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
   const [summaryState, setSummaryState] = useState<"idle" | "loading" | "ok" | "error">("idle")
   const [summaryAttempt, setSummaryAttempt] = useState(0)
   const [history, setHistory] = useState<History | null>(null)
+  // Which tab the rows in `history` were read for: a tab switch keeps the old rows on screen until the
+  // new read lands, and the Sold tab's buyer-pull read must not ask about another tab's packs.
+  const [historyTab, setHistoryTab] = useState<PackFilter | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
@@ -302,6 +310,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
       } else {
         const h = histJson as History
         setHistory(h)
+        setHistoryTab(packFilter)
         if (h.tab_totals?.tiers) setTabTiers({ tab: packFilter, tiers: h.tab_totals.tiers })
       }
     } catch (err) {
@@ -312,6 +321,37 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
   }, [wallet, dbSlug, page, packFilter, filters])
 
   useEffect(() => { load() }, [load])
+
+  // ── Sold tab: what the next owner pulled (Trevor 2026-11-27) ────────────
+  // One read per Sold page, for the ids on it. A failed read says so in the column; it never
+  // reads as "not opened yet" (three states: failed · sealed · opened).
+  const [soldOutcomes, setSoldOutcomes] = useState<{ key: string; state: "loading" | "ok" | "error"; byId: Record<string, SoldPackOutcome> } | null>(null)
+  const [expandedSold, setExpandedSold] = useState<string | null>(null)
+  const soldIds = useMemo(
+    () => (packFilter === "sold" && historyTab === "sold" && history ? history.packs.map((r) => r.pack_nft_id).filter((id) => /^[0-9]+$/.test(id)) : []),
+    [packFilter, historyTab, history],
+  )
+  useEffect(() => {
+    if (!wallet || soldIds.length === 0) { setSoldOutcomes(null); return }
+    const key = wallet + "|" + soldIds.join(",")
+    let cancelled = false
+    setSoldOutcomes({ key, state: "loading", byId: {} })
+    ;(async () => {
+      const res = await fetchJson<{ packs: SoldPackOutcome[] }>(
+        "/api/wallet/sold-pack-outcomes?" + new URLSearchParams({ wallet, ids: soldIds.join(",") }).toString(),
+        { cache: "no-store" },
+      )
+      if (cancelled) return
+      if (!res.ok || !res.json || !Array.isArray(res.json.packs)) {
+        setSoldOutcomes({ key, state: "error", byId: {} })
+        return
+      }
+      const byId: Record<string, SoldPackOutcome> = {}
+      for (const o of res.json.packs) byId[o.pack_nft_id] = o
+      setSoldOutcomes({ key, state: "ok", byId })
+    })()
+    return () => { cancelled = true }
+  }, [wallet, soldIds])
 
   // The hero summary: once per wallet (+ a manual retry), never per tab or page. A failed
   // read retries once on its own -- the first read of a big wallet can run cold past the
@@ -545,6 +585,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                       <Th right>P&L</Th>
                       <Th right>ROI</Th>
                       <Th right>Held</Th>
+                      <Th right>Buyer pulled</Th>
                     </>
                   )}
                 </tr>
@@ -556,8 +597,11 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                   const packName = packDisplayName(row.pack_name, row.pack_nft_id)
                   const note = packIdentityNote(row)
                   const market = packMarketLabel(row)
+                  const outcome = packFilter === "sold" ? soldOutcomes?.byId[row.pack_nft_id] : undefined
+                  const expanded = packFilter === "sold" && expandedSold === row.pack_nft_id && outcome != null && outcome.pulls.length > 0
                   return (
-                    <tr key={row.pack_nft_id} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
+                    <Fragment key={row.pack_nft_id}>
+                    <tr style={{ borderBottom: expanded ? "none" : "1px solid var(--rpc-border)" }}>
                       <td style={{ padding: "9px 12px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           {/* Sealed packs have no distribution linked yet (the
@@ -656,9 +700,56 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                           <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
                           <td style={{ padding: "9px 12px", textAlign: "right", color: plTint }}>{packRoiLabel(row)}</td>
                           <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packHoldLabel(row.bought_at, row.sold_at)}</td>
+                          <td data-testid="sold-buyer-pulled" style={{ padding: "9px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                            {outcome ? (
+                              <button
+                                type="button"
+                                disabled={outcome.pulls.length === 0}
+                                aria-expanded={expanded}
+                                onClick={() => setExpandedSold((cur) => (cur === row.pack_nft_id ? null : row.pack_nft_id))}
+                                title={outcome.opened ? `Opened by ${soldOpenerLabel(outcome)} — tap to see every pull` : "The buyer hasn't opened it yet"}
+                                style={{ background: "none", border: "none", padding: 0, cursor: outcome.pulls.length ? "pointer" : "default", textAlign: "right", color: "inherit", font: "inherit" }}
+                              >
+                                <div style={{ fontFamily: display, fontWeight: 700, color: soldOutcomeIsHit(outcome) ? "#34D399" : outcome.opened ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
+                                  {soldOutcomeIsHit(outcome) && <span aria-hidden style={{ marginRight: 4 }}>🔥</span>}
+                                  {soldOutcomeValueLabel(outcome)}
+                                  {outcome.pulls.length > 0 && <span aria-hidden style={{ marginLeft: 4, fontSize: 10, color: "var(--rpc-text-muted)" }}>{expanded ? "▲" : "▼"}</span>}
+                                </div>
+                                {outcome.pulls[0]?.player_name && (
+                                  <div style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>Top: {soldPullLabel(outcome.pulls[0])}</div>
+                                )}
+                              </button>
+                            ) : soldOutcomes?.state === "loading" ? (
+                              <span style={{ color: "var(--rpc-text-muted)" }}>…</span>
+                            ) : soldOutcomes?.state === "error" ? (
+                              <span style={{ color: "var(--rpc-text-muted)" }} title="Couldn't load what the buyer pulled — refresh to retry">Couldn&apos;t load</span>
+                            ) : (
+                              // the read answered, but not for this row: it is not a recorded marketplace sale of yours
+                              <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
+                            )}
+                          </td>
                         </>
                       )}
                     </tr>
+                    {expanded && outcome && (
+                      <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-hover)" }}>
+                        <td colSpan={8} style={{ padding: "8px 12px 12px" }}>
+                          <div style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>
+                            Opened by {soldOpenerLabel(outcome)}{outcome.opened_at ? " · " + relativePackTime(outcome.opened_at) : ""}
+                            {soldOutcomeVsSaleLabel(outcome) ? " · " + soldOutcomeVsSaleLabel(outcome) : ""}
+                          </div>
+                          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 4 }}>
+                            {outcome.pulls.map((p) => (
+                              <li key={p.nft_id} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12 }}>
+                                <span style={{ color: "var(--rpc-text-primary)" }}>{soldPullLabel(p)}{p.set_name ? <span style={{ color: "var(--rpc-text-muted)" }}> · {p.set_name}</span> : null}</span>
+                                <span style={{ fontFamily: display, fontWeight: 700, color: "var(--rpc-text-secondary)" }}>{p.fmv_usd != null ? fmtPackUsd(p.fmv_usd) : "—"}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
               </tbody>

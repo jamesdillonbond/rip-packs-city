@@ -24,9 +24,13 @@ const res = (status: number, body: unknown) =>
   Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response)
 
 // Route the two parallel fetches by URL so summary/history stay independent.
-function routeFetch(handlers: { summary: () => Promise<Response>; history: (url: string) => Promise<Response> }) {
+// 2026-11-27: the Sold tab also reads /api/wallet/sold-pack-outcomes (what the buyer pulled). It is routed
+// on its own so the history-only counts below keep counting history reads.
+function routeFetch(handlers: { summary: () => Promise<Response>; history: (url: string) => Promise<Response>; soldOutcomes?: (url: string) => Promise<Response> }) {
   return vi.fn((url: string) =>
-    url.includes("pack-summary") ? handlers.summary() : handlers.history(url),
+    url.includes("pack-summary") ? handlers.summary()
+      : url.includes("sold-pack-outcomes") ? (handlers.soldOutcomes ?? (() => res(200, { packs: [] })))(url)
+        : handlers.history(url),
   )
 }
 
@@ -282,6 +286,56 @@ describe("WalletPacksView", () => {
     // The stale Opened response must NOT overwrite the current Sold view.
     await waitFor(() => expect(getByText("SOLD-PACK")).toBeTruthy())
     expect(queryByText("RIPPED-PACK")).toBeNull()
+  })
+
+  it("Sold tab shows what the buyer pulled, expands to every pull, and says when that read failed", async () => {
+    ownerKey = "0xowner"
+    const soldRow = { ...heldRow, pack_nft_id: "222", pack_name: "SOLD-PACK", status: "flipped" as const, has_sell: true, sell_price: 215 }
+    const outcomeUrls: string[] = []
+    let failOutcomes = false
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url) => res(200, url.includes("status=sold") ? { packs: [soldRow], total_count: 1 } : { packs: [heldRow], total_count: 1 }),
+      soldOutcomes: (url) => {
+        outcomeUrls.push(url)
+        if (failOutcomes) return res(503, { error: "unavailable" })
+        return res(200, { packs: [{
+          pack_nft_id: "222", sold_at: "2026-07-31T00:05:00Z", sale_price: 215, opened: true, opened_at: "2026-07-31T00:11:01Z",
+          opener_is_you: false, opener_username: "ZR_711", moments_pulled: 2, pulls_named: 2, pulls_priced: 2, pull_value_usd: 243.37,
+          pulls: [
+            { nft_id: "1", edition_id: "e1", player_name: "LeBron James", set_name: "Holo Icon", tier: "LEGENDARY", serial_number: 14, circulation_count: 39, fmv_usd: 241.37 },
+            { nft_id: "2", edition_id: "e2", player_name: "Jevon Carter", set_name: "Base Set", tier: "COMMON", serial_number: 99, circulation_count: 99, fmv_usd: 2 },
+          ],
+        }] })
+      },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, findByText, queryByText, unmount } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(outcomeUrls.length).toBe(0) // only the Sold tab asks
+
+    fireEvent.click(getByText("Sold"))
+    await findByText("SOLD-PACK")
+    await findByText("$243.37")
+    expect(outcomeUrls[0]).toContain("ids=222")
+    expect(getByText(/Top: LeBron James · Legendary #14\/39/)).toBeTruthy()
+    expect(queryByText(/Jevon Carter/)).toBeNull() // collapsed
+
+    fireEvent.click(getByText("$243.37"))
+    await findByText(/Jevon Carter · Common #99\/99/)
+    expect(getByText(/Opened by @ZR_711/)).toBeTruthy()
+    expect(getByText(/\$28\.37 more than you sold it for/)).toBeTruthy()
+    unmount()
+
+    // A failed read says so -- it must not read as "Not opened yet".
+    failOutcomes = true
+    const second = render(<WalletPacksView collection="nba-top-shot" />)
+    // the first render wrote packs_view=sold to the address bar, so this one may open on Sold already
+    await waitFor(() => expect(second.queryByText("SOLD-PACK") ?? second.queryByText("Base Pack")).toBeTruthy())
+    if (second.queryByText("Base Pack")) fireEvent.click(second.getByText("Sold"))
+    await second.findByText("SOLD-PACK")
+    await second.findByText(/Couldn.t load/)
+    expect(second.queryByText("Not opened yet")).toBeNull()
   })
 
   it("shows the filter-specific empty state", async () => {
