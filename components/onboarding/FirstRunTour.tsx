@@ -35,6 +35,8 @@ interface TourStep {
   body: string
   anchor?: string // data-tour-anchor selector value; undefined = centered
   cta: string
+  /** Optional link under the body (2026-11-27: the welcome step's beginner's guide). */
+  link?: { href: string; label: string }
 }
 
 /** "A, B, and C" — the published collections' names, in registry order. */
@@ -47,7 +49,10 @@ const STEPS: TourStep[] = [
   {
     id: "welcome",
     title: "Welcome to Rip Packs City",
-    body: "You've got access to the smartest analytics platform for Flow blockchain collectibles. Quick tour, then you're in.",
+    // 2026-11-27: was "…for Flow blockchain collectibles" — RPC also covers Solana (Candy),
+    // Aptos (UFC Strike) and Panini's own chain. The link is for a visitor new to all of it.
+    body: "Market values, deals, pack EV and your whole collection for every digital collectible we cover, in one place. Quick tour, then you're in.",
+    link: { href: "/help/new-to-collecting", label: "New to digital collectibles? Read the beginner's guide" },
     cta: "Show me around",
   },
   {
@@ -55,7 +60,7 @@ const STEPS: TourStep[] = [
     title: "One wallet, every collection",
     // Derived from the registry (2026-11-06): this line named five collections
     // by hand while seven were published (Candy MLB and Panini were missing).
-    body: `We cover ${listNames(publishedCollections().map((c) => c.label))}. Add a wallet once and every collection you hold Moments in rolls up here — one portfolio, one count.`,
+    body: `We cover ${listNames(publishedCollections().map((c) => c.label))}. Add your wallets once and everything you hold — Moments, Pins and Cards — rolls up here: one portfolio, one count.`,
     // ⚠ Anchored to the portfolio stat tiles (Total Assets · Portfolio FMV ·
     // Collections), not "collection-switcher": that element lives on
     // collection pages, and the tour runs on the dashboard, where the step was
@@ -71,7 +76,9 @@ const STEPS: TourStep[] = [
     // ⚠ No number here. The cap comes from checkFeatureQuota at request time;
     // a hard-coded "3" drifted from it once already (2026-09-02 QA #9).
     title: "Save your wallets",
-    body: "Add a Top Shot username or Flow address; we'll pre-warm the data so it loads instantly.",
+    // 2026-11-27: named only the Flow identifier; other chains take their own (no collection named
+    // here — first-run-tour-anchors-exist-and-do-not-repeat.test.ts pins that).
+    body: "Add your Dapper or Top Shot username (or a Flow address), plus the username or address you use on any other collection we cover — no password, no wallet connection. We'll pre-warm the data so it loads instantly.",
     anchor: "saved-wallets-card",
     cta: "Got it",
   },
@@ -81,7 +88,7 @@ const STEPS: TourStep[] = [
     // ⚠ No URL template here. This copy used to end "at
     // rippackscity.com/profile/<you>/trophy-case", and a new collector typed it
     // in literally on 2026-09-29 and landed on /profile/%3Cyou%3E/trophy-case.
-    body: "Pin your 6 best Moments, add a caption, and share the case on X — it gets its own page and social card, linked from your profile.",
+    body: "Pin your 6 best Moments or Cards, add a caption, and share the case on X — it gets its own page and social card, linked from your profile.",
     anchor: "trophy-case",
     cta: "Got it",
   },
@@ -95,7 +102,7 @@ const STEPS: TourStep[] = [
   {
     id: "sniper",
     title: "Real-time deal flow",
-    body: "Sniper surfaces moments listed below FMV on Top Shot. Perfect during pack drops.",
+    body: "Sniper surfaces listings priced below FMV across the collections we cover. Perfect during pack drops.",
     anchor: "sniper-nav-link",
     cta: "Got it, let me explore",
   },
@@ -372,6 +379,13 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
         </div>
         <h2 id="first-run-title" style={TITLE}>{step.title}</h2>
         <p style={BODY}>{step.body}</p>
+        {step.link && (
+          <p style={{ ...BODY, marginTop: 8 }}>
+            <a href={step.link.href} style={{ color: "var(--rpc-red-text)", textDecoration: "underline", textUnderlineOffset: 3 }}>
+              {step.link.label} →
+            </a>
+          </p>
+        )}
         <div style={FOOTER}>
           {isFirst ? (
             <button onClick={dismiss} style={SECONDARY_BTN}>Skip</button>

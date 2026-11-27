@@ -349,6 +349,14 @@ export default function HomePageMarketing() {
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", lineHeight: 1.6, maxWidth: 520 }}>
             Email in, link back — no password, no invite. Then add your Dapper username and your binder, trophy case and FMV alerts are yours.
           </div>
+          {/* 2026-11-27: the beginner's guide, for a visitor who doesn't collect yet. */}
+          <Link
+            href="/help/new-to-collecting"
+            prefetch={false}
+            style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-red-text)", textDecoration: "underline", textUnderlineOffset: 3, letterSpacing: "0.04em" }}
+          >
+            New to digital collectibles? Start here →
+          </Link>
         </div>
       </section>
 

@@ -1786,6 +1786,15 @@ function SignInBanner({
         one that isn&apos;t yours. To mark a wallet as <em>yours</em>, use the
         verify step once it&apos;s loaded.
       </div>
+
+      {/* 2026-11-27: a visitor with no collection yet (or no idea which wallet holds it) had no
+          way forward from this form. */}
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, maxWidth: 620, marginTop: 8 }}>
+        New to digital collectibles, or not sure which wallet you use?{" "}
+        <Link href="/help/new-to-collecting" style={{ color: "var(--rpc-red-text)", textDecoration: "underline" }}>
+          Read the beginner&apos;s guide →
+        </Link>
+      </div>
     </section>
   );
 }
