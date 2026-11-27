@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 7:27 AM PT — Panini Analytics: a "By league · last 30 days" table
+
+The Panini Analytics tab said its figures were not split by league. It now carries a table of the last 30 days by league / brand — sales, volume, share, products — from `get_panini_property_board` (the hourly rollup already read by the league pages), each row linking the league's page; a failed read says so, a league with no sale is left out. The charts and top lists are unchanged and still cover all of Panini. No DB change. Morning check of the 11-26 work: brand lane 16 runs / 0 failed, `kind` drift 0, largest-holder reads 0.4–1.5 s.
+
+**Revert:** revert the commit "panini analytics: by league" (by message).
+
 ### 2026-11-26 · 5:28 PM PT — ⏸ HELD (not applied) — 384 same-tx Top Shot sale twins; staged for an attended apply (Claude Code cloud, autonomous pass)
 
 - While retiring the March Atlas twins I found a second shape from the same March load: 384 sales stored twice under the **same transaction hash** (a `topshot_marketplace` row with NULL `nft_id` and a `dapper_chain_tx_v1` row with `nft_id`), $1,841.67 double-counted. They pair exactly 1:1, the keeper is always `dapper_chain_tx_v1`, and nothing references them.
