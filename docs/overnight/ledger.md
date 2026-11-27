@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:00 PM PT — note: `f11e4a3` (the lock_timeout guard) reddened CI "Docs-guard tests" by editing `docs/cowork-skills/rpc-migration/SKILL.md` without re-packing its `.skill` bundle
+
+- `cowork-skill-bundles-match-their-source` failed on `d219d0b`…`fb25dd4` (rpc-migration bundle ≠ SKILL.md). Already fixed upstream by the concurrent session's re-pack in `160bbe3`; the full docs-guard set (190 files, 2,953 tests) passes locally at the tip. Lesson, already in CLAUDE.md ("grep the guards that READ a file before editing it"): after editing a `docs/cowork-skills/*/SKILL.md`, run `node scripts/pack-cowork-skill.mjs <name>` in the same commit.
+- **Revert:** none needed.
+
 ### 2026-11-27 · 2:50 PM PT — 🗄 APPLIED `20261127225033` — Panini sales ingest stops dropping a card whose key has a SPACE field (Sentinel "Panini Ingest" WARN)
 
 - **Defect:** 40 sale records in 24 h dropped by `panini_sales_ingest` as an unrecognised key shape, all one card: `packcard-1551_297782_7496368_21_ _12_62` (a single-space field where its siblings use `__`). 62/62 of its catalog serials use that shape; stripping `_ _<serial>_<cap>` gives `edition_external_id` on all 62; 0 sales were stored for it.
