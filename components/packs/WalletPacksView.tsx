@@ -734,6 +734,9 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                     {expanded && outcome && (
                       <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-hover)" }}>
                         <td colSpan={8} style={{ padding: "8px 12px 12px" }}>
+                          {/* Pinned to the visible edge: on a phone the table scrolls sideways to reach this
+                              column, and an unpinned panel would put every pull name off-screen. */}
+                          <div data-testid="sold-pulls-panel" style={{ position: "sticky", left: 12, width: "min(560px, calc(100vw - 48px))" }}>
                           <div style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>
                             Opened by {soldOpenerLabel(outcome)}{outcome.opened_at ? " · " + relativePackTime(outcome.opened_at) : ""}
                             {soldOutcomeVsSaleLabel(outcome) ? " · " + soldOutcomeVsSaleLabel(outcome) : ""}
@@ -746,6 +749,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                               </li>
                             ))}
                           </ul>
+                          </div>
                         </td>
                       </tr>
                     )}
