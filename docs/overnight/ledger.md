@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:40 PM PT — 🗄 DROPPED `public.scratch_ad_sold_open_tx_reads_20261127` (SQL editor) + edition pages verified
+
+- The Sold-tab handoff marked it droppable; before the drop: no view depends on it, no function or pg_cron command names it. Trevor approved ("I approve of you doing all of these actions"); the MCP's confirmation prompt expired unanswered, so it ran in the dashboard SQL editor with `lock_timeout = '3s'`. `to_regclass` now NULL.
+- Same pass, handoff step 4: rendered DOM shows the pulled prices — All Day 3163 (Mike Evans Holo Icon /49, Legendary, $19 → $13.46 on a $12 offer ≥ half) and Panini `packcard-2167_421590_11453649_216` (Caleb Williams Red Prizms /49, $15 → $9.36). Panini: 11 cards pulled and persisted by 3:30 PM PT. First `fmv-recalc` page on the 3:20 PM route (3:28 PM PT): ok, purge error null, 499 rows kept (the 2:48 PM double run kept 10).
+- **Revert:** none needed — scratch data from the 11-27 sold-pack probe, re-derivable from the open-tx lanes.
+
 ### 2026-11-27 · 3:40 PM PT — 🗄 APPLIED `20261127232440` — Top Shot forward test scores the new parallel hold as its own arm; docs for the 11-27 pack-EV thread; 12-04 check scheduled
 
 - `topshot_ask_only_forward_test()` gained a `parcap` arm tested before `compcap` (the `_parcap_compcap` tag would otherwise have been scored inside `compcap`, blurring both rules). md5-guarded CREATE OR REPLACE of the 20261127184110 body, one CASE arm added; ACL unchanged (anon false, read back). Baseline for the new arm: `ask:other` since 11-01 n 263, MdAE 0.588, bias −0.562.
