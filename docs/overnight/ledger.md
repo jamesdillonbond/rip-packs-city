@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 5:07 PM PT — All Day pack pages: the model-vs-reality check counts the PRICED opens it is computed over (Claude Code cloud, autonomous pass)
+
+- **Found live** on `/nfl-all-day/pack/dist/413`: "Realized pull value $11.18 · Avg/pack $5.59" (two priced packs), and directly below "Modeled $4.41 vs realized $5.59 avg (1.27×) · Model tracks actual pulls · **2,407** attributed opens". `v_allday_pack_realized_ev` carries `n_opens` 2,407 and `n_valued` 2, and its mean, median and ratio are over `n_valued`. `fetchPackRealizedEv` passed `n_opens`, so the page's ≥ 10-opens gate passed and labelled a 2-pack read as 2,407.
+- **Now:** the All Day branch passes `n_valued`, which is what the open-history branch of the same fetcher and the public All Day pack-reality board already use. 572 All Day dists with fewer than 10 priced opens lose the verdict (1,025 → 453 shown); the rest now print the true count.
+- **Proof:** a new case in `lib-pack-dist-fetchers.test.ts` (2,407 opens / 2 valued gives 2); the planted old field reds it. `tsc` clean, 59 related files (1,229 tests) green.
+- **Revert:** revert the commit "pack pages: All Day reality check counts priced opens" (by message).
+
 ### 2026-11-26 · 5:03 PM PT — 🗄 APPLIED `20261127010311` — pack pages: the sealed-resale panel's "Retail" is the drop price too (Claude Code cloud, autonomous pass)
 
 - **Same defect as `20261127005234`, in the per-page reader.** `get_pack_market_row` (the pack page's "Sealed pack resale" panel, Top Shot and All Day) took `retail_price` from `mv_pack_ev_latest.pack_price`, which is the secondary ask. `/nba-top-shot/pack/dist/8596` (a case topper) still read "Retail $209 · trades 1.20× retail — secondary premium" after the board fix.
