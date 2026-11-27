@@ -1074,8 +1074,9 @@ const PINS = [
     // 2026-11-18 (#218): Studio (HTTP 530) -> Atlas PackService/NFTService; responses translated to
     // the Studio shape, walks product by product, "0" pull ids dropped, Studio-era walks end with a reason.
     // 2026-11-19: a Cloudflare challenge (403/429) counts as requests_challenged, not a failed run.
+    // 2026-11-27: Atlas GetNFTs takes at most 100 nft_ids -- step (3) asks 100 a request, 10 a tick.
     migration:
-      "supabase/migrations/20261119123000_audit_20261119_a_cloudflare_challenge_is_a_retry_not_a_failed_run.sql",
+      "supabase/migrations/20261127201001_audit_20261127_atlas_getnfts_batches_of_100.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have

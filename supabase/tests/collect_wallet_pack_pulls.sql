@@ -590,7 +590,8 @@ BEGIN
   SELECT count(*) FILTER (WHERE named) INTO v_local_named FROM upd;
 
   -- (3) Ask Dapper's index for what is still unnamed (All Day, Golazos only --
-  -- its Top Shot index returns nothing). 200 ids a request, 5 requests a tick,
+  -- its Top Shot index returns nothing). 100 ids a request (Atlas GetNFTs caps nft_ids at 100 --
+  -- 2026-11-27: every 200-id request since 11-18 was HTTP 400), 10 requests a tick,
   -- each id at most 5 times, at least 6 h apart.
   FOR b IN
     WITH pend AS (
@@ -608,9 +609,9 @@ BEGIN
     SELECT collection_id, array_agg(DISTINCT nft_id) AS ids
     FROM pend
     WHERE rn <= 1000
-    GROUP BY collection_id, (rn - 1) / 200
+    GROUP BY collection_id, (rn - 1) / 100
     ORDER BY collection_id, min(rn)
-    LIMIT 5
+    LIMIT 10
   LOOP
     -- 2026-11-18 (#218): Atlas NFTService/GetNFTs (id -> edition + serial; verified against
     -- Studio's answer: All Day 5840678 -> edition 2387 both). Studio is HTTP 530.
@@ -1006,6 +1007,25 @@ BEGIN
                   'the last product''s last page completes the walk');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_pull_requests WHERE wallet = '0x4444444444444444' AND product = 'nba'),
                   'Top Shot is never walked for pulls (Atlas has no Top Shot pull ids)');
+END $$;
+
+-- 2026-11-27: Atlas NFTService/GetNFTs refuses more than 100 nft_ids (HTTP 400 "nft_ids may contain at
+-- most 100 entries"); every 200-id lookup since 11-18 failed. 250 unnamed All Day pulls must go out as
+-- requests of at most 100 ids, every id asked once.
+INSERT INTO public.pack_open_pulls (collection_id, pack_nft_id, nft_id, opener_address, local_checked_at)
+SELECT (SELECT id FROM public.collections WHERE slug = 'nfl_all_day'), '990001', (900000 + g)::text,
+       '0x5555555555555555', now()
+  FROM generate_series(1, 250) g;
+
+DO $$
+BEGIN
+  PERFORM public.collect_wallet_pack_pulls();
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_pull_requests
+                               WHERE kind = 'editions' AND cardinality(nft_ids) > 100),
+                  'no GetNFTs lookup carries more than 100 ids');
+  PERFORM _assert((SELECT count(DISTINCT u) = 250 FROM public.pack_pull_requests q, unnest(q.nft_ids) u
+                    WHERE q.kind = 'editions' AND u::bigint BETWEEN 900001 AND 900250),
+                  'all 250 unnamed ids are asked');
 END $$;
 
 ROLLBACK;

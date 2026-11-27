@@ -54,6 +54,12 @@ describe("sold pack outcome labels", () => {
     expect(soldPullLabel(base.pulls[0])).toBe("LeBron James · Legendary #14/39")
     expect(soldPullLabel({ ...base.pulls[0], player_name: null, tier: null, serial_number: null })).toBe("Unnamed Moment")
   })
+
+  it("names a parallel pull, and never tags the Standard printing", () => {
+    expect(soldPullLabel({ ...base.pulls[0], parallel: "Hexwave" })).toBe("LeBron James · Legendary Hexwave #14/39")
+    expect(soldPullLabel({ ...base.pulls[0], parallel: "Standard" })).toBe("LeBron James · Legendary #14/39")
+    expect(soldPullLabel({ ...base.pulls[0], parallel: null })).toBe("LeBron James · Legendary #14/39")
+  })
 })
 
 describe("boxes, cases and opens with nothing on record (v2)", () => {

@@ -13,6 +13,8 @@ export interface SoldPackPull {
   serial_number: number | null
   circulation_count: number | null
   fmv_usd: number | null
+  /** Top Shot parallel (editions.subedition_name), e.g. "Hexwave"; null on the Standard printing. */
+  parallel?: string | null
 }
 
 export interface SoldPackOutcome {
@@ -70,7 +72,10 @@ export function soldPullLabel(p: SoldPackPull): string {
   const serial = p.serial_number != null
     ? `#${p.serial_number}${p.circulation_count ? "/" + p.circulation_count : ""}`
     : null
-  const tail = [tier, serial].filter(Boolean).join(" ")
+  // The non-parallel printing is "Standard", never "Base" (Base is a set name) -- it gets no tag.
+  const par = p.parallel?.trim()
+  const parallel = par && !/^(standard|base)$/i.test(par) ? par : null
+  const tail = [tier, parallel, serial].filter(Boolean).join(" ")
   return tail ? `${name} · ${tail}` : name
 }
 
