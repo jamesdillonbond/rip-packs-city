@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 12:05 PM PT — Survivor-bias gate: a stalled measurement never clears a warning; "Almost sold out" tooltip no longer claims editions sold out
+
+- `poolMixMeasuredFlat` now also requires `topshot_pool_skew.computed_at` ≤ 24 h, so if the hourly job stops the warnings come back instead of a frozen ratio clearing them. The packs-board "Almost sold out" chip said "most editions in the pool are sold out" — the same supply-vs-editions confusion as the 9:40 chip; now "80% or more of the pack pool has already been pulled".
+- **Revert:** revert the commit "Pool-skew gate needs a fresh measurement; fix Almost sold out tooltip".
+
 ### 2026-11-27 · 11:36 AM PT — 🗄 APPLIED `20261127193515` — closed-bid retire matches Atlas offers by offer id, not price; 45 bids restored, 2 more retired
 
 - **Defect in my 11:05 AM change:** the guard that keeps a bid Atlas still lists matched by PRICE: it kept the bid only if Atlas saw some offer at that price after the newest chain close at that price. Two bids can share a price. 163:5750 had a $5 offer cancelled 11-02 and a second open $5 (`152832117717307`) that Atlas lists and our chain table never recorded, so it was not proven gone, yet it was retired. 45 of the 2,214 were like that. They are restored (`GREATEST(current, old)`, `restored_at` stamped in `topshot_closed_bid_retirements`), and the guard now keeps a bid whenever Atlas lists an open offer at that price whose OWN id is not closed on chain. The rerun retired 2 more that the price match had wrongly kept (Atlas last saw them minutes after their chain close: 168:5865 $7 → $5 live, 53:2027 $30 filled → $15 live). The migration header says "~11:50 AM PT"; it was applied 11:35 (file kept byte-exact).
