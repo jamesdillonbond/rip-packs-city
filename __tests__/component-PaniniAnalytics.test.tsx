@@ -267,4 +267,9 @@ describe("PaniniAnalytics — by league", () => {
     // the URL word never renders
     expect((section.textContent ?? "").toLowerCase()).not.toContain("property")
   })
+  it("a small share reads '<1%', never '0%' beside real sales", () => {
+    const c = render(<PaniniAnalytics data={payload()} byLeague={leaguesByVolume([...rows, { slug: "racing", name: "Racing", products: 2, sales_30d: 3, sales_30d_volume_usd: 1 }])} />).container
+    const racing = [...c.querySelectorAll('[data-testid="panini-analytics-leagues"] tbody tr')].find((r) => r.textContent?.includes("Racing"))!
+    expect(racing.querySelectorAll("td")[3].textContent).toBe("<1%")
+  })
 })

@@ -424,7 +424,7 @@ export default function PaniniAnalytics({
                     <td style={{ ...td, fontWeight: picked ? 700 : undefined }}><Link href={paniniScopePageHref("panini-blockchain", r.slug)} style={{ color: "inherit" }}>{r.name}</Link></td>
                     <td style={td}>{int(r.sales_30d)}</td>
                     <td style={td}>{usd(r.sales_30d_volume_usd)}</td>
-                    <td style={td}>{r.sales_30d_volume_usd !== null && total > 0 ? `${Math.round((r.sales_30d_volume_usd / total) * 100)}%` : "—"}</td>
+                    <td style={td}>{r.sales_30d_volume_usd !== null && total > 0 ? (r.sales_30d_volume_usd > 0 && r.sales_30d_volume_usd / total < 0.005 ? "<1%" : `${Math.round((r.sales_30d_volume_usd / total) * 100)}%`) : "—"}</td>
                     <td style={td}>{int(r.products)}</td>
                   </tr>
                 )
