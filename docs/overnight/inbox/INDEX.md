@@ -1,4 +1,4 @@
-# Inbox index — 711 live filings
+# Inbox index — 712 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -34,7 +34,8 @@ failure it documents.
 
 ---
 
-## 2026-11-27 — 3 filings
+## 2026-11-27 — 4 filings
+- [pg_net_http_401 — 2 HTTP 401 on flowscan /flow/v1/transaction, not attributable to the three Atlas lanes; nil blast radius (all Flow freshness current, stalled/pg_cron clean); night pass: attribute (edge-fn gate vs self-probe) — rpc-daytime-monitor, LOW](2026-11-27T2213Z-rpc-daytime-monitor-pgnet-401-flowscan-transaction.md)
 - [HELD DELETE (not applied, confirmation timed out): 384 Top Shot sales stored twice under one tx hash (topshot_marketplace NFT-less + dapper_chain_tx_v1), March 23–30 2026, $1,842 double-counted; SQL editor or attended apply — Claude Code cloud, MEDIUM](2026-11-27T0125Z-claude-code-held-delete-384-same-tx-topshot-sale-twins.md)
 - [candy-wallet-refresh (on-demand whale-wallet walk, NOT watchlisted): 5/6 runs in an 85-min burst 11-26 eve hit "time budget reached before the last page" / "more than 20000 assets — walk stopped"; downstream candy trust metrics all ok, so a partial refresh of one candy whale, not a break — night pass: resume-pagination / raise budget / accept as soft-stop — rpc-daytime-monitor, LOW](2026-11-27T1532Z-rpc-daytime-monitor-candy-wallet-refresh-time-budget-whale-walk.md)
 - [Candy set-progress read truncates for large candy wallets (maxPages=20 / 57014 timeout) — honest partial, 2 users/3 events, route read-budget as candy_mlb editions grew — rpc-daytime-monitor, LOW; swept onto main by the 11-27 overnight pass](2026-11-27T0107Z-rpc-daytime-monitor-candy-set-progress-large-wallet-truncation.md)
