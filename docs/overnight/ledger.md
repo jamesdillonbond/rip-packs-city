@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 1:06 PM PT — 🗄 APPLIED `20261127205829` + All Day sold-pack open reads (193 pulls) — the retired-spork import now covers Top Shot AND All Day
+
+- `20261127205829`: `pack_reveal_import` + `load_pack_reveal_import()`, keyed by (collection, pack) because Top Shot and All Day pack ids overlap. Positive control (rolled back): 7 live `PackNFT.Revealed` events → 27 pulls, 27 named. Non-destructive: the tx-keyed `topshot_pack_pull_import` (`20261127203636`) is left empty for a confirmed drop. Dune SQL now reads both collections (`docs/integrations/dune-topshot-pack-reveals.sql`).
+- **Data write:** the 87 All Day packs saved wallets sold that were opened on still-readable sporks with no pull rows — open tx read once through scratch table `scratch_ad_sold_open_tx_reads_20261127` → 193 `pack_open_pulls` rows (`resolved_via 'chain_open_tx'`); the Atlas naming lane names them. No Golazos pack was ever sold by a saved wallet.
+- **Revert:** `DELETE FROM public.pack_open_pulls WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070' AND resolved_via = 'chain_open_tx' AND pack_nft_id IN (SELECT pack_nft_id FROM public.scratch_ad_sold_open_tx_reads_20261127);` then drop the scratch table; `DROP FUNCTION public.load_pack_reveal_import(); DROP TABLE public.pack_reveal_import;`.
+
 ### 2026-11-27 · 1:20 PM PT — X posts: Panini is "@PaniniAmerica Blockchain" in every post; images say "Candy", not "Candy MLB"
 
 Trevor, 11-27: name Panini "@PaniniAmerica Blockchain" "to clearly differentiate physical vs digital" (the Sunday report already did; the Monday top-10 and big-sale lines stripped it to "@PaniniAmerica"), and the images show "Candy" instead of "Candy MLB" while Panini stays "Panini" on the image. `scripts/social/x-draft.mjs` (two `.split(" ")[0]` removed), `scripts/social/x-image.mjs` (`COLL` + `SITE_NAMES` Candy label), `docs/social/x-calendar.md`. Checked: `x-draft.mjs --slot mon` now prints "on @PaniniAmerica Blockchain". Nothing on the site reads `scripts/social/`.
