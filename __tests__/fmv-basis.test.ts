@@ -151,6 +151,17 @@ describe("fmvBasis", () => {
     expect(askCapFlag("topshot-gql-v1_tiercap_salescap")).toBe(true)
   })
 
+  // 2026-11-27 (20261127213224): the never-sold Top Shot parallel hold to its set + parallel's sales tags
+  // "_parcap_compcap" so every existing reader treats it as the comparables hold it is.
+  it("a Top Shot parallel cap (_parcap_compcap) reads as comparables and explains itself", () => {
+    expect(askCapFlag("cold-tail-1.0_parcap_compcap")).toBe("comparables")
+    expect(askCapFlag("cold-tail-1.0_parcap_compcap_bidfloor")).toBe("comparables")
+    expect(fmvBasis("ASK_ONLY", askCapFlag("cold-tail-1.0_parcap_compcap"))?.label).toBe("held to comparables")
+    expect(priceRuleNotes("cold-tail-1.0_parcap_compcap")).toEqual([
+      "held to an estimate from similar editions in the same set, because the ask was above what those sell for",
+    ])
+  })
+
   it("priceRuleNotes: plain words for each rule, in the order applied, and nothing internal", () => {
     expect(priceRuleNotes("1.8.3")).toEqual([])
     expect(priceRuleNotes(null)).toEqual([])
