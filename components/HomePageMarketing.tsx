@@ -315,7 +315,7 @@ export default function HomePageMarketing() {
           What is your <span className="rpc-home-h1-accent">collection</span> worth?
         </h1>
         <p className="rpc-home-sub">
-          Paste a Top Shot username or Flow wallet and see every moment priced at live FMV — free, no signup. {coveringSentence(collections.map((c) => c.label))}
+          Paste a Top Shot username or a Flow or Solana wallet and see everything it holds priced at live FMV — free, no signup. {coveringSentence(collections.map((c) => c.label))}
         </p>
         <WalletSearch
             surface="home"

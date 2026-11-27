@@ -12,6 +12,8 @@ import { emailLink } from "./email-link"
 //   * No paid tier, no "Pro", no "upgrade", no "beta" paywall framing.
 //   * No superiority claim over any other site; no "most accurate".
 //   * Never lead with the Trail Blazers Team Captain designation (not mentioned).
+//   * No FMV confidence / grading language (founder rule 2026-10-18: internal only).
+//     Removed 2026-11-27 along with the Top Shot-only first step.
 //   * It is transactional: it says the account exists and how to use it. It is
 //     sent at most once per account (claim_welcome_email), and it carries a
 //     manage/preferences link and the real From address the other emails use.
@@ -84,18 +86,26 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             </tr>
             <tr>
               <td style="padding:18px 28px 0 28px;font-size:15px;line-height:1.7;color:${TEXT_MUTED};">
-                <strong style="color:${TEXT};">First step:</strong> add your Top Shot username on your
+                <strong style="color:${TEXT};">First step:</strong> add your Dapper or Top Shot username on your
                 <a href="${emailLink(`${SITE}/dashboard`, "account_welcome", "dashboard")}" style="color:${ACCENT};text-decoration:underline;">dashboard</a>
-                and it fills in with every moment you hold, each with an estimated value.
+                (plus a Solana address for Candy or your Panini username, if you collect those) and it fills in with
+                everything you hold — Moments, Pins and Cards — each with an estimated value.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 28px 0 28px;font-size:15px;line-height:1.7;color:${TEXT_MUTED};">
+                New to digital collectibles? The
+                <a href="${emailLink(`${SITE}/help/new-to-collecting`, "account_welcome", "beginners_guide")}" style="color:${ACCENT};text-decoration:underline;">beginner&#39;s guide</a>
+                explains what they are, which wallet each collection uses, and how to add funds on each platform.
               </td>
             </tr>
             <tr>
               <td style="padding:18px 28px 0 28px;font-size:15px;line-height:1.7;color:${TEXT_MUTED};">
                 What you can look up here:
                 <ul style="margin:8px 0 0 0;padding:0 0 0 18px;color:${TEXT_MUTED};font-size:14px;line-height:1.7;">
-                  <li><strong style="color:${TEXT};">Any wallet</strong> — its moments, an estimated value for each, and how that estimate was graded.</li>
+                  <li><strong style="color:${TEXT};">Any wallet</strong> — everything it holds, with an estimated value for each.</li>
                   <li><strong style="color:${TEXT};">Pack EV</strong> — what a pack's typical pull has been worth against its price.</li>
-                  <li><strong style="color:${TEXT};">How we price</strong> — every estimate links to the method behind it and the share of our prices backed by recent sales, per collection.</li>
+                  <li><strong style="color:${TEXT};">How we price</strong> — every estimate links to the method behind it.</li>
                 </ul>
               </td>
             </tr>
@@ -106,7 +116,7 @@ export function buildAccountWelcomeHtml(opts: AccountWelcomeOpts): string {
             </tr>
             <tr>
               <td style="padding:18px 28px 0 28px;font-size:13px;line-height:1.7;color:${TEXT_SUBTLE};">
-                Prices on Rip Packs City are estimates from public marketplace data, graded by how much recent sales back them. They are not appraisals or advice.
+                Prices on Rip Packs City are estimates built from public marketplace sales. They are not appraisals or advice.
               </td>
             </tr>
             <tr>
@@ -138,16 +148,18 @@ export function buildAccountWelcomeText(opts: AccountWelcomeOpts): string {
     `An account was just created at Rip Packs City with ${opts.email}.`,
     "Sign in any time with a magic link to that address — there is no password to keep.",
     "",
-    `First step: add your Top Shot username on your dashboard (${SITE}/dashboard) and it fills in with every moment you hold, each with an estimated value.`,
+    `First step: add your Dapper or Top Shot username on your dashboard (${SITE}/dashboard) — plus a Solana address for Candy or your Panini username, if you collect those — and it fills in with everything you hold (Moments, Pins and Cards), each with an estimated value.`,
+    "",
+    `New to digital collectibles? The beginner's guide explains what they are, which wallet each collection uses, and how to add funds on each platform: ${SITE}/help/new-to-collecting`,
     "",
     "What you can look up here:",
-    "- Any wallet: its moments, an estimated value for each, and how that estimate was graded.",
+    "- Any wallet: everything it holds, with an estimated value for each.",
     "- Pack EV: what a pack's typical pull has been worth against its price.",
-    "- How we price: every estimate links to the method behind it and the share of our prices backed by recent sales, per collection.",
+    "- How we price: every estimate links to the method behind it.",
     "",
     `Sign in: ${SITE}/login`,
     "",
-    "Prices on Rip Packs City are estimates from public marketplace data, graded by how much recent sales back them. They are not appraisals or advice.",
+    "Prices on Rip Packs City are estimates built from public marketplace sales. They are not appraisals or advice.",
     "",
     "This is a one-time notice that an account was created with this address. Beyond it, the most we send is a getting-started note a day or two after you join and, when your collection moves, a weekly portfolio email; each has an unsubscribe link.",
     `Manage your account and email preferences: ${manage}`,

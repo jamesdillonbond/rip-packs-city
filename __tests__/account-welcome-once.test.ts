@@ -167,7 +167,9 @@ describe("the welcome copy obeys the founder's rules", () => {
     expect(both).toMatch(/getting-started note a day or two after you join/)
     expect(both).toMatch(/weekly portfolio email; each has an unsubscribe link/)
     expect(html).toContain("https://www.rippackscity.com/dashboard")
-    expect(text).toContain("First step: add your Top Shot username")
+    expect(text).toContain("First step: add your Dapper or Top Shot username")
+    expect(text).toContain("/help/new-to-collecting")
+    expect(text).not.toMatch(/graded|confidence/i)
     expect(both).toMatch(/not appraisals or advice/)
   })
 
