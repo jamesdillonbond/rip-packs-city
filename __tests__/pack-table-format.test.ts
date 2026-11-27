@@ -166,23 +166,25 @@ describe("depletionChip", () => {
     expect(depletionChip(0.9, 0)).toBeNull()
     expect(depletionChip(0.9, -5)).toBeNull()
   })
-  it("computes surviving count and label at/above the threshold", () => {
-    expect(depletionChip(POOL_DEPLETION_THRESHOLD, 100)).toEqual({
-      label: "🔥 30/100 remain",
-      surviving: 30,
-      total: 100,
-    })
-    expect(depletionChip(0.8, 50)).toEqual({
-      label: "🔥 10/50 remain",
-      surviving: 10,
-      total: 50,
-    })
+  // 2026-11-27: a one-edition pack (Memphis Grizzlies Leaderboard Reward: Fit Check (Diced),
+  // 10 minted, 2 sealed) read "🔥 1/1 remain" — read as a one-of-one serial it does not hold.
+  it("never renders a chip on a one-edition pack, however opened", () => {
+    expect(depletionChip(0.8, 1)).toBeNull()
+    expect(depletionChip(0.99, 1)).toBeNull()
   })
-  it("clamps surviving to at least 1 when the pool is ~fully depleted", () => {
-    const chip = depletionChip(1, 200)
-    expect(chip).not.toBeNull()
-    expect(chip!.surviving).toBe(1)
-    expect(chip!.label).toBe("🔥 1/200 remain")
+  it("states the share opened at/above the threshold — no invented edition count", () => {
+    expect(depletionChip(POOL_DEPLETION_THRESHOLD, 100)).toEqual({ label: "🔥 70% opened", openedPct: 70 })
+    expect(depletionChip(0.8, 50)).toEqual({ label: "🔥 80% opened", openedPct: 80 })
+    // The old label claimed surviving EDITIONS from a SUPPLY share; nothing may say "remain" or N/M.
+    for (const [p, n] of [[0.7, 2], [0.95, 34], [1, 200]] as const) {
+      const label = depletionChip(p, n)!.label
+      expect(label).not.toMatch(/remain/)
+      expect(label).not.toMatch(/\d+\s*\/\s*\d+/)
+    }
+  })
+  it("never says 100% opened (a listed pool still has packs) and never rounds up", () => {
+    expect(depletionChip(1, 200)!.label).toBe("🔥 99% opened")
+    expect(depletionChip(0.989, 200)!.label).toBe("🔥 98% opened")
   })
 })
 

@@ -289,8 +289,9 @@ describe("PackTable — EV-cell badges", () => {
         rows={[row({ title: "Drained Pack", evMarginPct: 12, poolDepletionPct: 0.95, editionCount: 100 })]}
       />,
     )
-    // depletionChip: surviving = round(100 * (1 - 0.95)) = 5.
-    expect(container.textContent).toContain("5/100 remain")
+    // depletionChip states the share of supply opened (2026-11-27 — it used to invent "5/100 remain").
+    expect(container.textContent).toContain("95% opened")
+    expect(container.textContent).not.toContain("remain")
     // marginClass mutes a positive margin under heavy depletion -> not emerald.
     const marginCell = container.querySelector("tbody td.font-semibold")
     expect(marginCell?.className).not.toContain("emerald")

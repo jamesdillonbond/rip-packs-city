@@ -77,12 +77,11 @@ export interface PackRow {
    *  (branch-matched in SQL). NULL = the source carries no stamp (Pinnacle today);
    *  the cell then says the age is unknown rather than implying it is current. */
   depletionAsOf?: string | null
-  /** 0..1 share of the drop pool's editions that have remaining=0 — the
-   *  "ghost pack" signal. Distinct from depletionPct (sealed packs sold).
-   *  ≥0.7 surfaces a "🔥 X/N editions remain" warning chip on the EV cell. */
+  /** 0..1 share of the drop pool's SUPPLY already opened (pack_table_rows.ev_depletion_pct
+   *  — measured 11-27 to track copies pulled, NOT editions sold out). Distinct from
+   *  depletionPct (sealed packs sold). ≥0.7 surfaces a "🔥 N% opened" chip on the EV cell. */
   poolDepletionPct?: number | null
-  /** Total editions in the drop pool — used with poolDepletionPct to render
-   *  surviving-edition count in the depletion chip. */
+  /** Total editions in the drop pool — a one-edition pool gets no depletion chip. */
   editionCount?: number | null
   /** True when the pack draws from a single ultra-rare edition rather than a probabilistic pool. */
   isRareSinglePack?: boolean
@@ -236,7 +235,7 @@ const GRAIL_PREMIUM_TITLE =
   'Grail premium = Actual EV − Typical Pull. Actual EV (the mean) is inflated by rare grails; a typical pull is worth ~the Typical Pull figure. A large gap means the pack is lottery-shaped.'
 
 const POOL_DEPLETION_TITLE =
-  'Pool depletion: most editions in this pack are sold out. The remaining ones skew toward high-FMV survivors, so EV is high but variance is huge — a typical pull is far from average.'
+  'Most of this pack\'s supply has already been pulled. What is left can skew toward a few editions, so the average (EV) can sit far from a typical pull.'
 
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return <span className="text-[color:var(--rpc-text-muted)] ml-1">↕</span>

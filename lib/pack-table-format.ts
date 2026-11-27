@@ -113,18 +113,30 @@ export function fmtSlotsLine(slots: number | null, packType?: string | null): st
 
 export const POOL_DEPLETION_THRESHOLD = 0.7
 
-// Surface pool depletion as a "🔥 X/N remain" chip when ≥70% of the drop
-// pool's editions have remaining=0. Mathematically EV is correct, but it's
-// dominated by a few survivors — sophisticated buyers want to know.
+// Surface a heavily-opened pool as a "🔥 N% opened" chip when ≥70% of the
+// drop's supply has been pulled. EV is still the mean of what is left, but the
+// left-over mix can skew — buyers want to know.
+//
+// 2026-11-27 (Trevor: "Why does this show a 1/1 in it when it doesn't have one?"):
+// this chip used to read "🔥 X/N remain" and claim X of N EDITIONS survived, with
+// X = round(N × (1 − depletion)). But the depletion it is fed
+// (pack_table_rows.ev_depletion_pct) is the share of the SUPPLY opened, not the
+// share of editions sold out — measured 11-27: 8 sampled ≥90 %-opened Top Shot
+// pools had 0 % of their editions sold out, yet the chip said e.g. "1/34 remain".
+// The count was invented, clamped to ≥1 (575 rows), and on the 773 one-edition
+// packs it always read "🔥 1/1 remain" — on Top Shot, "1/1" means a one-of-one
+// serial. The chip now states what is measured, and a one-edition pack gets no
+// chip: every pull is the same edition, so there is no mix to skew.
 export function depletionChip(
   poolDepletionPct: number | null | undefined,
   editionCount: number | null | undefined,
-): { label: string; surviving: number; total: number } | null {
+): { label: string; openedPct: number } | null {
   if (poolDepletionPct == null || !Number.isFinite(poolDepletionPct)) return null
   if (poolDepletionPct < POOL_DEPLETION_THRESHOLD) return null
-  if (editionCount == null || editionCount <= 0) return null
-  const surviving = Math.max(1, Math.round(editionCount * (1 - poolDepletionPct)))
-  return { label: `🔥 ${surviving}/${editionCount} remain`, surviving, total: editionCount }
+  if (editionCount == null || editionCount < 2) return null
+  // Floor, never round up: "100% opened" on a pool that still has packs is false.
+  const openedPct = Math.min(99, Math.floor(poolDepletionPct * 100))
+  return { label: `🔥 ${openedPct}% opened`, openedPct }
 }
 
 // Comparator for the PackTable column sort. Extracted verbatim from the inline
