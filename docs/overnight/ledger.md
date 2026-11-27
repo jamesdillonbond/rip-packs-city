@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 4:11 PM PT — Trophy Room takes a league or brand; the squeeze board and Candy Packs name their one league
+
+**Correction first:** the "16 of 267 slots are Panini" I gave as the reason not to build a League row on the trophies board counted `trophy_moments` (collectors' pinned cases) — the wrong table. The Trophy Room board itself holds 500+ Panini grails across a dozen products and 5,226 Candy ones (5,217 MLB, 5 Sweet Futures, 4 DC). **Built:** `/api/public/insights/trophies?property=<slug>` with `collection=panini_blockchain|candy_mlb` (unknown slug 400, failed lookup unavailable; Panini by product-id prefix, Candy through new `insights_trophies_for_candy_property`, migration `20261127000446`, service-role only) and a League pill row on the board. **Panini squeeze:** with one league on the board it now names it and links its page ("League: FIFA World Cup · 5,292 →") rather than showing nothing. **Candy Packs:** heading "Candy — Pack Market" (was "Candy MLB"), and a line naming MLB as the one league this tab covers.
+
+**Revert:** code — revert the commit "trophies: league or brand scope" (by message); then DB — remove `insights_trophies_for_candy_property` (nothing else calls it).
+
 ### 2026-11-26 · 3:52 PM PT — Binder search box says "cards" on Candy and Panini; a test flake removed; third-pass docs
 
 `CollectionFilterBar`: the search box read "Filter moments…" on a Candy or Panini Binder — now "Filter cards…" (pins on Pinnacle, moments elsewhere; the 11-25 unit rule). `component-DashboardClient`: the "says verification is unavailable" test ended at its first request, so its start beacon landed in the next test's fetch mock (the intermittent red on 9e8ee66); it now waits for its own beacon. Docs: session log, routes-and-surfaces, Candy roadmap. No DB change.
