@@ -2,10 +2,13 @@ name: RPC Data Pipeline
 # ⚠ SCHEDULE COLLISION, acknowledged (CI audit 2026-09-02): the fmv-recalc step
 # here fires at 5,25,45 and cron-job.org's "RPC FMV Recalc Force Stale" calls
 # the SAME route (/api/fmv-recalc?force_stale=true) at 8,28,48 — three minutes
-# behind, every tick (docs/operations/cron-schedule.md). Harmless today because
-# GitHub sheds this schedule to ~5–7 fires/day (R61), so the pair coincides
-# only a handful of times daily and the route is idempotent; it would matter
-# if either side stopped being shed. Do not "fix" by moving this cron alone —
+# behind, every tick (docs/operations/cron-schedule.md). GitHub sheds this
+# schedule to ~5–7 fires/day (R61) and often fires late, so the pair coincides
+# a handful of times daily. ⛔ It was NOT harmless: from 2026-10-23 to 11-27 the
+# two runs' insert-then-purge deleted EACH OTHER's fresh fmv_snapshots rows
+# (11-27 2:48 PM PT: ~490 editions left with no row for today). Fixed 11-27 by
+# purge_fmv_snapshots_today_except_before (migration 20261127231105): a run only
+# purges rows written before it started. Do not "fix" by moving this cron alone —
 # the cron-job.org side is the one Trevor operates.
 on:
   # R61 (decided 2026-10-25): GitHub runs ~7-8 of these a day (scheduler-liveness), not

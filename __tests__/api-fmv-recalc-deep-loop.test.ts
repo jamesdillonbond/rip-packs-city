@@ -203,9 +203,14 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     // Insert FIRST, then the replace-delete for the WRITTEN edition, keeping the
     // row just inserted (2026-10-23; the old order deleted before building).
     expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today")).toBe(false)
-    const purge = rpcCalls.find((c) => c.name === "purge_fmv_snapshots_today_except")
+    const purge = rpcCalls.find((c) => c.name === "purge_fmv_snapshots_today_except_before")
     expect(purge?.args?.p_edition_ids).toEqual(["ed-1"])
     expect(purge?.args?.p_keep_ids).toEqual(["snap-new-0"])
+    // 2026-11-27: the purge is bounded by the run's start, so a concurrent run on the same page keeps its rows
+    // (two runs at offset 3000 deleted each other's and ~490 editions had no row for today).
+    const writtenBefore = Date.parse(String(purge?.args?.p_written_before))
+    expect(Number.isFinite(writtenBefore)).toBe(true)
+    expect(writtenBefore).toBeLessThanOrEqual(Date.now())
 
     expect(state.chained).toEqual([]) // the Flowty /api/listing-cache step was retired 2026-10-30: fmv-recalc chains nowhere
   })
@@ -439,7 +444,7 @@ describe("fmv-recalc Step 4 — a failed snapshot insert holds the cursor (2026-
     expect(String(log?.p_error)).toContain("step4_insert_failed")
     expect((log?.p_extra as Record<string, unknown>).step4_insert_rows_failed).toBe(1)
     // Nothing was written, so nothing is deleted: the edition keeps its prior rows.
-    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today_except")).toBe(false)
+    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today_except_before")).toBe(false)
   })
 })
 
@@ -628,7 +633,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
       editions: EDITION_META,
       edition_offers: { data: [], error: null },
       ...QUIET_TAIL,
-      "rpc:purge_fmv_snapshots_today_except": { data: null, error: { message: "canceling statement due to lock timeout" } },
+      "rpc:purge_fmv_snapshots_today_except_before": { data: null, error: { message: "canceling statement due to lock timeout" } },
     })
     echoSnapshotInsertIds()
 
@@ -642,7 +647,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     // The insert landed FIRST — the page is priced even though the cleanup failed.
     expect(inserted.fmv_snapshots ?? []).toHaveLength(1)
     // The replace-delete was retried once (transient-saturation retry) before giving up.
-    expect(rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today_except")).toHaveLength(2)
+    expect(rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today_except_before")).toHaveLength(2)
   }, 15000)
 
   // The 2026-10-23 bug: Step 3 deleted today's rows for EVERY page edition before
@@ -666,7 +671,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
 
     expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
     expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today")).toBe(false)
-    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today_except")).toBe(false)
+    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today_except_before")).toBe(false)
   })
 
   it("a throw inside the sweep logs fatal_after_throw instead of dying silently", async () => {

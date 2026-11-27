@@ -203,7 +203,7 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     }
     await POST(req("?force_stale=true"))
     await runDeferred()
-    const purges = rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today_except")
+    const purges = rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today_except_before")
     const purged = purges.flatMap((c) => ((c.args as { p_edition_ids?: string[] })?.p_edition_ids ?? []))
     expect(purged).toEqual(expect.arrayContaining(["cold-p1", "cold-p2"]))
     // the rows just written are KEPT by the purge
@@ -418,7 +418,7 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     // ⚠ THE PROPERTY (2026-11-08): the failed insert removed NOTHING — the edition
     // keeps today's previous row instead of being left with none.
     const purged = rpcCalls
-      .filter((c) => c.name === "purge_fmv_snapshots_today_except")
+      .filter((c) => c.name === "purge_fmv_snapshots_today_except_before")
       .flatMap((c) => ((c.args as { p_edition_ids?: string[] })?.p_edition_ids ?? []))
     expect(purged).not.toContain("cold-ts")
     expect(JSON.stringify(deletes.fmv_snapshots ?? [])).not.toMatch(/cold-ts/)

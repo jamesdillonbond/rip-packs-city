@@ -170,7 +170,7 @@ import {
 /**
  * Write today's fmv_snapshots rows in the R123 order (2026-11-08): INSERT first,
  * then delete today's OTHER rows only for the editions whose insert landed
- * (purge_fmv_snapshots_today_except keeps the ids just written). Steps 5-6 used
+ * (purge_fmv_snapshots_today_except_before keeps the ids just written, and since 2026-11-27 any row written after this run started). Steps 5-6 used
  * to delete-then-insert, so a failed insert chunk left those editions with NO
  * row for today and readers fell back to an older snapshot. History (pre-today
  * rows) is never touched. A purge failure leaves duplicates for today (readers
@@ -180,6 +180,10 @@ async function writeTodaySnapshots(
   rows: Array<Record<string, unknown>>,
   todayStartIso: string,
   chunkSize: number,
+  // The calling run's start. The purge spares rows written at or after it, so a run that overlaps this one on
+  // the same page keeps its rows (2026-11-27: two runs at offset 3000 deleted each other's, ~490 editions left
+  // with no row for today). Rows from earlier today are still replaced.
+  writtenBeforeIso: string,
 ): Promise<{ written: number; error: string | null }> {
   let written = 0
   let error: string | null = null
@@ -204,10 +208,11 @@ async function writeTodaySnapshots(
   const editions = [...writtenEditionIds]
   const DEL_CHUNK = 500
   for (let i = 0; i < editions.length; i += DEL_CHUNK) {
-    const { error: purgeErr } = await supabaseAdmin.rpc("purge_fmv_snapshots_today_except", {
+    const { error: purgeErr } = await supabaseAdmin.rpc("purge_fmv_snapshots_today_except_before", {
       p_edition_ids: editions.slice(i, i + DEL_CHUNK),
       p_today_start: todayStartIso,
       p_keep_ids: keepIds,
+      p_written_before: writtenBeforeIso,
     })
     if (purgeErr) {
       error = error ?? `purge: ${purgeErr.message}`
@@ -218,6 +223,10 @@ async function writeTodaySnapshots(
 }
 
 export async function POST(req: NextRequest) {
+  // Taken before any read: the purges below delete only today's rows computed BEFORE this instant, so a second
+  // run on the same page (the GitHub pipeline and cron-job.org collide a few times a day) cannot delete ours,
+  // nor we theirs.
+  const runStartedAt = new Date()
   const ingestToken = process.env.INGEST_SECRET_TOKEN
   if (!ingestToken) {
     return NextResponse.json(
@@ -1327,7 +1336,7 @@ export async function POST(req: NextRequest) {
     // failed insert chunk), and a skipped edition then kept NEITHER row: today's
     // row from another writer (drain_fmv_cold_tail's ask re-stamp, 185:6539 at
     // 2:47 AM PT) was deleted and readers fell back to an older snapshot. Now
-    // Step 4 inserts first and purge_fmv_snapshots_today_except deletes today's
+    // Step 4 inserts first and purge_fmv_snapshots_today_except_before deletes today's
     // rows ONLY for the editions it wrote, minus the rows it just inserted (the
     // R123 order edition-floor already uses). History (pre-today rows) is never
     // touched; ULTIMATE editions never enter editionSalesMap, so today's
@@ -1559,10 +1568,12 @@ export async function POST(req: NextRequest) {
         const slice = written.slice(i, i + DEL_CHUNK)
         let err: { message: string } | null = null
         for (let attempt = 0; attempt < 2; attempt++) {
-          const res = await supabaseAdmin.rpc("purge_fmv_snapshots_today_except", {
+          const res = await supabaseAdmin.rpc("purge_fmv_snapshots_today_except_before", {
             p_edition_ids: slice,
             p_today_start: todayStart.toISOString(),
             p_keep_ids: keepIds,
+            // Spare rows a concurrent run wrote after this one started (see writeTodaySnapshots).
+            p_written_before: runStartedAt.toISOString(),
           })
           err = res.error
           if (!err) break
@@ -1667,7 +1678,7 @@ export async function POST(req: NextRequest) {
         // Insert first, then purge today's OTHER rows for the editions written (the
         // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
         // on its previous row, never on none.
-        const w = await writeTodaySnapshots(backfillRows, todayStart.toISOString(), CHUNK_SIZE)
+        const w = await writeTodaySnapshots(backfillRows, todayStart.toISOString(), CHUNK_SIZE, runStartedAt.toISOString())
         backfillCount += w.written
         if (w.error) { backfillError = backfillError ?? w.error; console.warn("[FMV-RECALC] Backfill write error:", w.error) }
 
@@ -1962,7 +1973,7 @@ export async function POST(req: NextRequest) {
           // Insert first, then purge today's OTHER rows for the editions written (the
           // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
           // on its previous row, never on none.
-          const w = await writeTodaySnapshots(histInsert, todayStart.toISOString(), CHUNK_SIZE)
+          const w = await writeTodaySnapshots(histInsert, todayStart.toISOString(), CHUNK_SIZE, runStartedAt.toISOString())
           historicalBackfillCount += w.written
           if (w.error) { historicalFallbackError = historicalFallbackError ?? w.error; console.warn("[FMV-RECALC] Historical fallback write error:", w.error) }
 
@@ -2088,7 +2099,7 @@ export async function POST(req: NextRequest) {
           // Insert first, then purge today's OTHER rows for the editions written (the
           // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
           // on its previous row, never on none.
-          const w = await writeTodaySnapshots(askRows, todayStart.toISOString(), CHUNK_SIZE)
+          const w = await writeTodaySnapshots(askRows, todayStart.toISOString(), CHUNK_SIZE, runStartedAt.toISOString())
           askOffersBackfillCount += w.written
           if (w.error) { askOffersError = askOffersError ?? w.error; console.warn("[FMV-RECALC] ASK fallback write error:", w.error) }
 
@@ -2186,7 +2197,7 @@ export async function POST(req: NextRequest) {
           // Insert first, then purge today's OTHER rows for the editions written (the
           // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
           // on its previous row, never on none.
-          const w = await writeTodaySnapshots(parRows, todayStart.toISOString(), CHUNK_SIZE)
+          const w = await writeTodaySnapshots(parRows, todayStart.toISOString(), CHUNK_SIZE, runStartedAt.toISOString())
           parallelAskBackfillCount += w.written
           if (w.error) { parallelAskError = parallelAskError ?? w.error; console.warn("[FMV-RECALC] parallel ASK floor write error:", w.error) }
 
@@ -2276,7 +2287,7 @@ export async function POST(req: NextRequest) {
           // Insert first, then purge today's OTHER rows for the editions written (the
           // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
           // on its previous row, never on none.
-          const w = await writeTodaySnapshots(adRows, todayStart.toISOString(), CHUNK_SIZE)
+          const w = await writeTodaySnapshots(adRows, todayStart.toISOString(), CHUNK_SIZE, runStartedAt.toISOString())
           allDayAskBackfillCount += w.written
           if (w.error) { allDayAskError = allDayAskError ?? w.error; console.warn("[FMV-RECALC] All Day ASK fallback write error:", w.error) }
 
@@ -2541,7 +2552,7 @@ export async function POST(req: NextRequest) {
             // Insert first, then purge today's OTHER rows for the editions written (the
             // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
             // on its previous row, never on none.
-            const w = await writeTodaySnapshots(touchRows, todayStart.toISOString(), CHUNK_SIZE)
+            const w = await writeTodaySnapshots(touchRows, todayStart.toISOString(), CHUNK_SIZE, runStartedAt.toISOString())
             staleTouchCount += w.written
             if (w.error) { staleTouchError = staleTouchError ?? w.error; console.warn("[FMV-RECALC] Stale touch write error:", w.error) }
             console.log(`[FMV-RECALC] Stale touch complete: ${staleTouchCount} editions refreshed`)
