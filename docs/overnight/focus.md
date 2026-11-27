@@ -8,7 +8,7 @@
 
 - ⏳ **Apply the All Day and Panini offer pulls in the dashboard SQL editor.** Trevor approved both on 11-27 ("Apply it, and build Panini too", then "Hand it off to cowork to apply in chrome"). The cloud session's `apply_migration` approval prompt never reached him (three 180 s timeouts), so nothing is live and nothing is on `main`. Steps, checksums, verify queries, revert: Project doc `claude/handoff-2026-11-27-cowork-apply-allday-offer-pull.md`. Apply All Day first, verify, then Panini.
 - ⛔ **Do not commit the migration or pin files before they are applied** — `db-pin-staleness` (11:20 PM PT daily) compares pins with the live database and would red on a missing function.
-- 🔎 **After they are live:** `fmv_offer_pull_log` holds three collections (join `editions` to split); the Mon 12-07 Top Shot offer-rule read (`trig_01BC6n345urh6YiUDEPNeWox`) must filter it to Top Shot. First falsifier read for both pulls: the Mon 12-14 scheduled read.
+- 🔎 **After they are live:** `fmv_offer_pull_log` holds three collections (join `editions` to split); the Mon 12-07 Top Shot offer-rule read (`trig_01BC6n345urh6YiUDEPNeWox`) must filter it to Top Shot. First falsifier read for both pulls, plus the Panini-lift and never-sold-cap re-reads: Mon 12-14. It is NOT scheduled (creating the task from the cloud session was refused); the ready prompt is in the handoff doc's last section — schedule it, or run it on the 12-14 pass.
 - Close this steer in the same push that lands the files.
 
 ## STEER — added 2026-11-26 ~10:55 AM PT (Claude Code cloud, scheduled routine `trig_01Qei47zESZXJXBihtV2WuUZ`) — four dated reads from 11-25
