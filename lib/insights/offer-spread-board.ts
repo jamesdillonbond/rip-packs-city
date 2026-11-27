@@ -24,6 +24,16 @@ export { OFFER_SPREAD_VIEWS, OFFER_SPREAD_TIERS, isOfferSpreadCollection, type O
 export const OFFER_SPREAD_COLS =
   "external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at, best_offer_at"
 
+/**
+ * Columns for one collection's view. Top Shot's view also carries `offer_seen_at` — when that exact
+ * bid was last seen open (audit_20261127: the view lists a Top Shot bid only while it was seen in the
+ * last 24 h; a $91 bid cancelled 11-10 had stood on the board for weeks). All Day's view has no such
+ * column, so it is not asked for there (asking would 42703 the whole board).
+ */
+export function offerSpreadCols(collection: OfferSpreadCollection): string {
+  return collection === "nba-top-shot" ? `${OFFER_SPREAD_COLS}, offer_seen_at` : OFFER_SPREAD_COLS
+}
+
 export interface OfferSpreadBoardOptions {
   /** Default nba-top-shot (the page's server-rendered view). */
   collection?: OfferSpreadCollection
@@ -74,7 +84,7 @@ async function runFetchOfferSpreadBoard(
     limit,
   } = opts
 
-  let q = db.from(OFFER_SPREAD_VIEWS[collection]).select(OFFER_SPREAD_COLS).gte("low_ask", minAsk)
+  let q = db.from(OFFER_SPREAD_VIEWS[collection]).select(offerSpreadCols(collection)).gte("low_ask", minAsk)
 
   if (tier) q = q.eq("tier", tier)
   if (bidMeetsAsk) q = q.eq("bid_meets_ask", true)

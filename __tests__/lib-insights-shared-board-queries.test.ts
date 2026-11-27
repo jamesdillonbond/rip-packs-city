@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest"
 import { fetchSqueezeBoard, resolveSqueezeTeam, SQUEEZE_COLLECTION_ID, SQUEEZE_COLS } from "@/lib/insights/squeeze-board"
 import { fetchTrophiesBoard, TROPHIES_COLS } from "@/lib/insights/trophies-board"
 import { fetchSetSqueezeBoard, SET_SQUEEZE_COLS } from "@/lib/insights/set-squeeze-board"
-import { fetchOfferSpreadBoard, OFFER_SPREAD_COLS } from "@/lib/insights/offer-spread-board"
+import { fetchOfferSpreadBoard, OFFER_SPREAD_COLS, offerSpreadCols } from "@/lib/insights/offer-spread-board"
 import {
   fetchPinnacleScarcityBoard,
   PINNACLE_SCARCITY_COLS,
@@ -307,7 +307,11 @@ describe("fetchOfferSpreadBoard", () => {
     const { db, calls } = recordingDb()
     await fetchOfferSpreadBoard({ limit: 200 }, db)
     expect(has(calls, "from", "topshot_offer_ask_spread")).toBe(true)
-    expect(has(calls, "select", OFFER_SPREAD_COLS)).toBe(true)
+    expect(has(calls, "select", offerSpreadCols("nba-top-shot"))).toBe(true)
+    // audit_20261127: Top Shot rows carry when the bid was last seen open; All Day's view has no
+    // such column, so asking for it there would fail the whole board.
+    expect(offerSpreadCols("nba-top-shot")).toContain("offer_seen_at")
+    expect(offerSpreadCols("nfl-all-day")).toBe(OFFER_SPREAD_COLS)
     // Below the floor the spread percentages are dominated by dust asks, so an
     // unfloored board ranks noise at the top of a surface whose whole claim is
     // "these bids are closest to their ask".

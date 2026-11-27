@@ -474,9 +474,31 @@ async function fri(ctx) {
     return { skip_reason: `board ${slug} API failed: ${e.message}`, link }
   }
   if (!sample.length) return { skip_reason: `board ${slug} returned no rows`, link }
+  // Bid vs Floor (Trevor, 11-27): a stored top offer can stand for weeks after the bid is pulled — the
+  // 11-27 draft quoted Ace Bailey's /99 parallel at a $91 offer that was cancelled 11-10 (live: $68).
+  // The view now lists only bids seen open in the last 24 h (offer_seen_at); a post quotes only one
+  // seen in the last 6 h, and says when, so the number on X is one a collector could still act on.
+  const warnings_extra = []
+  if (slug === "offer-spread") {
+    let fresh = []
+    try {
+      const d = await getJson(`offer-spread?min_ask=5&limit=200`)
+      const cutoff = Date.now() - 6 * 3600_000
+      fresh = (d.rows ?? []).filter((r) => r.offer_seen_at && Date.parse(r.offer_seen_at) > cutoff)
+    } catch (e) {
+      return { skip_reason: `board ${slug} API failed: ${e.message}`, link }
+    }
+    if (!fresh.length) return { skip_reason: `offer-spread: no bid seen open in the last 6 h — nothing safe to quote`, link }
+    sample = fresh.slice(0, 5).map((r) => ({
+      ...r,
+      offer_seen_pt: new Date(r.offer_seen_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "short", hour: "numeric", minute: "2-digit" }) + " PT",
+    }))
+    warnings_extra.push("offer-spread: quote a bid only with its offer_seen_pt (\"as of …\"), and check it on Top Shot before posting — bids move")
+  }
   return {
     title: `Board drop: ${meta.title ?? slug}`,
     link,
+    warnings_extra,
     facts: { board: slug, page_title: meta.title, page_description: meta.description, stats, top_rows: sample },
     // A placeholder ONLY: write the hook from facts.stats / facts.top_rows (live numbers).
     // Never copy a figure out of page_description — static metadata is not live (first-mint
