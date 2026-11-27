@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-27 ~10:58 AM PT (Cowork cloud, scheduled offer-rule read) — two approved price rules WAITING TO BE APPLIED, owned by a Cowork session with Chrome
+
+- ⏳ **Apply the All Day and Panini offer pulls in the dashboard SQL editor.** Trevor approved both on 11-27 ("Apply it, and build Panini too", then "Hand it off to cowork to apply in chrome"). The cloud session's `apply_migration` approval prompt never reached him (three 180 s timeouts), so nothing is live and nothing is on `main`. Steps, checksums, verify queries, revert: Project doc `claude/handoff-2026-11-27-cowork-apply-allday-offer-pull.md`. Apply All Day first, verify, then Panini.
+- ⛔ **Do not commit the migration or pin files before they are applied** — `db-pin-staleness` (11:20 PM PT daily) compares pins with the live database and would red on a missing function.
+- 🔎 **After they are live:** `fmv_offer_pull_log` holds three collections (join `editions` to split); the Mon 12-07 Top Shot offer-rule read (`trig_01BC6n345urh6YiUDEPNeWox`) must filter it to Top Shot. First falsifier read for both pulls: the Mon 12-14 scheduled read.
+- Close this steer in the same push that lands the files.
+
 ## STEER — added 2026-11-26 ~10:55 AM PT (Claude Code cloud, scheduled routine `trig_01Qei47zESZXJXBihtV2WuUZ`) — four dated reads from 11-25
 
 - ✅ **Job 901 retirement CLOSED.** 11-26 `portfolio_snapshots`: 58/58 rows carry `pack_low_ask_usd`, total $239,880 / 8,577 packs (11-25: 58/58, $236,323 / 8,612). The one `portfolio-snapshot-packs` run since 11-25 11:00 PM PT (11:17 PM PT, from job 913) is `ok`, `source=wallet_pack_value_cache`, filled 58, unfilled 0. Nothing to revert.

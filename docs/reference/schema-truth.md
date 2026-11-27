@@ -527,6 +527,12 @@ from the #70 lane). Join to `offers.offer_id`. See database.md "The Top Shot `of
   from `packcard-<product>_` (38,784/38,784 matched).
 - **`collections.is_active` is `true` for Panini since 2026-10-19 (`20261019181627`, #64)** — was `false` by decision 09-25 → 10-19. Every reader that would read Panini from `sales` / `wallet_moments_cache` / `cached_listings` either arms it from Panini's own tables or excludes it by slug (list in known-issues #64). Published status is still the registry's.
   Consumers that admit Panini anyway do it by slug: `rpc_search_catalog` (`20261015042434`).
+- ⛔ **`panini_fmv_snapshots` is NOT the published Panini price (2026-11-27).** It holds the engine's price BEFORE the
+  `fmv_snapshots` insert triggers (the live-ask ceiling `_askcap`, the never-sold comps blend `_compcap` / `_compblend`);
+  its `algo_version` never carries a suffix, which is the tell. The published price is the Panini row in `fmv_snapshots`
+  (`collection_id = d1a0a7f5-…`, `edition_id` = `editions.id`, joined to sales by `editions.external_id =
+  panini_sales.edition_external_id`). A backtest scored against `panini_fmv_snapshots` reads the published side too
+  high: one on 11-27 gave WAPE 0.83 where the published price scored 0.54. `panini_sales.sku` ends `__<serial>_<mint cap>`.
 - **FMV engine `panini-1.3.0` (2026-10-15):** `confidence` means how closely the edition's last ≤3 sales agree
   (`panini_sales_spread`): HIGH ≤ 1.5× · MEDIUM = ≥3 sales in 30 d within 3× · else LOW (ASK_ONLY / NO_DATA
   unchanged; prices are 1.2.0's). ⚠ **HIGH/MEDIUM no longer mean "a sale in the last 30 days"** — the
