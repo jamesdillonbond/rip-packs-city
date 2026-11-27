@@ -1560,7 +1560,8 @@ export default async function EditionPage(
       )}
 
       {/* Candy (2026-10-26): the same ladder from Candy's own shape — the player's /250 base
-          card and its /15 Rainbow colours are separate editions of one player_id. */}
+          card and its /15 Rainbow colours are separate editions of one player_id; older sets
+          ladder by rarity (Core … Legendary), and only printings of the SAME card (2026-11-26). */}
       {collection === "candy-mlb" && (
         <Suspense fallback={null}>
           <CandyPrintingsSection editionId={detail.id} collection={collection} />
@@ -2188,7 +2189,7 @@ async function CandyPrintingsSection({ editionId, collection }: { editionId: str
   return (
     <Section title="Parallel Printings">
       <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
-        Same player, different printings — the /250 Base card and the /15 Rainbow colours are each their own edition with their own serials and market.
+        Same card, different printings — each is its own edition with its own serials and market.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
         {printings.map((s) => (

@@ -9,6 +9,14 @@
 // sibling colours only inside "More <player> & <set> Editions", mixed with other
 // players.
 //
+// SAME CARD, NOT SAME PLAYER (2026-11-26): player + set is not enough. Older Candy sets
+// put several DIFFERENT cards of one player in one set ("Play of the Day": "Miguel Cabrera
+// gets his 3000th Hit" vs "… Swipes Third Base"; "Kyle Tucker- Past Insert" beside the
+// Kyle Tucker Core/Uncommon/Rare ladder), and the ladder listed them all as "Base" printings.
+// A printing now shares the edition's card NAME (a Rainbow colour suffix " - BLUE" stripped),
+// and is labelled by its Rainbow badge, else Candy's own rarity name (Core, Uncommon, Rare …),
+// else "Base". 1,984 multi-printing groups were affected on 11-26, most of them tier ladders.
+//
 // THREE STATES: a failed read returns ok:false and the section renders nothing
 // (no ladder is a layout choice, never a claim); a player with one printing
 // returns ok:true with ≤1 row and the section self-hides.
@@ -23,7 +31,7 @@ const CANDY_COLLECTION_ID = "209ade70-32c5-4470-bc7c-4793d660f713"
 export interface CandyPrinting {
   id: string
   externalId: string
-  /** "Base" for the /250 card, else the Rainbow colour badge (e.g. "Rainbow (Blue)"). */
+  /** The Rainbow colour badge (e.g. "Rainbow (Blue)"), else Candy's rarity name ("Core", "Epic" …), else "Base". */
   label: string
   circulation: number | null
   thumbnailUrl: string | null
@@ -33,7 +41,16 @@ export interface CandyPrinting {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
-type SelfRows = Array<{ player_id: string | null; set_id?: string | null }>
+type SelfRows = Array<{ player_id: string | null; set_id?: string | null; name?: string | null }>
+
+const RAINBOW_NAME_SUFFIX = /\s+-\s+(?:ORANGE|YELLOW|GREEN|BLUE|PINK)\s*$/i
+
+/** The card a printing belongs to: its name with a Rainbow colour suffix removed. Null when unnamed. */
+export function candyCardKey(name: unknown): string | null {
+  if (typeof name !== "string") return null
+  const k = name.replace(RAINBOW_NAME_SUFFIX, "").trim().replace(/\s+/g, " ").toLowerCase()
+  return k || null
+}
 type SibRows = Array<Record<string, unknown>>
 type FmvRows = Array<{ edition_id: string; fmv_usd: unknown }>
 
@@ -50,7 +67,7 @@ export async function fetchCandyPrintings(
   const db: Db = injected ?? supabaseAdmin
   try {
     const self = await withQueryDeadline<SelfRows>(
-      db.from("editions").select("player_id,set_id").eq("id", editionId).eq("collection_id", CANDY_COLLECTION_ID).limit(1),
+      db.from("editions").select("player_id,set_id,name").eq("id", editionId).eq("collection_id", CANDY_COLLECTION_ID).limit(1),
       "edition/candy-printings-self",
       apiReadTimeoutMs(),
     )
@@ -61,7 +78,7 @@ export async function fetchCandyPrintings(
     const setId = (self.data ?? [])[0]?.set_id ?? null
     if (!playerId) return { ok: true, printings: [] }
     let sibQuery = db.from("editions")
-      .select("id,external_id,badges,circulation_count,thumbnail_url")
+      .select("id,external_id,name,badges,rarity_label,circulation_count,thumbnail_url")
       .eq("collection_id", CANDY_COLLECTION_ID)
       .eq("player_id", playerId)
     if (setId) sibQuery = sibQuery.eq("set_id", setId)
@@ -74,7 +91,12 @@ export async function fetchCandyPrintings(
       apiReadTimeoutMs(),
     )
     if (sibs.error) return { ok: false, printings: [] }
-    const rows = (sibs.data ?? []).filter((r) => typeof r.id === "string" && typeof r.external_id === "string")
+    // An unnamed self edition keeps the player+set ladder; a named one keeps only its own card.
+    const selfKey = candyCardKey((self.data ?? [])[0]?.name)
+    const rows = (sibs.data ?? []).filter(
+      (r) => typeof r.id === "string" && typeof r.external_id === "string" &&
+        (selfKey == null || r.id === editionId || candyCardKey(r.name) === selfKey),
+    )
     if (rows.length < 2) return { ok: true, printings: [] }
     const fmv = await withQueryDeadline<FmvRows>(
       db.from("candy_fmv_current").select("edition_id,fmv_usd").in("edition_id", rows.map((r) => r.id as string)),
@@ -89,7 +111,10 @@ export async function fetchCandyPrintings(
       printings: rows.map((r) => ({
         id: r.id as string,
         externalId: r.external_id as string,
-        label: parallelLabelFromBadges(Array.isArray(r.badges) ? (r.badges as string[]) : null) ?? "Base",
+        label:
+          parallelLabelFromBadges(Array.isArray(r.badges) ? (r.badges as string[]) : null) ??
+          (typeof r.rarity_label === "string" && r.rarity_label.trim() ? r.rarity_label.trim() : null) ??
+          "Base",
         circulation: num(r.circulation_count),
         thumbnailUrl: typeof r.thumbnail_url === "string" ? r.thumbnail_url : null,
         fmvUsd: fmvBy.get(r.id as string) ?? null,

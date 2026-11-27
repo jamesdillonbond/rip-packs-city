@@ -106,6 +106,12 @@ describe("fmtAgo (now injected)", () => {
     expect(fmtAgo(daysAgo(60), now)).toBe("2mo ago")
     expect(fmtAgo(daysAgo(400), now)).toBe("1y ago")
   })
+  it("⛔ floors months and years — a stated age never exceeds the true one (2026-11-26)", () => {
+    expect(fmtAgo(daysAgo(548), now)).toBe("1y ago") // 18 months — was "2y ago"
+    expect(fmtAgo(daysAgo(45), now)).toBe("1mo ago") // was "2mo ago"
+    expect(fmtAgo(daysAgo(350), now)).toBe("11mo ago") // was "1y ago"
+    expect(fmtAgo(daysAgo(730), now)).toBe("2y ago")
+  })
   it("null / unparseable → null", () => {
     expect(fmtAgo(null, now)).toBeNull()
     expect(fmtAgo("nope", now)).toBeNull()

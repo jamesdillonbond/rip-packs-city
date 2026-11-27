@@ -125,20 +125,29 @@ export function truncWallet(addr: string | null | undefined): string {
   return truncateAddressForDisplay(addr, EM_DASH)
 }
 
-/** Compact relative time. Uses Intl.RelativeTimeFormat. */
+/** Compact relative time. Uses Intl.RelativeTimeFormat.
+ *
+ *  2026-11-26: months and years are FLOORED, never rounded. Rounding put a
+ *  sale 19 months old at "2 years ago" — on a UFC player page that dated an
+ *  April 2025 sale of a "UFC Fight Night Mar 22 2025" Moment before the fight
+ *  happened, while a 16-month-old sale on the same list read "last year". A
+ *  stated age must never exceed the true one. Month/year use numeric:"always"
+ *  so "1 year ago" is a span, not the calendar-relative "last year". */
 export function relTime(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return EM_DASH
   const t = new Date(iso).getTime()
   if (!Number.isFinite(t)) return EM_DASH
   const diffSec = Math.round((t - now) / 1000)
   const abs = Math.abs(diffSec)
+  const sign = diffSec < 0 ? -1 : 1
   const fmt = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" })
+  const span = new Intl.RelativeTimeFormat("en-US", { numeric: "always" })
   if (abs < 60) return fmt.format(diffSec, "second")
   if (abs < 3600) return fmt.format(Math.round(diffSec / 60), "minute")
   if (abs < 86400) return fmt.format(Math.round(diffSec / 3600), "hour")
   if (abs < 86400 * 30) return fmt.format(Math.round(diffSec / 86400), "day")
-  if (abs < 86400 * 365) return fmt.format(Math.round(diffSec / (86400 * 30)), "month")
-  return fmt.format(Math.round(diffSec / (86400 * 365)), "year")
+  if (abs < 86400 * 365) return span.format(sign * Math.max(1, Math.floor(abs / (86400 * 30))), "month")
+  return span.format(sign * Math.floor(abs / (86400 * 365)), "year")
 }
 
 // ── Tier badge ──────────────────────────────────────────────────────────────

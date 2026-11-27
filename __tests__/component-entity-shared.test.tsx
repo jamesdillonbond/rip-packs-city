@@ -65,6 +65,28 @@ describe("_shared formatters", () => {
     expect(relTime("not-a-date")).toBe(EM_DASH)
   })
 
+  it("⛔ relTime never states an age OLDER than the true one — months and years floor (2026-11-26)", () => {
+    // A UFC player page listed an April 2025 sale (19 months before the read) as
+    // "2 years ago" — earlier than the fight its Moment depicts — while a
+    // 16-month-old sale beside it read "last year".
+    const now = Date.parse("2026-11-26T23:00:00Z")
+    const at = (iso: string) => relTime(iso, now)
+    expect(at("2025-04-22T19:47:35Z")).toBe("1 year ago")   // 19 months
+    expect(at("2025-07-29T05:20:03Z")).toBe("1 year ago")   // 16 months
+    expect(at("2024-12-01T00:00:00Z")).toBe("1 year ago")   // 23.9 months
+    expect(at("2024-11-20T00:00:00Z")).toBe("2 years ago")  // 24.2 months
+    expect(at("2026-03-13T04:49:35Z")).toBe("8 months ago") // 258 days — was "9 months ago"
+    expect(at("2026-10-15T00:00:00Z")).toBe("1 month ago")  // 42 days — was "1 month"/"2 months" by rounding
+    expect(at("2025-12-05T00:00:00Z")).toBe("11 months ago") // 356 days — not "12 months ago"
+    for (let d = 30; d < 3000; d += 7) {
+      const s = at(new Date(now - d * 86_400_000).toISOString())
+      const m = s.match(/^(\d+) (month|year)s? ago$/)
+      expect(m, s).not.toBeNull()
+      const statedDays = Number(m![1]) * (m![2] === "year" ? 365 : 30)
+      expect(statedDays, `${d}d → ${s}`).toBeLessThanOrEqual(d)
+    }
+  })
+
   it("tileSubject prefers player, then '{team} {play}', then name, then 'Edition'", () => {
     expect(tileSubject({ player_name: "Damian Lillard" })).toBe("Damian Lillard")
     expect(tileSubject({ team_name: "Chicago Bulls", play_type: "Reel" })).toBe("Chicago Bulls Reel")

@@ -80,8 +80,10 @@ export function fmtAgo(iso: string | null | undefined, now: number = Date.now())
   if (days < 1) return "today"
   if (days === 1) return "yesterday"
   if (days < 30) return `${days}d ago`
-  const months = Math.round(days / 30)
-  return months < 12 ? `${months}mo ago` : `${Math.round(days / 365)}y ago`
+  // Floored, never rounded (2026-11-26): a stated age must not exceed the true
+  // one — rounding put an 18-month-old event at "2y ago".
+  if (days < 365) return `${Math.max(1, Math.floor(days / 30))}mo ago`
+  return `${Math.floor(days / 365)}y ago`
 }
 
 /** Sale-price USD: whole dollars at >=$1000, else 2dp; null/NaN → em dash. */
