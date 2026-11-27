@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 4:45 PM PT — 🗄 APPLIED `20261127003011` — covering index for the open Top Shot offer book (the 5-minute listings tick stops re-reading ~4.4k heap pages) (Claude Code cloud, autonomous pass)
+
+- **Why:** `atlas_listing_verify_tick` (job 466, every 5 min) is the largest disk reader in `pg_stat_statements` since 08-11 (525 M blocks). Its `sync_edition_offers_from_atlas` step was about half of every tick (6–8 s of ~15 s, hourly means over 30 h). Inside it, step (b) (the highest open edition offer per edition verified in 24 h, ~2,180 editions) fetched every matching offer row from the heap. The ~82k open offers are scattered across the 689 MB table and do not stay cached: **12,224 buffers, 4,440 disk reads, 4.87 s**, and a back-to-back run still read 4.4k pages.
+- **What:** `idx_tame_open_offers_by_edition_cover` on `topshot_atlas_market_events (product, atlas_edition_id, last_seen_at) INCLUDE (price_cents, offer_type) WHERE kind = 'offer' AND NOT completed`, 5.7 MB. Built with `CREATE INDEX CONCURRENTLY` via `execute_sql` (valid and ready), then registered by a replay-safe `IF NOT EXISTS` migration (the 10-16 `idx_tame_open_listing_seen_cover` precedent).
+- **Measured after:** Index Only Scan, **8,877 buffers, 0 disk reads, 47.6 ms**, the same 2,178 rows.
+- **Watch:** read the next production rows of `pipeline_runs` `ts-listings-atlas-sync`. `extra.edition_offers.duration_ms` should fall from ~6–8 s toward ~2–3 s, since step (a0) at ~43k mostly-hit buffers remains. If the tick's `duration_ms` does not fall, the index did not move the production lane.
+- **Revert:** `DROP INDEX CONCURRENTLY IF EXISTS public.idx_tame_open_offers_by_edition_cover;` (one statement, no prefix).
+
 ### 2026-11-26 · 4:19 PM PT — Binder "Unlocked" tile reads "—" when no moment has been lock-checked, not "$0" (Claude Code cloud, autonomous pass)
 
 - **Found on a live Top Shot binder** (`/nba-top-shot/collection?wallet=…`, 295 moments): every row read "Lock ?". `wallet_moments_cache.lock_checked_at` was NULL on all 295, yet the Unlocked tile said **$0**. That told the collector nothing in the wallet could be sold, when the truth is that nobody had checked. When the unlocked count is 0 and some moments are unchecked, `WalletStatRow` now renders "—", and the existing hover still names the unchecked count and FMV. A partly-checked wallet keeps its known figure (unchanged, per the 11-24 no-subtext layout). A wallet whose every checked moment is locked still reads a real $0.
