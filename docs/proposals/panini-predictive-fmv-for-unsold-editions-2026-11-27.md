@@ -47,3 +47,7 @@ Population: editions whose first-ever sale was in the last 60 days and whose sna
 1. **Ship the blend** for anchored ASK_ONLY editions (the only variant that beats today's rule on the backtest), labelled as a comparables estimate, with `fmv_restatements` rows so the 7-day market-cap change does not read it as a market move. Add the forward test.
 2. **Ship comparables-only** (the ask ignored, as you asked), accepting a worse first-sale backtest for now, and judge it on the forward test, which the backtest cannot do for over-asked cards.
 3. **Comparables-only for 1/1 and ≤ /5 only** (where one listing is most likely to be a wish price), blend elsewhere.
+
+## Tested and NOT shipped: a third route (same print run, same product) — 2026-11-27 ~9:25 AM PT
+
+For the 134 cards left on the ask rule (mostly 1/1s, ~$79k combined), tried "median sale of other editions with the same `mint_cap` in the same `product_set_id`, ≥ 3 sales", backtested point-in-time (only sales before each card's first sale). Of 1,587 ASK_ONLY first sales, just 10 fell outside routes 1–2, and 7 had a route-3 estimate. On those 7 it was WORSE: MdAE 0.598 (published) → 0.748 (blend), WAPE 0.437 → 0.704. Too few cases to trust and pointed the wrong way, so these stay on the ask rule; the forward test (`panini_comps_forward_test()`) will show whether that arm is the weak one.
