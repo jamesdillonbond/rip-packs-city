@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 5:28 PM PT — ⏸ HELD (not applied) — 384 same-tx Top Shot sale twins; staged for an attended apply (Claude Code cloud, autonomous pass)
+
+- While retiring the March Atlas twins I found a second shape from the same March load: 384 sales stored twice under the **same transaction hash** (a `topshot_marketplace` row with NULL `nft_id` and a `dapper_chain_tx_v1` row with `nft_id`), $1,841.67 double-counted. They pair exactly 1:1, the keeper is always `dapper_chain_tx_v1`, and nothing references them.
+- `apply_migration` held the DELETE for confirmation and the prompt timed out; read back after, nothing had changed. Staged verbatim, with verify steps, in `docs/overnight/inbox/2026-11-27T0125Z-claude-code-held-delete-384-same-tx-topshot-sale-twins.md` (INDEX updated, 708).
+- **Revert:** none needed (nothing applied).
+
 ### 2026-11-26 · 5:22 PM PT — 🗄 APPLIED `20261127012030` — 2,487 double-counted Top Shot sales from March 23–30 retired (Atlas twins of NFT-less marketplace rows), all archived (Claude Code cloud, autonomous pass)
 
 - **Found live** on `/nba-top-shot/edition/90:2954`: Activity listed "#8 · $2.00 · @treyfomo ← @Hotspur · 8 months ago" twice (and #166).
