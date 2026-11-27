@@ -493,6 +493,19 @@ async function fri(ctx) {
       ...r,
       offer_seen_pt: new Date(r.offer_seen_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "short", hour: "numeric", minute: "2-digit" }) + " PT",
     }))
+    // Badges (Trevor, 11-27: the SGA row was his Top Shot Debut and the draft didn't say so). The board
+    // rows carry no badges; read the canonical per-edition set (get_edition_badges_unified, the same
+    // badges the edition page shows). Absent = unknown, never "no badges".
+    try {
+      const slugs = sample.map((r) => r.external_id).join(",")
+      const r = await fetch(`${SITE}/api/entity/edition-badges?collection=nba-top-shot&slugs=${encodeURIComponent(slugs)}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const b = (await r.json()).badges ?? {}
+      sample = sample.map((row) => ({ ...row, badges: b[row.external_id] ?? null }))
+      warnings_extra.push("offer-spread: name a row's badges (e.g. Top Shot Debut) when the hook quotes it — top_rows[].badges")
+    } catch (e) {
+      warnings_extra.push(`offer-spread: badge read failed (${e.message}) — check each quoted edition's badges on Top Shot`)
+    }
     warnings_extra.push("offer-spread: quote a bid only with its offer_seen_pt (\"as of …\"), and check it on Top Shot before posting — bids move")
   }
   return {

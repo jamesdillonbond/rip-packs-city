@@ -29,7 +29,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 
 Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers → trade-in.
 
-**Bid vs Floor (offer-spread) quotes only a bid seen open in the last 6 h** (Trevor, 11-27: the draft quoted Ace Bailey's /99 Rookie Debut at a $91 top offer; Top Shot showed $68 — that bid was cancelled 11-10 and had stood on the board since). The board itself now lists a Top Shot bid only while it was seen open in the last 24 h (`offer_seen_at`, audit_20261127); `x-draft.mjs` keeps rows seen within 6 h, gives each `offer_seen_pt`, and skips the slot when none is. Quote it "as of <offer_seen_pt>" and check the edition on Top Shot before posting.
+**Bid vs Floor (offer-spread) quotes only a bid seen open in the last 6 h** (Trevor, 11-27: the draft quoted Ace Bailey's /99 Rookie Debut at a $91 top offer; Top Shot showed $68 — that bid was cancelled 11-10 and had stood on the board since). The board itself now lists a Top Shot bid only while it was seen open in the last 24 h (`offer_seen_at`, audit_20261127); `x-draft.mjs` keeps rows seen within 6 h, gives each `offer_seen_pt`, and skips the slot when none is. Quote it "as of <offer_seen_pt>" and check the edition on Top Shot before posting. Each row also carries its Top Shot badges (`top_rows[].badges`, from `/api/entity/edition-badges`); name a quoted row's badge (Trevor, 11-27: the SGA row was his Top Shot Debut).
 
 The trade-in finder (Top Shot This pack credits) moved into the rotation on 11-08 to make room for the drops post. Thursday still falls back to it when no deal qualifies.
 
