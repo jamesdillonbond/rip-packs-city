@@ -241,12 +241,13 @@ export default function TrophiesBoardClient({
   const [collection, setCollection] = useState<CollectionFilter>("all")
   const [type, setType] = useState<TypeFilter>("all")
   const [sort, setSort] = useState<SortKey>("fmv")
-  // 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+  // 2026-11-26: Panini covers many leagues and brands — a second pill row narrows it. NOT Candy: its grails
+  // on this board are baseball only (Trevor 11-09), so a Candy brand row would offer eight empty picks.
   // The pick remembers the collection it was made under, so switching collection drops it.
   const [leaguePick, setLeaguePick] = useState<{ collection: string; slug: string } | null>(null)
   const league = leaguePick && leaguePick.collection === collection ? leaguePick.slug : ""
   const [leagueIndex, setLeagueIndex] = useState<{ collection: string; options: PaniniScopeOption[] } | null>(null)
-  const leagueSource = collection === "panini_blockchain" ? "panini" : collection === "candy_mlb" ? "candy" : null
+  const leagueSource = collection === "panini_blockchain" ? "panini" : null
   useEffect(() => {
     if (!leagueSource) return
     let cancelled = false
