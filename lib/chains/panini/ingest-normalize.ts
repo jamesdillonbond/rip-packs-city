@@ -371,7 +371,7 @@ export function latestSalesBySku(records: any[]): Map<string, PaniniSale> {
 // packcard-850147_111938_2-2_5_21_79; 20261123045852).
 // 2026-11-24: + a `_-<serial>-<cap>` serial suffix (product 1551 sub-product 284632,
 // packcard-1551_284632_7103141_194_-2-3; 20261125031604).
-export const PANINI_SALE_KEY_SHAPES: readonly RegExp[] = [/^[A-Za-z0-9_-]+__\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+-\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_-\d+-\d+$/];
+export const PANINI_SALE_KEY_SHAPES: readonly RegExp[] = [/^[A-Za-z0-9_-]+__\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+-\d+_\d+_\d+_\d+$/, /^packcard-\d+_\d+_\d+_\d+_-\d+-\d+$/, /^packcard-\d+_\d+_\d+_\d+_ +_\d+_\d+$/];
 
 // The sale keys in a batch that panini_sales_ingest will refuse (no recognised shape). A record with
 // no key at all is counted too — it is a sale the history will never hold.

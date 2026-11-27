@@ -16,6 +16,7 @@ describe("unrecognisedSaleKeys", () => {
         { sku: "packcard-850178_104_7_7_10" }, // Moonbirds (3-part, single underscore)
         { url_key: "packcard-850147_111938_2-2_5_21_79" }, // 850147/111938: hyphenated third part (20261123045852)
         { url_key: "packcard-1551_284632_7103141_194_-2-3" }, // 1551/284632: `_-<serial>-<cap>` suffix (11-24)
+        { url_key: "packcard-1551_297782_7496368_21_ _12_62" }, // 1551/297782: a SPACE field before the serial (11-27)
       ]),
     ).toEqual([])
   })
