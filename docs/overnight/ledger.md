@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:50 PM PT — 🗄 APPLIED `20261127225033` — Panini sales ingest stops dropping a card whose key has a SPACE field (Sentinel "Panini Ingest" WARN)
+
+- **Defect:** 40 sale records in 24 h dropped by `panini_sales_ingest` as an unrecognised key shape, all one card: `packcard-1551_297782_7496368_21_ _12_62` (a single-space field where its siblings use `__`). 62/62 of its catalog serials use that shape; stripping `_ _<serial>_<cap>` gives `edition_external_id` on all 62; 0 sales were stored for it.
+- **Fix:** one more WHEN arm + WHERE alternative (`^packcard-\d+_\d+_\d+_\d+_ +_\d+_\d+$`), body otherwise = `20261125031604` (md5 `17f8849d…` asserted); TS mirror `PANINI_SALE_KEY_SHAPES` + `__tests__/panini-sale-key-shapes.test.ts`. Seeded the edition's 29 serial last-sales. Positive control in a rolled-back txn: a real-shaped record → `valid 1, stored_new 1`. File body md5 = live (`4f14adb5…`).
+- **Revert:** re-apply `20261125031604`; `delete from panini_sales where source='serial_last_sale' and edition_external_id='packcard-1551_297782_7496368_21';` then `git revert` the code commit.
+
 ### 2026-11-27 · 2:55 PM PT — 🗄 APPLIED (SQL editor, 2:28 PM PT) + committed — All Day and Panini thin prices pulled toward a lower standing offer (`_bidpull`)
 
 - **Trevor:** "Apply it, and build Panini too" (11:00 AM), "Hand it off to cowork to apply in chrome", then "Yes do it all" (2:25 PM) after the size was put to him (Panini ~1,800 prices in scope, summed ~$32.8k → ~$18.7k).
