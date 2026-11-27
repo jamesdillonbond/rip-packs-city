@@ -509,6 +509,15 @@ describe("PaniniSqueezeClient — league chips", () => {
     fireEvent.click(chips[0])
     expect(container.textContent).toContain("No Key")
   })
+  it("one league on the board is named with a link to its page, not offered as a chip", async () => {
+    stub(true)
+    const { container } = render(<PaniniSqueezeClient initialRows={rows.slice(0, 2) as never} fetchedAt={null} totals={TOTALS} />)
+    await waitFor(() => expect(container.querySelector('[data-testid="psq-league-only"]')).not.toBeNull())
+    const only = container.querySelector('[data-testid="psq-league-only"]')!
+    expect(only.textContent).toBe("League: FIFA World Cup · 2 →")
+    expect(only.getAttribute("href")).toBe("/panini-blockchain/property/fifa-world-cup")
+    expect(container.querySelector('[data-testid="psq-league"]')).toBeNull()
+  })
   it("a failed league read shows no chips and filters nothing", async () => {
     stub(false)
     const { container } = render(<PaniniSqueezeClient initialRows={rows as never} fetchedAt={null} totals={TOTALS} />)

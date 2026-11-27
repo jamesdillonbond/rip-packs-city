@@ -58,6 +58,16 @@ describe("CandyPackMarket", () => {
     expect(text).toContain("no pack sales in 7 days")
   })
 
+  it("2026-11-26: names the one league this tab covers and links its page; the heading is the section's name", async () => {
+    mockFetch(200, payload())
+    const c = await mount()
+    const brand = c.querySelector('[data-testid="candy-pack-brand"]')!
+    expect(brand.textContent).toContain("League: MLB")
+    expect(brand.querySelector("a")?.getAttribute("href")).toBe("/candy-mlb/property/mlb")
+    expect(c.querySelector("h2")?.textContent?.trim()).toBe("Candy — Pack Market")
+    expect((c.textContent ?? "").toLowerCase()).not.toContain("property")
+  })
+
   it("a failed asks read says it failed, never 'no asks'", async () => {
     mockFetch(200, payload({ asks: null, asks_error: true, market: { ...payload().market, confirmedAsks: null, unconfirmedAsks: null, confirmedFloorUsd: null } }))
     const c = await mount()

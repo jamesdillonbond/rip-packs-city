@@ -16,6 +16,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { PINNACLE_TROPHY_COLLECTION, TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections"
+import type { TopSalesScope } from "@/lib/insights/top-sales"
 
 export { TROPHY_COLLECTIONS }
 
@@ -34,6 +35,11 @@ export interface TrophiesBoardOptions {
   type?: string | null
   sort?: string
   limit: number
+  /**
+   * A league / brand the ROUTE has already verified (2026-11-26): Panini as the league's product ids, Candy
+   * as a publisher_properties slug. Only applied with that publisher's `collection`.
+   */
+  scope?: TopSalesScope | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,9 +68,17 @@ function compare(sort: string) {
  */
 export const TROPHIES_RPC = "get_insights_trophies"
 
-function readEditionsView(db: Db, collection: string | null, type: string | null, sort: string, limit: number) {
+/** Candy under a brand: the same rows, narrowed in the database (migration 20261127000446). */
+export const TROPHIES_CANDY_BRAND_RPC = "insights_trophies_for_candy_property"
+
+function readEditionsView(db: Db, collection: string | null, type: string | null, sort: string, limit: number, scope: TopSalesScope | null = null) {
   const collections = collection ? [collection] : TROPHY_COLLECTIONS.filter((c) => c !== PINNACLE_TROPHY_COLLECTION)
-  let q = db.rpc(TROPHIES_RPC, { p_collections: collections }).select(TROPHIES_COLS)
+  const candyProperty = scope && "candyProperty" in scope && collection === "candy_mlb" ? scope.candyProperty : null
+  const paniniIds = scope && "paniniSetIds" in scope && collection === "panini_blockchain" ? scope.paniniSetIds : null
+  let q = (candyProperty ? db.rpc(TROPHIES_CANDY_BRAND_RPC, { p_slug: candyProperty }) : db.rpc(TROPHIES_RPC, { p_collections: collections })).select(TROPHIES_COLS)
+  // Panini under a league: a card key starts with its product id ("packcard-<id>_…"); the underscore closes
+  // the id, so product 23 never matches 2332.
+  if (paniniIds) q = q.or(paniniIds.map((id) => `external_id.like.packcard-${id}_*`).join(","))
   if (type === "one_of_one") q = q.eq("is_one_of_one", true)
   else if (type === "ultimate") q = q.eq("is_top_tier", true)
   if (sort === "circulation") {
@@ -130,9 +144,9 @@ export async function fetchTrophiesBoard(
   opts: TrophiesBoardOptions,
   db: Db = supabaseAdmin,
 ): Promise<{ data: unknown[] | null; error: { message: string } | null }> {
-  const { collection = null, type = null, sort = "fmv", limit } = opts
+  const { collection = null, type = null, sort = "fmv", limit, scope = null } = opts
   if (collection === PINNACLE_TROPHY_COLLECTION) return readPinnacle(db, type, sort, limit)
-  if (collection) return readEditionsView(db, collection, type, sort, limit)
+  if (collection) return readEditionsView(db, collection, type, sort, limit, scope)
   const [ed, pin] = await Promise.all([readEditionsView(db, null, type, sort, limit), readPinnacle(db, type, sort, limit)])
   const error = ed.error ?? pin.error
   if (error) return { data: null, error }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 // TrophiesBoardClient renders the public Trophy Room grid; each tile's edition
 // drill-down link is built from the row's long-form collection string. The view
@@ -117,5 +117,46 @@ describe("TrophiesBoardClient — a failed seed has no KPIs", () => {
     const { container } = render(<TrophiesBoardClient initialRows={[]} initialFetchedAt="2026-11-14T00:00:00Z" />)
     const first = container.querySelector(".rpc-tr-kpi-value")?.textContent
     expect(first).toBe("0")
+  })
+})
+
+// 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+describe("TrophiesBoardClient — league / brand pills", () => {
+  const index = { properties: [{ slug: "mlb", name: "MLB", heading: "leagues", sort_order: 10 }, { slug: "dc", name: "DC", heading: "entertainment", sort_order: 110 }], setProperty: {} }
+  const stub = (indexOk: boolean) => {
+    const calls: string[] = []
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      const url = String(input)
+      calls.push(url)
+      const isIndex = url.includes("-properties")
+      const body = isIndex ? index : { rows: [], meta: { fetched_at: null, total_rows: 0, elapsed_ms: 1 } }
+      return { ok: isIndex ? indexOk : true, status: isIndex && !indexOk ? 503 : 200, headers: new Headers({ "content-type": "application/json" }), json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response
+    }))
+    return calls
+  }
+  it("appears for Candy, sends the pick as ?property=, and is dropped when the collection changes", async () => {
+    const calls = stub(true)
+    const { getByRole, queryByTestId, findByTestId } = render(<TrophiesBoardClient initialRows={[]} initialFetchedAt={null} />)
+    expect(queryByTestId("trophies-league-pills")).toBeNull()
+    fireEvent.click(getByRole("tab", { name: "Candy" }))
+    const pills = await findByTestId("trophies-league-pills")
+    expect([...pills.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["All", "MLB", "DC"])
+    expect(pills.textContent?.toLowerCase()).not.toContain("property")
+    fireEvent.click(getByRole("button", { name: "DC" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=candy_mlb") && u.includes("property=dc"))).toBe(true))
+    calls.length = 0
+    fireEvent.click(getByRole("tab", { name: /Top Shot/ }))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=nba_top_shot"))).toBe(true))
+    expect(calls.some((u) => u.includes("property="))).toBe(false)
+    expect(queryByTestId("trophies-league-pills")).toBeNull()
+  })
+  it("a failed league index shows no row and sends no property", async () => {
+    const calls = stub(false)
+    const { getByRole, queryByTestId } = render(<TrophiesBoardClient initialRows={[]} initialFetchedAt={null} />)
+    fireEvent.click(getByRole("tab", { name: "Candy" }))
+    await waitFor(() => expect(calls.some((u) => u.includes("-properties"))).toBe(true))
+    await waitFor(() => expect(calls.some((u) => u.includes("collection=candy_mlb"))).toBe(true))
+    expect(queryByTestId("trophies-league-pills")).toBeNull()
+    expect(calls.some((u) => u.includes("property="))).toBe(false)
   })
 })

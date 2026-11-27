@@ -478,6 +478,11 @@ export default function PaniniSqueezeClient({
               </button>
             ))}
           </div>
+        ) : leagueOptions.length === 1 ? (
+          // One league on the board is not a choice — name it and link its page instead of offering a chip.
+          <a className="psq-seg" data-testid="psq-league-only" href={`/panini-blockchain/property/${encodeURIComponent(leagueOptions[0].slug)}`} style={{ padding: "7px 11px", fontSize: 11, letterSpacing: ".04em", textTransform: "uppercase", fontWeight: 700, textDecoration: "none", color: "var(--rpc-text-secondary)" }}>
+            League: {leagueOptions[0].name} · {(leagueCounts.get(leagueOptions[0].slug) ?? 0).toLocaleString("en-US")} →
+          </a>
         ) : null}
       </div>
 

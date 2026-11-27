@@ -32,6 +32,8 @@ import { isMarketClosed } from "@/lib/market-closed"
 import { pinnacleRenderHref } from "@/lib/entity-href"
 import { TROPHY_COLLECTION_TABS, PINNACLE_TROPHY_COLLECTION } from "@/lib/insights/trophy-collections"
 import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
+import { fetchJson } from "@/lib/analytics/fetch-json"
+import { SCOPE_SOURCES, toScopeIndex, type PaniniScopeOption } from "@/lib/panini/scope"
 
 // Both the page (SSR seed) and the refetch read at most this many rows.
 const BOARD_LIMIT = 200
@@ -239,6 +241,24 @@ export default function TrophiesBoardClient({
   const [collection, setCollection] = useState<CollectionFilter>("all")
   const [type, setType] = useState<TypeFilter>("all")
   const [sort, setSort] = useState<SortKey>("fmv")
+  // 2026-11-26: Panini and Candy each cover many leagues and brands — a second pill row narrows either one.
+  // The pick remembers the collection it was made under, so switching collection drops it.
+  const [leaguePick, setLeaguePick] = useState<{ collection: string; slug: string } | null>(null)
+  const league = leaguePick && leaguePick.collection === collection ? leaguePick.slug : ""
+  const [leagueIndex, setLeagueIndex] = useState<{ collection: string; options: PaniniScopeOption[] } | null>(null)
+  const leagueSource = collection === "panini_blockchain" ? "panini" : collection === "candy_mlb" ? "candy" : null
+  useEffect(() => {
+    if (!leagueSource) return
+    let cancelled = false
+    // A failed read leaves the row out (the board stays unfiltered and says nothing about leagues).
+    fetchJson<unknown>(SCOPE_SOURCES[leagueSource].endpoint).then((r) => {
+      if (cancelled) return
+      const index = r.ok ? toScopeIndex(r.json) : null
+      if (index) setLeagueIndex({ collection, options: index.properties })
+    })
+    return () => { cancelled = true }
+  }, [leagueSource, collection])
+  const leagueOptions = leagueIndex && leagueIndex.collection === collection ? leagueIndex.options : []
 
   // Skip the first fetch when the params match the server-fetched default view
   // (all/all/fmv) — the server already gave us those rows. Any filter/sort
@@ -263,6 +283,7 @@ export default function TrophiesBoardClient({
         params.set("sort", sort)
         params.set("type", type)
         if (collection !== "all") params.set("collection", collection)
+        if (league) params.set("property", league)
         const r = await fetch(`/api/public/insights/trophies?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -285,7 +306,7 @@ export default function TrophiesBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [collection, type, sort])
+  }, [collection, league, type, sort])
 
   // Hero = the top priced trophies (FMV-desc already). Lead with real numbers;
   // the never-traded grails fill the grid below.
@@ -390,6 +411,26 @@ export default function TrophiesBoardClient({
             </button>
           ))}
         </div>
+
+        {leagueOptions.length >= 2 ? (
+          <div className="rpc-tr-pill-group" role="group" aria-label="League or brand" data-testid="trophies-league-pills">
+            <span className="rpc-tr-pill-label">LEAGUE</span>
+            <button type="button" aria-pressed={league === ""} className={`rpc-tr-pill ${league === "" ? "rpc-tr-pill-active" : ""}`} onClick={() => setLeaguePick(null)}>
+              All
+            </button>
+            {leagueOptions.map((o) => (
+              <button
+                key={o.slug}
+                type="button"
+                aria-pressed={league === o.slug}
+                className={`rpc-tr-pill ${league === o.slug ? "rpc-tr-pill-active" : ""}`}
+                onClick={() => setLeaguePick({ collection, slug: o.slug })}
+              >
+                {o.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="rpc-tr-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Trophy class">
           <span className="rpc-tr-pill-label">CLASS</span>

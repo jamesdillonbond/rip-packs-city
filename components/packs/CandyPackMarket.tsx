@@ -13,6 +13,7 @@
 //   · "Typical pull" leads the EV block; the chase-inclusive mean is secondary
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import MomentMedia from "@/components/MomentMedia"
 
@@ -190,11 +191,18 @@ export default function CandyPackMarket() {
         <div>
           {/* h2, not h1 (2026-11-23): the collection banner owns this page's h1 ("… — Packs"), and the Market tab's Packs section has its own; an h1 here made two (served HTML, 11-23). */}
           <h2 style={{ fontFamily: display, fontWeight: 900, fontSize: 24, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0 }}>
-            Candy MLB — Pack Market
+            Candy — Pack Market
           </h2>
           <Note>
             {product.name} · {usd(product.retailUsd)} retail · {count(product.declaredSupply)} packs · sealed packs trade on Solana marketplaces
           </Note>
+          {/* 2026-11-26: Candy covers nine leagues and brands; this tab is one product. Say which, so a DC or
+              NASCAR collector does not read a missing filter as missing data. */}
+          <div data-testid="candy-pack-brand">
+            <Note>
+              League: <Link href="/candy-mlb/property/mlb" style={{ color: "var(--rpc-text-primary)" }}>MLB</Link>. This is the only sealed Candy pack RPC tracks, so there is nothing to filter by league or brand here.
+            </Note>
+          </div>
         </div>
       </div>
 

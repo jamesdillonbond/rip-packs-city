@@ -23,6 +23,7 @@
 //   type=one_of_one|ultimate|all               trophy class (default all)
 //   sort=fmv|circulation                       default fmv (desc, nulls last)
 //   limit=<1..500>                             default 200
+//   property=<slug>                            a league / brand, with collection=panini_blockchain|candy_mlb
 //
 // Response:
 //   {
@@ -44,6 +45,7 @@ import { fetchTrophiesBoard, TROPHY_COLLECTIONS } from "@/lib/insights/trophies-
 import { PINNACLE_TROPHY_COLLECTION } from "@/lib/insights/trophy-collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
+import { resolveLeagueScope } from "@/lib/insights/league-scope"
 const VALID_COLLECTIONS: ReadonlySet<string> = new Set(TROPHY_COLLECTIONS);
 const VALID_TYPES = new Set(["one_of_one", "ultimate", "all"]);
 const VALID_SORTS = new Set(["fmv", "circulation"]);
@@ -76,11 +78,19 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // 2026-11-26: ?property=<slug> narrows Panini or Candy to one league / brand. Resolved first: an unknown
+  // slug is a 400 and a failed lookup the board's unavailable response — never the whole collection.
+  const league = await resolveLeagueScope(collection, sp.get("property"), "api/public/insights/trophies");
+  if (!league.ok) {
+    if (league.kind === "unknown") return NextResponse.json({ error: "unknown league or brand for this collection" }, { status: 400 });
+    return boardUnavailable(league.error, "insights/trophies");
+  }
+
   // The QUERY lives in lib/insights/trophies-board.ts, shared with the server page
   // so the crawlable board and this route cannot drift. This route keeps its
   // own failure policy (boardUnavailable).
   const { data, error } = await fetchTrophiesBoard(
-    { collection, type, sort, limit },
+    { collection, type, sort, limit, scope: league.scope },
     supabase,
   );
   if (error) {
