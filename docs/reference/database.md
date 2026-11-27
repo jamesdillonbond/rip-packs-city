@@ -3402,3 +3402,11 @@ Four functions shipped the same day passed tests, CI and a mid-size wallet, and 
 - **Buffers, not seconds:** `panini_card_serials` does not stay cached, so the same call read 42k blocks from disk twice running; the timing only looked better warm on the tables that do.
 - **2026-11-27 — a fifth, and it was the known trap.** `get_panini_property_page` filtered `panini_editions` with `product_set_id = ANY (panini_property_set_ids(p_slug))`. The SQL helper INLINED into the scan filter and re-ran for each of the 58k rows: 932,801 of ~1M buffers, 3–6 s for every league including a one-product one. Every Panini league page rendered "Couldn't load this page" behind an HTTP 200, and ISR kept each failed render for 30 minutes. Fixed by reading the ids once into a `MATERIALIZED` CTE and joining (`20261127155238`; json md5-identical). **A fixed cost that does not shrink for a tiny subject is the tell** — EXPLAIN the SMALLEST subject as well as the largest.
 
+## Top Shot sale twins: the three shapes (2026-11-26, Claude Code cloud)
+
+One sale stored twice inflates counts, volume and top-sale lists. Each shape needs its own match, because every existing guard keys on a column one side lacks:
+- **Atlas twin of an on-chain row**: `source='atlas'`, no tx hash. `retire_topshot_atlas_sale_twins` (pg_cron 716, 7-day window) matches on `nft_id` within ±10 min, or ±2 h when the parties match (`20261126185403`).
+- **Atlas twin of an NFT-less `topshot_marketplace` row** (March 2026 load only, 15,951 NFT-less rows): the retirer cannot match a NULL `nft_id`. 2,487 retired by backfilling `nft_id` from the 1:1 Atlas twin and then sweeping with the vetted function (`20261127012030`).
+- **Same tx hash, NFT-less `topshot_marketplace` row + `dapper_chain_tx_v1` row**: the `(tx, nft_id, …)` unique indexes miss them because one `nft_id` is NULL. 384 retired (`20261127012648`).
+⚠ **Detection query that found all three:** same edition + serial + price + seller + buyer within 5 min (the same seller cannot sell to the same buyer twice without a sale between). Run it per partition and month; a whole-table pass times out. Still open and NOT proven duplicates: ~20 same-source pairs with DIFFERENT tx hashes ~4 min apart (2026 H1), and 11 `atlas_backfill`/`onchain` pairs (~$7, Jul–Sep).
+
