@@ -752,6 +752,25 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra).toMatchObject({ sales_history_new: 1, sales_history_refreshed: 1, sales_history_recent_reads: 1, sales_history_error: null })
   })
 
+  it("reports the keys panini_sales_ingest says it DROPPED, not the TypeScript shape guess (11-27 catalog fallback)", async () => {
+    // "odd" fails the mocked shape list, but the RPC (catalog fallback) stored it and dropped only "zzz".
+    st.salesHist = { data: { valid: 1, stored_new: 1, refreshed: 0, recent_reads: 0, gaps_now: 0, unrecognised: 1, unrecognised_sample: ["zzz"] }, error: null }
+    await accept({ sales: [{ sku: "odd", amt: 10, at: "2026-08-02T10:08:02Z" }, { sku: "zzz", amt: 3, at: "2026-08-02T10:08:02Z" }] })
+    await st.captured!()
+    expect(st.runs[0].p_extra).toMatchObject({
+      sales_history_unrecognised_keys: 1,
+      sales_history_unrecognised_sample: ["zzz"],
+      sales_history_unrecognised_source: "rpc",
+    })
+  })
+
+  it("falls back to the shape estimate when the RPC does not report what it dropped", async () => {
+    st.salesHist = { data: { valid: 0, stored_new: 0, refreshed: 0, recent_reads: 0, gaps_now: 0 }, error: null }
+    await accept({ sales: [{ sku: "odd", amt: 10, at: "2026-08-02T10:08:02Z" }] })
+    await st.captured!()
+    expect(st.runs[0].p_extra).toMatchObject({ sales_history_unrecognised_keys: 1, sales_history_unrecognised_source: "shapes" })
+  })
+
   it("a failed sales-history write fails the run and says so", async () => {
     st.salesHist = { data: null, error: { message: "hist boom" } }
     await accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })

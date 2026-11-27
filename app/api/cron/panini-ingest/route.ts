@@ -604,13 +604,28 @@ export async function POST(req: NextRequest) {
       // Keys panini_sales_ingest will refuse with no error (2026-11-22: every Moonbirds sale was dropped
       // this way). Counted here so the Sentinel's Panini arm can see a new key shape within a day.
       const salesHistUnrecognised = unrecognisedSaleKeys(salesIn);
+      // 2026-11-27: panini_sales_ingest also takes an edition from the serial catalog for a key no shape
+      // knows (20261127232143), and returns what it actually DROPPED (`unrecognised`). When every chunk
+      // reports that, it is the count — the TypeScript shapes above would over-count catalog-known keys.
+      let rpcUnrecognised = 0;
+      let rpcUnrecognisedAll = true;
+      const rpcUnrecognisedSample: string[] = [];
       for (let i = 0; i < salesIn.length; i += SALES_HISTORY_CHUNK) {
         const { data, error } = await (supabaseAdmin as any).rpc("panini_sales_ingest", { p_records: salesIn.slice(i, i + SALES_HISTORY_CHUNK) });
         const d = (data ?? null) as Record<string, unknown> | null;
         if (error || !d || typeof d.stored_new !== "number") {
           salesHistError = salesHistError ?? (error?.message ?? "panini_sales_ingest returned no write count");
           console.log(`[${PIPELINE}] sales history: ${salesHistError}`);
+          rpcUnrecognisedAll = false;
           continue;
+        }
+        if (typeof d.unrecognised === "number") {
+          rpcUnrecognised += d.unrecognised;
+          if (Array.isArray(d.unrecognised_sample)) {
+            for (const k of d.unrecognised_sample) if (rpcUnrecognisedSample.length < 3) rpcUnrecognisedSample.push(String(k));
+          }
+        } else {
+          rpcUnrecognisedAll = false;
         }
         salesHistNew += Number(d.stored_new) || 0;
         salesHistRefreshed += Number(d.refreshed) || 0;
@@ -766,8 +781,10 @@ export async function POST(req: NextRequest) {
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
         sales_history_valid: salesHistValid, sales_history_new: salesHistNew, sales_history_refreshed: salesHistRefreshed,
         sales_history_recent_reads: salesHistReads, sales_history_gaps: salesHistGaps, sales_history_error: salesHistError,
-        sales_history_unrecognised_keys: salesHistUnrecognised.length,
-        sales_history_unrecognised_sample: salesHistUnrecognised.slice(0, 3),
+        // what panini_sales_ingest DROPPED when every chunk reported it; else the shape-only estimate
+        sales_history_unrecognised_keys: rpcUnrecognisedAll ? rpcUnrecognised : salesHistUnrecognised.length,
+        sales_history_unrecognised_sample: rpcUnrecognisedAll ? rpcUnrecognisedSample : salesHistUnrecognised.slice(0, 3),
+        sales_history_unrecognised_source: rpcUnrecognisedAll ? "rpc" : "shapes",
       });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});
