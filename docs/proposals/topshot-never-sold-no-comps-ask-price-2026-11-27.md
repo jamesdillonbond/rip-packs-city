@@ -1,6 +1,8 @@
 # Top Shot: never-sold editions with no comparables are priced at 0.9 × ask (2026-11-27, Claude Code cloud)
 
-**Status: PROPOSAL — not shipped. Trevor's call** (it moves Legendary / Ultimate prices, which he tuned by hand on 11-26).
+**Status: APPROVED (Trevor 11-27: "Do all that makes sense") — migration WRITTEN, APPLY HELD.** `apply_migration` stopped for a confirmation that got no answer before the timeout (~10:30 AM PT); nothing was applied (table, trigger and migration row all absent, verified). The reviewed SQL is [topshot-never-sold-no-comps-ask-price-2026-11-27.migration.sql](topshot-never-sold-no-comps-ask-price-2026-11-27.migration.sql) — apply it under the name `audit_20261127_topshot_unsold_lu_tier_set_cap`, then commit it byte-exact to `supabase/migrations/<version>_…` and add the `_tiercap` note to `lib/fmv-basis.ts`.
+
+**Chosen rule (point-in-time backtest, 72 Legendary/Ultimate plain-ask first sales):** never-sold L/U, no comparables, no offer pull → `least(price, greatest(median sale of the same tier + set (≥ 3 editions) else the tier's median first sale (≥ 5), 0.40 × price, best offer))`. MdAE 0.588 → 0.343, WAPE 0.933 → 0.480, published > 2× the sale 28 → 8 times; sale > 2× the new price 7 times (the 0.40 floor keeps that lower than the bare tier cap's 10). Dry run today: 88 editions lowered, $156k → $64k (e.g. Angel Reese 2024 WNBA Rookie Ultimates $8,999 → $3,600). Plus `topshot_ask_only_forward_test()`.
 
 ## What I measured (all against REAL first sales, never against FMV)
 
