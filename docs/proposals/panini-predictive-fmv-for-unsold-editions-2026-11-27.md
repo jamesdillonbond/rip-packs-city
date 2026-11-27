@@ -2,7 +2,7 @@
 
 **Trigger (Trevor, 11-27):** "The asking price shouldn't really matter. We need to come up with a predictive fmv for this, based upon what we've seen elsewhere." Case: `/panini-blockchain/edition/packcard-2130_415553_3` (Rolling Stones, Behind the Scenes Prizms Black Finite, **1/1**, never sold, listed at $1,968), FMV **$984** = ask × 0.5 (`PANINI_ASK_ONLY_MULT`, `lib/chains/panini/ingest-normalize.ts`). Its only priced sibling, the /99 Silver of the same card, sells for ~$3.
 
-**Status: MEASURED, NOT SHIPPED.** It changes published prices on ~2,600 editions, so it waits on Trevor's call (options at the end).
+**Status: ✅ SHIPPED 2026-11-27 ~8:42 AM PT — Trevor chose the blend.** Migration `20261127164214_audit_20261127_panini_ask_only_comps_blend` (BEFORE INSERT trigger `fmv_snapshots_blend_panini_ask_only_to_comps_trg` + `panini_comps_estimate(text)` + a one-time re-stamp). 2,590 editions re-priced (1,596 down, 994 up), $667k → $276k, each in `fmv_restatements`; the Rolling Stones 1/1 is now $328.23. Still owed: the forward test (score the published price against every first sale from 11-27 on) and an out-of-sample refit of the bucket parameters.
 
 ## The comparables model (fit on REAL sales, never FMV, to avoid circularity)
 
