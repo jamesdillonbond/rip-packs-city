@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:46 PM PT — 🗄 APPLIED `20261127234553` — the Sentinel's pack-sales arm reads the Atlas walker (it read two pipelines retired 11-18, so `walker` was always NULL)
+
+- **Defect:** `sentinel_pack_sales_feeds()` took the walker's latest run from `topshot-pack-sales-ingest` / `allday-pack-sales-ingest`, retired 11-18 (Studio 530) and replaced by `atlas-pack-sales-ingest`. With `walker` NULL the arm can never tell "Dapper's index is behind, our walker is caught up" from "our ingest is broken", so it falls back to the raw mirror age: All Day read WARN 96.7 h at 3:04 PM PT and would page CRITICAL at 168 h (~Mon 11-30 1:22 PM PT) for a quiet market — the Atlas head page's 200 newest All Day pack sales (back to 10-04) are all stored (`inserted 0`), and the chain feed's newest All Day secondary sale is 11-26.
+- **Fix:** `walker` = newest `atlas-pack-sales-ingest` run, per product head page (`nba_head` / `nfl_head`): ok = run ok AND page ok, partial = page not ok, head_new = inserted. Live read after apply: both walkers ok/partial false; anon EXECUTE false. Base md5 asserted (`2cadba68…`). The route is unchanged (it already consumes these fields). **Verify** at the next Sentinel run (~8 PM PT): All Day reads the chain feed (~30 h, ok) with "upstream" in the detail.
+- **Revert:** re-apply `20261118020242`.
+
 ### 2026-11-27 · 3:46 PM PT — Account welcome email: no FMV-grading copy, every collection's identifier, beginner's guide link; home hero not Top Shot-only
 
 - `lib/emails/account-welcome-email.ts` (HTML + text) still told new accounts each estimate was "graded" and showed "the share of our prices backed by recent sales" — FMV confidence, which Trevor ruled internal-only on 2026-10-18. Removed. The first step no longer names only a Top Shot username (Dapper/Top Shot username, Solana address for Candy, Panini username); a line links /help/new-to-collecting. `account-welcome-once.test.ts` now pins the guide link and the absence of grading words.
