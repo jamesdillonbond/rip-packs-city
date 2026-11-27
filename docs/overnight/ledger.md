@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:46 PM PT — Account welcome email: no FMV-grading copy, every collection's identifier, beginner's guide link; home hero not Top Shot-only
+
+- `lib/emails/account-welcome-email.ts` (HTML + text) still told new accounts each estimate was "graded" and showed "the share of our prices backed by recent sales" — FMV confidence, which Trevor ruled internal-only on 2026-10-18. Removed. The first step no longer names only a Top Shot username (Dapper/Top Shot username, Solana address for Candy, Panini username); a line links /help/new-to-collecting. `account-welcome-once.test.ts` now pins the guide link and the absence of grading words.
+- Home hero: "Paste a Top Shot username or Flow wallet and see every moment" → "…or a Flow or Solana wallet and see everything it holds" (WalletSearch has accepted base58 since 2026-09-19).
+- Concierge checked live on a beginner question (wallet + funding): it explains Dapper, sends funding to the platform, says no wallet connection, and points to /help/new-to-collecting. The QA session (`rpc_qa_newguide_*`) is marked is_smoke_test.
+- **Revert:** `git revert` this commit (by message); no DB change beyond the smoke flag.
+
 ### 2026-11-27 · 3:50 PM PT — legacy `/edition/<uuid>` links work again (the editions → collections embed names its FK)
 
 - **Found** on my own page check (3:29 PM PT): `/edition/<uuid>` threw "edition redirect unavailable"; the lookup error was PostgREST `PGRST201` — "more than one relationship was found for 'editions' and 'collections'". `pack_drop_pool`'s primary key holds both `collection_id` and `edition_id`, so PostgREST also sees a many-to-many path. Every legacy link errored (1 hit in 7 days — mine — so low traffic, but always broken).
