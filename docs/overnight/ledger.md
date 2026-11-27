@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:30 PM PT — 📄 docs — laptop Cowork VM `/sessions` disk cleared (100 % → 1 %); inbox `2026-11-26T1936Z` resolved
+
+- **What:** ran `fix-sessions-vhdx-FORCE.cmd` on the laptop via computer use (Trevor approved): `sessiondata.vhdx` renamed to `.bak-20261127-1515` at 3:15 PM PT, Claude relaunched, `/sessions` 1 % (304K). A full `git clone --filter=blob:none` fit again (218M). The `.bak` (9.72 GB) is in the Recycle Bin via `recycle-old-vm-disk-backups.cmd`. No repo code or DB change; this commit only appends a ✅ RESOLVED section to the inbox filing and marks its INDEX line.
+- **Revert:** `git revert` this commit (docs-only). The disk reset itself is not reverted (the `.bak` can be restored from the Recycle Bin if ever needed).
+
 ### 2026-11-27 · 3:21 PM PT — 🗄 APPLIED `20261127232143` — Panini sales ingest: a key the serial catalog holds is never dropped for its shape (ends the one-regex-per-shape cycle)
 
 - **Why:** five times in six days (11-22 ×3, 11-24, today) `panini_sales_ingest` silently dropped every sale of a card whose key shape no regex arm knew, until the Sentinel warned and a session added one more arm. In all five cases the key was already in `panini_card_serials.sku` with the right edition.

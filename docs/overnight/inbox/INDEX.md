@@ -42,7 +42,7 @@ failure it documents.
 
 ## 2026-11-26 — 4 filings
 - [candy-edition-holders MV refresh: 2nd statement-timeout in 24h (21:33Z + 03:33Z) under IO saturation during the afternoon shipping wave — SYMPTOM, re-measure in a quiet window over ≥ several days before acting — rpc-daytime-monitor, LOW/self-healing; swept onto main by the 11-27 overnight pass](2026-11-26T2207Z-daytime-monitor-candy-edition-holders-2nd-timeout.md)
-- [VM /sessions scratch disk 100% full blocks push route 1 (nightly VM clone); un-deletable cross-user `nobody` dirs; shallow sparse-clone fallback proven & used to push this — rpc-daytime-monitor, LOW/infra](2026-11-26T1936Z-rpc-daytime-monitor-vm-sessions-disk-full-blocks-push-route-1.md)
+- [✅ RESOLVED 11-27 3:15 PM PT (Cowork, attended): sessiondata.vhdx renamed by fix-sessions-vhdx-FORCE.cmd, /sessions 100 % → 1 %, full clone fits again, .bak recycled — VM /sessions scratch disk 100% full blocks push route 1 (nightly VM clone); un-deletable cross-user `nobody` dirs; shallow sparse-clone fallback proven & used to push this — rpc-daytime-monitor, LOW/infra](2026-11-26T1936Z-rpc-daytime-monitor-vm-sessions-disk-full-blocks-push-route-1.md)
 - [HELD DELETE (not applied, confirmation timed out): two stale zero-yield suppressions whose own re-check conditions are met — `ufc-enrichment-drain` (live again via the backstop) and `pack-pull-source-rip-id-backfill` (examined 12,976 in 72 h); SQL editor or attended apply — Claude Code cloud, LOW](2026-11-26T0432Z-claude-code-held-delete-two-stale-zero-yield-suppressions.md)
 - [candy-edition-holders MV refresh: one statement timeout at 03:33Z (7/8 recent ticks ok; self-clears) — rpc-daytime-monitor, LOW](2026-11-26T0405Z-rpc-daytime-monitor-candy-edition-holders-refresh-timeout.md)
 
