@@ -23,7 +23,9 @@ vi.mock("@/lib/supabase", () => {
     q.then = (resolve: (v: Res) => unknown) => resolve(db[which])
     return q
   }
-  return { supabaseAdmin: { from: (t: string) => chain(t === "publisher_properties" ? "props" : "products") } }
+  // 2026-11-27: the route also reads the league board to offer only leagues RPC holds a card for.
+  const board = { properties: [{ slug: "nba", name: "NBA", heading: "leagues", editions: 10 }, { slug: "fifa-world-cup", name: "FIFA World Cup", heading: "leagues", editions: 5 }], product_property: {}, unplaced_products: 0 }
+  return { supabaseAdmin: { from: (t: string) => chain(t === "publisher_properties" ? "props" : "products"), rpc: async () => ({ data: board, error: null }) } }
 })
 
 import {
