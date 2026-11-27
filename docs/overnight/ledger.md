@@ -13,6 +13,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:55 PM PT — 🗄 APPLIED (SQL editor, 2:28 PM PT) + committed — All Day and Panini thin prices pulled toward a lower standing offer (`_bidpull`)
+
+- **Trevor:** "Apply it, and build Panini too" (11:00 AM), "Hand it off to cowork to apply in chrome", then "Yes do it all" (2:25 PM) after the size was put to him (Panini ~1,800 prices in scope, summed ~$32.8k → ~$18.7k).
+- **Applied** in the dashboard SQL editor by a Cowork session through Chrome, All Day then Panini: `fmv_snapshots_pull_allday_thin_to_best_offer` (body md5 `aa079b76…`) and `fmv_snapshots_pull_panini_low_to_best_offer` (`fd88c4ba…`), both = the handoff; triggers enabled `O`; anon EXECUTE false. Pre-check passed (All Day offer floor `e43617f7…`, Panini ceiling `778e797d…` with its `'LOW', 'MEDIUM', 'HIGH', 'STALE'` shape). **No `schema_migrations` row** (SQL editor), as with `20261112183500`. All Day acted within minutes: 5 LOW pulled, 1 LOW Legendary/Ultimate skipped; below_bid / not_lowered / under_half 0; `fmv-recalc` ok. Panini acts on the next bridge re-walk.
+- ⛔ **Cost:** the All Day paste had no `lock_timeout` and queued edition-page readers ~9 s (2:27:28–2:27:37 PM PT: 21 `still waiting for AccessShareLock`, 2 statement timeouts — Postgres logs). The Panini paste logged none. The guard landed at 2:34 PM in another session; this paste predates it.
+- **Committed:** both migration files (md5 `5662fd2a…`, `2201cf03…` = the handoff), pins `supabase/tests/fmv_snapshots_pull_allday_thin_to_best_offer.sql` + `…_pull_panini_low_to_best_offer.sql` (pass; 322-file DB suite green), two `db-invariants-drift-guard` entries; docs: database.md (11-27 bullet), rpc-data skill line + bundle, focus.md steer closed, sessions log.
+- **Scheduled tasks:** the 11-30 and 12-07 Top Shot reads now filter `fmv_offer_pull_log` to Top Shot; the 12-14 falsifier re-read is scheduled (`trig_013enktRchrJyEL9MD191dgX`, 10:12 AM PT).
+- **Revert:** `DROP TRIGGER fmv_snapshots_pull_allday_thin_to_best_offer_trg ON public.fmv_snapshots;` / `DROP TRIGGER fmv_snapshots_pull_panini_low_to_best_offer_trg ON public.fmv_snapshots;` (set `lock_timeout` first); rows revert as re-written. Repo: `git revert` the two commits (by message).
+
+### 2026-11-27 · 2:55 PM PT — re-packed the `rpc-migration` skill bundle (`main` was red on `cowork-skill-bundles-match-their-source`)
+
+- The 2:34 PM lock_timeout guard commit edited `docs/cowork-skills/rpc-migration/SKILL.md` without re-packing `rpc-migration.skill`; `scripts/check-cowork-skill-bundles.mjs` read 10 of 11. Re-packed with `scripts/pack-cowork-skill.mjs`; 11 of 11 match. Same push re-packs `rpc-data` after its `_bidpull` line changed.
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 2:41 PM PT — 🗄 APPLIED `20261127224121` — Sold-tab open-tx lane: a username-step timeout no longer rolls back the reads it collected
 
 - **Defect:** `run_sold_pack_open_tx_reads` (pg_cron 945, every 10 min) ran collect + dispatch + the opener-username step in one exception block. The username step re-derives ~50k sold packs' openers every tick (30–110 s); twice today (1:06 PM, 2:26 PM PT) it hit the 120 s cap and the block rolled back the collect and dispatch too, while the run record kept `collect: {rows_written: 244}` — a failed write published as rows written.
