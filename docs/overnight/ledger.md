@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:21 PM PT — 🗄 APPLIED `20261127232143` — Panini sales ingest: a key the serial catalog holds is never dropped for its shape (ends the one-regex-per-shape cycle)
+
+- **Why:** five times in six days (11-22 ×3, 11-24, today) `panini_sales_ingest` silently dropped every sale of a card whose key shape no regex arm knew, until the Sentinel warned and a session added one more arm. In all five cases the key was already in `panini_card_serials.sku` with the right edition.
+- **What:** after the shape arms, `ELSE` the catalog's `edition_external_id` (unique index on `sku`); the WHERE also admits a catalog-known key. The arms keep precedence (every key stored today parses as before). The function now RETURNS `unrecognised` + `unrecognised_sample` (what it actually drops), and `app/api/cron/panini-ingest/route.ts` reports that to the Sentinel (`sales_history_unrecognised_source: "rpc"`), falling back to the TS shape estimate only if a chunk did not report it. Two route tests added (`__tests__/api-cron-panini-ingest.test.ts`).
+- **Proven** in a rolled-back txn: a planted catalog row with an unknown shape → stored under its catalog edition; the space-field key → its arm; an unknown key → `unrecognised 1`, sample names it. File body md5 = live (`2747fa36…`). ESLint per-rule counts unchanged; `tsc` clean.
+- **Revert:** re-apply the function body of `20261127225033`; `git revert` the code commit.
+
 ### 2026-11-27 · 3:20 PM PT — 🗄 APPLIED `20261127231105` + route — two fmv-recalc runs on one page no longer delete each other's prices
 
 - **Found** while verifying the All Day offer pull: 9 pulled rows logged at 2:48 PM PT were missing from `fmv_snapshots`. Two `fmv-recalc` runs priced the SAME page (offset 3000) at 2:48:07 and 2:48:10 PM PT — the GitHub "RPC Data Pipeline" (`:45`, shed and fired late) and cron-job.org's force-stale call (`:48`). Each inserted ~500 rows, then `purge_fmv_snapshots_today_except` deleted today's rows for those editions minus ITS OWN ids — i.e. the other run's fresh rows. Only 10 editions kept a 2:48 PM row; the rest (all collections) had no row for today and read yesterday's price until their next pass (e.g. All Day 1805: newest row 11-26). Latent since the insert-then-purge change of 10-23 (`20261023151316`); the workflow header called the collision "harmless — the route is idempotent".
