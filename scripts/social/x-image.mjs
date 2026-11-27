@@ -435,7 +435,7 @@ async function launchChromium() {
 //  • keyBlack (NFL All Day): All Day serves every Moment as a slab on an opaque black square. The black
 //    CONNECTED TO THE EDGE (max channel < 28) becomes transparent; the slab's own dark glass, which the
 //    backdrop does not reach, stays.
-//  • every image is then trimmed to its visible pixels (alpha > 8), so a Top Shot render's empty margin,
+//  • every image is then trimmed to its solid pixels (alpha > 100: a Top Shot render's soft glow would otherwise count as artwork and shrink the slab ~15%), so a Top Shot render's empty margin,
 //    the All Day square and a card's own edges all end up as artwork edge-to-edge — the same CSS box then
 //    shows every item at the same height.
 // A failure leaves that image as it was (and says so); it never drops an image.
@@ -478,7 +478,7 @@ async function cleanArt(browser, list, warnings) {
         }
         let x0 = w, y0 = h, x1 = -1, y1 = -1
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-          if (px[(y * w + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y }
+          if (px[(y * w + x) * 4 + 3] > 100) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y }
         }
         if (x1 < 0) return null
         const t = document.createElement("canvas")
