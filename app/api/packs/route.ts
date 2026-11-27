@@ -5,6 +5,7 @@ import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 import { apiErrorResponse } from "@/lib/api-error"
 import { accentInsensitiveRegex } from "@/lib/search/accent-regex"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { POOL_SKEW_COLUMNS, poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
 //
@@ -166,6 +167,26 @@ export async function GET(req: NextRequest) {
           calibration_applied: true,
         }
       })
+    }
+  }
+
+  // Top Shot: is what is left in each pool measurably the launch mix? (2026-11-27, lib/packs/pool-skew.ts)
+  // Where it is, the board drops its depletion-based survivor-bias styling. Non-fatal and one-way: a
+  // failed read attaches nothing, so every row keeps today's warning.
+  if (collection === "nba-top-shot" && distIds.length) {
+    const { data: skewData, error: skewError } = await boundedRead(supabase
+      .from("topshot_pool_skew")
+      .select(POOL_SKEW_COLUMNS)
+      .in("dist_id", distIds), "api/packs/topshot_pool_skew")
+    if (skewError) {
+      console.error("[api/packs] pool skew merge", skewError.message)
+    } else if (skewData?.length) {
+      const nowMs = Date.now()
+      const flat = new Set(
+        (skewData as PoolSkewRow[]).filter((s) => poolMixMeasuredFlat(s, nowMs)).map((s) => String(s.dist_id)),
+      )
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows = (rows as any[]).map((r) => (flat.has(String(r.dist_id)) ? { ...r, pool_mix_flat: true } : r))
     }
   }
 

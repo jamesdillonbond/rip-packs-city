@@ -45,6 +45,7 @@ import { observedOpensAsOf } from "@/lib/pack-dist/observed-as-of"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollection } from "@/lib/collections"
 import { collectionHasDropPool } from "@/lib/packs/drop-pool"
+import { POOL_SKEW_COLUMNS, type PoolSkewRow } from "@/lib/packs/pool-skew"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -767,6 +768,25 @@ export async function fetchTopshotAtlasDistCounts(
   const row = (data as TopshotAtlasDistCountsRow | null) ?? null
   if (!row) return { data: null, ok: true }
   return { data: { ...row, observed_as_of: await observedOpensAsOf(db, distId, row.summary_fetched_at) }, ok: true }
+}
+
+// Top Shot only: the measured mix of what is left in the pool (lib/packs/pool-skew.ts). A failed read
+// returns null and the page keeps its depletion-based survivor-bias warning — never the reverse.
+export async function fetchTopshotPoolSkew(
+  collectionSlug: string,
+  distId: string,
+  db: Db = supabaseAdmin,
+): Promise<RowResult<PoolSkewRow>> {
+  if (collectionSlug !== "nba-top-shot") return { data: null, ok: true }
+  const { data, error } = await bounded(
+    db.from("topshot_pool_skew").select(POOL_SKEW_COLUMNS).eq("dist_id", distId).maybeSingle(),
+    "topshot_pool_skew",
+  )
+  if (error) {
+    console.error("[pack-detail] topshot_pool_skew error", error.message)
+    return { data: null, ok: false }
+  }
+  return { data: (data as PoolSkewRow | null) ?? null, ok: true }
 }
 
 const PACK_MARKET_VIEW: Record<string, string> = {

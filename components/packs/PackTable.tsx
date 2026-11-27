@@ -83,6 +83,9 @@ export interface PackRow {
   poolDepletionPct?: number | null
   /** Total editions in the drop pool — a one-edition pool gets no depletion chip. */
   editionCount?: number | null
+  /** Top Shot: what is left in the pool is MEASURED to match the launch mix (lib/packs/pool-skew.ts,
+   *  2026-11-27) — no depletion chip, no muted margin. */
+  poolMixFlat?: boolean
   /** True when the pack draws from a single ultra-rare edition rather than a probabilistic pool. */
   isRareSinglePack?: boolean
   /** Disney Pinnacle (#157): this row is ONE sub-pool of a drop that sells as
@@ -587,7 +590,7 @@ export default function PackTable({
                       </span>
                     )}
                     {(() => {
-                      const chip = depletionChip(r.poolDepletionPct, r.editionCount)
+                      const chip = depletionChip(r.poolMixFlat ? null : r.poolDepletionPct, r.editionCount)
                       if (!chip) return null
                       return (
                         <span
@@ -624,7 +627,7 @@ export default function PackTable({
                     </div>
                   )}
                 </td>
-                <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct, r.editionCount)}`}>{fmtPct(r.evMarginPct)}</td>
+                <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct, r.poolMixFlat ? null : r.poolDepletionPct, r.editionCount)}`}>{fmtPct(r.evMarginPct)}</td>
                 <td className="p-3">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -718,7 +721,7 @@ export default function PackTable({
                   320 px phone's layout viewport to 322 (E2E DOM Smoke, 2026-10-31).
                   Stacked, the widest line is one chip. */}
               <div className="text-right flex-shrink-0 flex flex-col items-end max-w-[55%]">
-                <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct, r.editionCount)}`}>{fmtPct(r.evMarginPct)}</div>
+                <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct, r.poolMixFlat ? null : r.poolDepletionPct, r.editionCount)}`}>{fmtPct(r.evMarginPct)}</div>
                 <div className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">EV margin</div>
                 {r.calibrationApplied && (
                   <div
@@ -756,7 +759,7 @@ export default function PackTable({
                   </div>
                 )}
                 {(() => {
-                  const chip = depletionChip(r.poolDepletionPct, r.editionCount)
+                  const chip = depletionChip(r.poolMixFlat ? null : r.poolDepletionPct, r.editionCount)
                   if (!chip) return null
                   return (
                     <div

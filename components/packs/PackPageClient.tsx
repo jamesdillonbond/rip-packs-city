@@ -71,12 +71,12 @@ interface ApiRow {
   depletion_pct: number | null
   /** Age of the read behind depletion_pct (pack_table_rows, branch-matched). */
   depletion_as_of?: string | null
-  /** Pool-level depletion: % of editions in the drop pool with remaining=0.
-   *  Distinct from depletion_pct (sealed packs sold). High values flag a
-   *  "ghost pack" pool dominated by a few high-FMV survivors. */
+  /** Pool-level depletion: % of the drop pool's SUPPLY already drawn (not editions sold out).
+   *  Distinct from depletion_pct (sealed packs sold). */
   ev_depletion_pct: number | null
-  /** Total editions in the EV calculation — used with ev_depletion_pct to
-   *  derive the surviving-edition count for the depletion chip. */
+  /** Top Shot: the remaining mix is MEASURED to match launch (/api/packs, lib/packs/pool-skew.ts). */
+  pool_mix_flat?: boolean
+  /** Total editions in the EV calculation — a one-edition pool gets no depletion chip. */
   edition_count: number | null
   total_unopened: number | null
   is_rare_single_pack?: boolean | null
@@ -233,6 +233,7 @@ function toPackRow(
     depletionPct: pctFraction(r.depletion_pct),
     depletionAsOf: r.depletion_as_of ?? null,
     poolDepletionPct: pctFraction(r.ev_depletion_pct),
+    poolMixFlat: r.pool_mix_flat === true,
     editionCount: r.edition_count == null ? null : Number(r.edition_count),
     totalUnopened: r.total_unopened == null ? null : Number(r.total_unopened),
     packEvDollar,

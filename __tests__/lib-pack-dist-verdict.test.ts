@@ -167,6 +167,8 @@ describe("isSurvivorBiased", () => {
     // 2026-11-27: a one-edition pool is never survivor-biased by depletion (every pull is that edition)…
     expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 1 })).toBe(false)
     expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 2 })).toBe(true)
+    // A pool whose remaining mix is MEASURED to match launch is not survivor-biased by depletion either.
+    expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 200, poolMixFlat: true })).toBe(false)
     // …but EV > 3× a live ask still flags it: that is a price disagreement, not a mix.
     expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 1, secondaryAvailable: true, secondaryAsk: 10, grossEv: 100 })).toBe(true)
     expect(isSurvivorBiased({ ...base, depletionPct: 95 })).toBe(true)

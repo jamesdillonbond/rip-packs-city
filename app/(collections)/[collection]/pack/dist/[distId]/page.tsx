@@ -75,7 +75,7 @@ import {
   fetchPackLifecycle,
   hasCompleteOpenHistory,
   fetchPackRealizedEv,
-  fetchAllDayCorrectedEv, fetchPinnacleDropEv, fetchTopshotAtlasDistCounts,
+  fetchAllDayCorrectedEv, fetchPinnacleDropEv, fetchTopshotAtlasDistCounts, fetchTopshotPoolSkew,
   fetchPackMarket,
   fetchEvContributors,
   fetchTopPulls,
@@ -107,6 +107,7 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { accentText } from "@/lib/accent-text"
 import { marketWalletHref } from "@/lib/analytics/wallet-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { poolMixMeasuredFlat } from "@/lib/packs/pool-skew"
 import { ogCardDayKey } from "@/lib/og/card-day-key"
 
 export const revalidate = 600
@@ -317,6 +318,9 @@ export default async function PackDetailPage(
   // Top Shot only: Dapper's live per-dist tier counts (topshot_atlas_dists). A
   // failed read leaves the v20 payload and its own, older as-of stamp in place.
   const atlasCountsRes = await fetchTopshotAtlasDistCounts(collection, distId)
+  // Top Shot only: is what is left in the pool measurably the launch mix? (2026-11-27)
+  const poolSkewRes = await fetchTopshotPoolSkew(collection, distId)
+  const poolMixFlat = poolMixMeasuredFlat(poolSkewRes.data)
   const row = bundle.pack_row ?? null
   const fallback = bundle.dist_fallback ?? null
   if (!row && !fallback) {
@@ -725,7 +729,8 @@ export default async function PackDetailPage(
   // neutral and surface the secondary ask as the honest value estimate.
   const evInflatedVsAsk = isEvInflatedVsAsk({ secondaryAvailable, secondaryAsk, grossEv })
   // A one-edition pool cannot be survivor-biased: every remaining pull is that edition (2026-11-27).
-  const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60 && editionCount !== 1
+  // …nor one whose remaining mix is MEASURED to match launch (lib/packs/pool-skew.ts, 2026-11-27).
+  const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60 && editionCount !== 1 && !poolMixFlat
   // ⚠ A stale snapshot is a THIRD reason the EV must not headline, added
   // 2026-08-15. `+EV` is an affirmative buy signal, and this page published it
   // from whatever `pack_ev_history` last held, however old — the age appeared
@@ -755,6 +760,7 @@ export default async function PackDetailPage(
     hasDropPool,
     depletionPct: poolDepletionPct,
     editionCount,
+    poolMixFlat,
     secondaryAvailable,
     secondaryAsk,
     grossEv,

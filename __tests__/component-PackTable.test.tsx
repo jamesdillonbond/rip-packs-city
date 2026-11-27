@@ -297,6 +297,18 @@ describe("PackTable — EV-cell badges", () => {
     expect(marginCell?.className).not.toContain("emerald")
   })
 
+  it("drops the depletion chip and keeps the margin colour when the pool mix is measured flat", () => {
+    const { container } = render(
+      <PackTable
+        collection="nba-top-shot"
+        rows={[row({ title: "Flat Pool", evMarginPct: 12, poolDepletionPct: 0.98, editionCount: 232, poolMixFlat: true })]}
+      />,
+    )
+    expect(container.textContent).not.toContain("% opened")
+    const marginCell = container.querySelector("tbody td.font-semibold")
+    expect(marginCell?.className).toContain("emerald")
+  })
+
   it("shows the Typical Pull value and the lottery grail-premium chip when the gap is large", () => {
     const { container } = render(
       <PackTable
