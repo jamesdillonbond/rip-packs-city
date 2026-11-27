@@ -552,7 +552,12 @@ export default async function PackDetailPage(
   })
   // Verdict renders ONLY when there is a live secondary ask to compare against
   // (2026-07-07 reframe). No ask → Gross EV shows, but no net/ratio/positive-EV.
-  const showPriceVerdict = !isRewardPack && !isHoldingPack && secondaryAskAnchor != null
+  // 2026-11-27: a reward pack WITH a live ask gets the verdict too. The reward gate above predates the
+  // 07-07 reframe ("verdicts divide by retail"); since then the anchor is the secondary ask, never retail, so a
+  // $0 retail no longer breaks it — and the packs board, its share card and the concierge already judged reward
+  // packs against their ask (Fit Check (Diced), dist 2869: the board said −79.9 %, this page said "no verdict").
+  const rewardNoAsk = isRewardPack && secondaryAskAnchor == null
+  const showPriceVerdict = !isHoldingPack && secondaryAskAnchor != null
   // The ask anchoring that verdict is proven stale (#218) — keep the numbers,
   // say how old they are, and drop the "+EV" badge (a buy signal on a listing
   // that may be gone).
@@ -792,7 +797,7 @@ export default async function PackDetailPage(
     // 2026-10-21 sweep: retail_price_usd = 0 is "no standalone retail", not "free" — of 1,337 such
     // packs, 433 are box/case toppers and Premium Packs that ship inside PAID boxes (dist 8545,
     // "2026 NBA Finals Premium Pack", trades ~$242), so "distributed for free" was false there.
-    if (isRewardPack) return "No standalone retail price (a reward or box-content pack) — no price-based verdict."
+    if (rewardNoAsk) return "No standalone retail price (a reward or box-content pack) and no live secondary ask — no price-based verdict."
     if (isHoldingPack) return null
     if (secondaryAskAnchor != null) {
       // #218: under a proven book freeze the ask is the last one Dapper's index
@@ -1281,7 +1286,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="Actual EV"
           value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
-          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "No standalone retail — no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask${packEv > 0 && askHeavy != null ? ` · ${askHeavy}% from asks on never-sold Moments` : ""}` : undefined}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : rewardNoAsk ? "No standalone retail — no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask${packEv > 0 && askHeavy != null ? ` · ${askHeavy}% from asks on never-sold Moments` : ""}` : undefined}
           color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         {/* Typical Pull EV (2026-07-16) — the value of a typical pull (weighted
@@ -1308,7 +1313,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="Value ratio"
           value={!showPriceVerdict || valueRatio === null || evSurvivorBiased ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "No retail price — n/a" : evSurvivorBiased ? (coverageCaveat ?? "survivor-biased — not meaningful") : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          sub={isHoldingPack ? "Holding pack — n/a" : rewardNoAsk ? "No retail price — n/a" : evSurvivorBiased ? (coverageCaveat ?? "survivor-biased — not meaningful") : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
           color={evSurvivorBiased || !showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         <KpiCell
