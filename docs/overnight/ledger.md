@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:12 PM PT — 🗄 APPLIED `20261127231156` — fix my own regression from `20261127224121`: the opener-username step gets its own pg_cron job
+
+- **Regression:** with each step in its own exception block, the 3:06 PM PT tick's dispatch hit the 120 s pg_cron cap; that cancel was caught, and a statement timeout fires only once per top-level statement, so the username step after it ran UNBOUNDED (4 min 41 s of DataFileRead, cancelled by hand at 3:10 PM PT). The collected reads were kept (232 rows), which was the point of `224121`.
+- **Fix:** the username step is now `run_sold_pack_opener_names()` on its own job `rpc-sold-pack-opener-names` (jobid 952, `17 * * * *`, own 120 s cap, own pipeline `sold-pack-opener-names`). `run_sold_pack_open_tx_reads` keeps collect + dispatch, and skips dispatch after a caught collect timeout. Base md5 asserted (`0f3dae86…`). Lesson recorded: **after a caught `query_canceled`, nothing bounds the rest of that statement — never follow one with a step that can run long.**
+- **Revert:** `SELECT cron.unschedule('rpc-sold-pack-opener-names'); DROP FUNCTION public.run_sold_pack_opener_names();` and re-apply `run_sold_pack_open_tx_reads` from `20261127194434` (line 314).
+
 ### 2026-11-27 · 3:20 PM PT — Pack page: a reward pack with a live secondary ask gets the same verdict as the board
 
 - The pack page refused any verdict on a retail-$0 pack ("no price-based verdict"), on a gate whose reason ("verdicts divide by retail") predates the 07-07 reframe that anchors every verdict on the secondary ask. The board, the share card and the concierge already judged those packs against their ask, so Fit Check (Diced) read −79.9 % on the board and "no verdict" on its page. Now: `showPriceVerdict` no longer gates on reward; "no verdict" only when a reward pack has no live ask. Source-pinned test (planted defect fails it).
