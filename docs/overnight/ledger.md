@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 9:05 AM PT — X draft: Friday Bid vs Floor rows carry their Top Shot badges
+
+The board rows have no badges, so the draft missed that the SGA Series 1 Base Set row (2:63) is his Top Shot Debut. `x-draft.mjs` now reads `/api/entity/edition-badges` (get_edition_badges_unified, the edition page's badges) for the sampled rows. Not changed, on purpose: `editions.badges` stays empty for Top Shot — it is the ingest-carried column (Candy parallels); Top Shot badges come from `badge_editions` through `get_edition_badges_unified`, which already returns Top Shot Debut for 2:63, so backfilling would double every badge.
+
+**Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 8:52 AM PT — Binder Sold tab: "Buyer pulled" shows what the next owner opened from each pack you sold (Claude Code cloud; Trevor: "Yes do it all")
 
 - **New reader `get_wallet_sold_pack_outcomes(p_wallet, p_pack_nft_ids)`** (`20261127161747`, applied): for packs the wallet SOLD sealed, who opened them (username only — never an address), when, every pull (player · tier · serial · current FMV), and an all-or-nothing total. No new lane was needed: the pulls are already recorded for any opener (Top Shot `moment_acquisitions.source_pack_rip_id`; All Day `allday_pack_pull`). Coverage on every pack a saved wallet sold: Top Shot 8,446 of 8,736 opened, 27,492 of 27,982 pulls linked; All Day 27 of 31 opened, 110/110 pulls named. 100 ids on the busiest seller in 0.6 s. service_role only.
