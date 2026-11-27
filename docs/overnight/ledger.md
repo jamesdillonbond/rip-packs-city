@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 10:30 AM PT — One-edition packs are no longer called "survivor-biased" (follow-up to the 9:40 depletion-chip fix)
+
+- A one-edition pool (773 Top Shot packs, e.g. Fit Check (Diced)) has no survivor mix: every pull is the same edition, so its EV is that Moment's FMV however far the pool is drawn. The pack page still printed "EV inflated by survivor bias — honest value ≈ secondary ask" and blanked the value ratio, and the list greyed its margin. Now exempt (`poolHasSurvivorMix`, `isSurvivorBiased({ editionCount })`, the page's `poolMostlyOpened`); the EV-above-3×-ask check still applies. Also "1 editions" → "1 edition". Display-only; no data touched.
+- **Revert:** revert the commit "Pack pages: one-edition pools are never survivor-biased".
+
 ### 2026-11-27 · 9:40 AM PT — Pack cards: the "🔥 X/N remain" chip is now "🔥 N% opened", and one-edition packs get none (Trevor: "Why does this show a 1/1 in it when it doesn't have one?")
 
 - The chip's "X of N editions remain" was invented: it was fed `ev_depletion_pct`, the share of SUPPLY opened, not editions sold out (8 sampled ≥90 %-opened Top Shot pools: 0 % of editions sold out, chip said e.g. "1/34"). 773 one-edition packs always read "🔥 1/1 remain" (read as a one-of-one serial); 575 more were clamped up to "1/N". Display-only change in `lib/pack-table-format.ts` + tooltip; no data touched.
