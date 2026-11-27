@@ -444,7 +444,7 @@ export default function PackRealityClient({
           you can actually rip right now — filtered to packs under 90% sold out, priced in the last
           48h, with FMV coverage of 40%+. <strong>High-variance</strong> = any
           of: FMV coverage below 80% (the EV rests on part of the pool), the drop
-          60%+ depleted (what is left is a survivor sample), or an EV more than
+          60%+ drawn with what is left no longer matching the launch mix, or an EV more than
           3× the pack&rsquo;s secondary ask (the market does not believe it). We
           cap its value ratio and treat the dollar figure as an upper bound, not
           a guaranteed return. It&rsquo;s a short list on
