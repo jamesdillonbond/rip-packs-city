@@ -3384,3 +3384,20 @@ Postgres logged 11 deadlocks in the 24 h to 2:55 AM PT 11-26. **9 were `populate
 - **Lock after the filter (11-11 rule):** the first version locked the Pinnacle batch before the `pinnacle_catalog` join, which held rows it would never update. `20261126162832` moved the join before the lock.
 - **Where a skip is NOT safe, separate the schedules instead.** `close_sold_topshot_listings_and_floors` vs `atlas_market_drain` on `topshot_atlas_market_events` was fixed by moving minutes: cron-and-schedulers.md (end).
 - **Find the pair from the log, not by guessing.** `query_logs` on `postgres_logs` where `event_message = 'deadlock detected'`: `log_attributes['parsed.detail']` names both processes' statements, and `parsed.query` is the victim. Retention is ~24 h, so read it the same day.
+
+### 2026-11-26 — A per-wallet read is proven on its LARGEST holder, and counts copies before it looks anything up
+
+Four functions shipped the same day passed tests, CI and a mid-size wallet, and then failed on the biggest holder: three timed out, one took 28 s.
+
+| function | before (largest holder) | after | what changed |
+|---|---|---|---|
+| `get_candy_wallet_cards_for_property` | 12.9M buffers, 93.9 s | 78.6k | brand's editions first; latest price once per distinct edition held |
+| `candy_wallet_property_split` | 548k, 28 s | 47k | count cards per edition key (index-only), then look each edition up once |
+| `candy_wallet_collection_progress` | 555k, 30 s | ~40k | same |
+| `panini_owner_property_split` | 157k (42–48k read from disk every time), 45–64 s | ~41k, 0.4 s | owned skus index-only; heap row only for cards whose serial does not name the user |
+
+- **A collector holds many COPIES of few editions** (125,407 Candy cards = 3,696 editions). Any per-card join to `editions` / `fmv_snapshots` is a per-edition join done 34 times over. Aggregate by `edition_key` first.
+- **`EXPLAIN (ANALYZE, BUFFERS)` the largest holder before shipping a per-wallet read** — one query finds it (`group by wallet order by count(*) desc limit 1` on the collection's holder index). A mid-size wallet proves the rows, not the cost.
+- **Prove the rewrite with md5 of the json, before and after, on several holders** (and on a holder that does not exist). All four were byte-identical.
+- **Buffers, not seconds:** `panini_card_serials` does not stay cached, so the same call read 42k blocks from disk twice running; the timing only looked better warm on the tables that do.
+
