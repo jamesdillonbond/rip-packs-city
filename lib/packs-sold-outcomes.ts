@@ -25,6 +25,15 @@ export interface SoldPackOutcome {
   opener_is_you: boolean
   /** Username only -- an opener with no known username is never named by address. */
   opener_username: string | null
+  /** A box or case: it opened into packs, and `pulls` are the moments of those packs (v2, 11-27). */
+  is_container?: boolean
+  /** For a box or case: packs inside (a case counts the packs inside its boxes) and how many are opened. */
+  packs_inside?: number | null
+  packs_opened?: number | null
+  /** Dapper's index says it was opened, but nothing it yielded is on record. */
+  contents_unknown?: boolean
+  /** A sold box/case with no open on record whose index row does not say Sealed: opened or not is unknown. */
+  open_status_unknown?: boolean
   moments_pulled: number | null
   pulls_named: number
   pulls_priced: number
@@ -77,10 +86,21 @@ export function soldOpenerLabel(o: SoldPackOutcome): string {
  * opened but the total is unknown (some pulls unnamed or unpriced -- said, not summed).
  */
 export function soldOutcomeValueLabel(o: SoldPackOutcome): string {
+  if (o.open_status_unknown) return "Open status unknown"
   if (!o.opened) return "Not opened yet"
+  if (o.contents_unknown) return "Opened · contents not on record"
   if (o.pull_value_usd != null) return usd(o.pull_value_usd)
+  if (o.is_container && o.packs_inside != null && o.packs_opened != null && o.packs_opened < o.packs_inside) {
+    return `${o.packs_opened} of ${o.packs_inside} packs opened`
+  }
   const total = o.moments_pulled ?? o.pulls.length
   return `${o.pulls_priced} of ${total} priced`
+}
+
+/** "Box · 8 packs" -- what a container opened into; null for an ordinary pack. */
+export function soldContainerLabel(o: SoldPackOutcome): string | null {
+  if (!o.is_container || o.packs_inside == null) return null
+  return `${o.packs_inside} pack${o.packs_inside === 1 ? "" : "s"} inside`
 }
 
 /** Pull value against what the pack sold for: positive = the buyer came out ahead. */

@@ -58,7 +58,7 @@ import PackFilterBar from "@/components/packs/PackFilterBar"
 import { currencySuffix } from "@/lib/usd-format"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import {
-  soldOpenerLabel, soldOutcomeIsHit, soldOutcomeValueLabel, soldOutcomeVsSaleLabel, soldPullLabel,
+  soldContainerLabel, soldOpenerLabel, soldOutcomeIsHit, soldOutcomeValueLabel, soldOutcomeVsSaleLabel, soldPullLabel,
   type SoldPackOutcome,
 } from "@/lib/packs-sold-outcomes"
 
@@ -707,7 +707,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                                 disabled={outcome.pulls.length === 0}
                                 aria-expanded={expanded}
                                 onClick={() => setExpandedSold((cur) => (cur === row.pack_nft_id ? null : row.pack_nft_id))}
-                                title={outcome.opened ? `Opened by ${soldOpenerLabel(outcome)} — tap to see every pull` : "The buyer hasn't opened it yet"}
+                                title={outcome.open_status_unknown ? "No open is on record, and Dapper's index can't confirm it is still sealed" : outcome.opened ? `Opened by ${soldOpenerLabel(outcome)} — tap to see every pull` : "The buyer hasn't opened it yet"}
                                 style={{ background: "none", border: "none", padding: 0, cursor: outcome.pulls.length ? "pointer" : "default", textAlign: "right", color: "inherit", font: "inherit" }}
                               >
                                 <div style={{ fontFamily: display, fontWeight: 700, color: soldOutcomeIsHit(outcome) ? "#34D399" : outcome.opened ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
@@ -739,6 +739,7 @@ export default function WalletPacksView({ collection, wallet: walletProp, wallet
                           <div data-testid="sold-pulls-panel" style={{ position: "sticky", left: 12, width: "min(560px, calc(100vw - 48px))" }}>
                           <div style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>
                             Opened by {soldOpenerLabel(outcome)}{outcome.opened_at ? " · " + relativePackTime(outcome.opened_at) : ""}
+                            {soldContainerLabel(outcome) ? " · " + soldContainerLabel(outcome) : ""}
                             {soldOutcomeVsSaleLabel(outcome) ? " · " + soldOutcomeVsSaleLabel(outcome) : ""}
                           </div>
                           <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 4 }}>

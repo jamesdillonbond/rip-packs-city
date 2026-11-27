@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
-  parseSoldPackIds, soldOpenerLabel, soldOutcomeIsHit, soldOutcomeValueLabel, soldOutcomeVsSaleLabel, soldPullLabel,
+  parseSoldPackIds, soldContainerLabel, soldOpenerLabel, soldOutcomeIsHit, soldOutcomeValueLabel, soldOutcomeVsSaleLabel, soldPullLabel,
   type SoldPackOutcome,
 } from "@/lib/packs-sold-outcomes"
 
@@ -53,6 +53,31 @@ describe("sold pack outcome labels", () => {
   it("labels a pull with tier and serial / mint size", () => {
     expect(soldPullLabel(base.pulls[0])).toBe("LeBron James · Legendary #14/39")
     expect(soldPullLabel({ ...base.pulls[0], player_name: null, tier: null, serial_number: null })).toBe("Unnamed Moment")
+  })
+})
+
+describe("boxes, cases and opens with nothing on record (v2)", () => {
+  it("an index-confirmed open with nothing on record says so -- never 'Not opened yet', never a total", () => {
+    const o = { ...base, opened_at: null, opener_username: null, moments_pulled: null, pulls_named: 0, pulls_priced: 0,
+      pull_value_usd: null, pulls: [], contents_unknown: true }
+    expect(soldOutcomeValueLabel(o)).toBe("Opened · contents not on record")
+    expect(soldOutcomeValueLabel(o)).not.toMatch(/Not opened/)
+    expect(soldOutcomeIsHit(o)).toBe(false)
+  })
+  it("a box whose open is unknown never reads as 'Not opened yet'", () => {
+    const o = { ...base, opened: false, opened_at: null, opener_username: null, moments_pulled: null, pulls_named: 0,
+      pulls_priced: 0, pull_value_usd: null, pulls: [], open_status_unknown: true }
+    expect(soldOutcomeValueLabel(o)).toBe("Open status unknown")
+  })
+  it("a box with unopened inner packs says how many are opened, and names its packs", () => {
+    const o = { ...base, is_container: true, packs_inside: 8, packs_opened: 5, pull_value_usd: null }
+    expect(soldOutcomeValueLabel(o)).toBe("5 of 8 packs opened")
+    expect(soldContainerLabel(o)).toBe("8 packs inside")
+    expect(soldContainerLabel(base)).toBeNull()
+  })
+  it("a fully opened, fully priced box shows its total like a pack", () => {
+    const o = { ...base, is_container: true, packs_inside: 8, packs_opened: 8, pull_value_usd: 117.76 }
+    expect(soldOutcomeValueLabel(o)).toBe("$117.76")
   })
 })
 
