@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 11:45 AM PT — Pack share card (OG) uses the same survivor-bias gate as the page
+
+- `/api/og/pack` suppressed the EV on any ≥ 90 %-drawn pool. It now exempts one-edition pools and Top Shot pools whose remaining mix is measured flat (`topshot_pool_skew`, lib/packs/pool-skew.ts) — so the unfurl agrees with the pack page. A failed skew read keeps the suppression; EV > 3× ask still suppresses.
+- **Revert:** revert the commit "OG pack card: same survivor-bias gate as the pack page".
+
 ### 2026-11-27 · 11:23 AM PT — Sold tab: boxes, cases and opens with nothing on record now answer too (Claude Code cloud; Trevor: "Keep going and get us to 100%")
 
 - **Open-tx lane** `run_sold_pack_open_tx_reads()` (`20261127184816`, applied; pg_cron `rpc-sold-pack-open-tx-reads` 6-56/10): for Top Shot packs/boxes/cases a saved wallet sold that have no pull on record, it reads the open tx (`/v1/transaction_results`). Inner packs go to `pack_box_contents` and moments to `pack_open_pulls` (`resolved_via 'chain_open_tx'`). The first pass read 64/64 and wrote 420 inner packs + 30 moments (all 30 now named).
