@@ -13,6 +13,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 10:35 AM PT — 11-26 pricing-pass checks + "VERIFY ON THE 11-27 PASSES" (the 11-26 overnight fixes, 24 h) — the numbers (scheduled task trig_0137N4o42ZG5rUKfYcQDjC3G)
+
+- **A1 `refresh-conflated-editions`** 11-27 7:17 AM PT: `ok=true`, `lanes_failed` empty, 63 s (11-26: failed on `remap_base_to_parallel` statement timeout, 217 s). No 3-day-window migration needed. `topshot-parallel-sales-followup` last 24 h: 12/12 ok.
+- **A2 `fmv-recalc`** since 11-26 8:24 AM PT: 81 runs, 0 failed; `hot_lane_editions` avg 4.1 / max 14 (cap 150); 0 `hot_lane_error`. `20261126162440` stays.
+- **A3 at-rip hydrate:** 31,031 requests with `at_block_height`, 100 % `written` (0 error / no_nft / 429); cursor at 2026-07-09 (walking back from the newest pull); `topshot-rip-pricing-backlog` 164/0 failed, `topshot-moments-hydrate-at-rip` 410/0 failed.
+- **A4 `topshot-atlas-twin-retire`** since 11-26 11:00 AM PT: 4/4 ok, max 31 s; twins_found 1 / 0 / 1 on the 7-day cron runs (the 2,499 was the deliberate one-off 260-day run at 5:20 PM PT, ledgered).
+- **B1 deadlocks** since 11-26 3:00 AM PT: 1 total (baseline 11/24 h) — 0 `populate_wmc_image` vs `backfill_wmc_metadata_from_editions`, 0 `close_sold_topshot_listings_and_floors` vs `atlas_market_drain`. The one (11-26 3:45 PM PT) was `reconcile_wmc_metadata_from_editions` (pg_cron) vs `backfill_wmc_metadata_from_editions` (PostgREST) — the already-known baseline pair, not changed.
+- **B2 `ts-sold-floor-clear`** since 11-26 7:05 AM PT: 247 runs, 0 failed (so no failed run with `rows_written = 0` to check).
+- **B3 squeeze:** `refresh-insights-cache` 107 ticks since 7:52 AM PT (~15 min), 0 failed, squeeze snapshot age ≤ 1 min after every tick (200 rows, last 10:22 AM PT); 0 `[insights/squeeze] initial fetch` lines in Vercel production logs.
+- **B4** `golazos_offers` suppression `expires_at` NULL; no alert state or live alert for it.
+- **Closes** the focus.md "VERIFY ON THE 11-27 PASSES" bullet ✅ — the connectorless scheduled task `trig_01LPQL6QwYdKwBz5m15MR7oj` should stand down on seeing this line.
+- **Revert:** docs-only; revert this commit.
+
 ### 2026-11-27 · 10:30 AM PT — One-edition packs are no longer called "survivor-biased" (follow-up to the 9:40 depletion-chip fix)
 
 - A one-edition pool (773 Top Shot packs, e.g. Fit Check (Diced)) has no survivor mix: every pull is the same edition, so its EV is that Moment's FMV however far the pool is drawn. The pack page still printed "EV inflated by survivor bias — honest value ≈ secondary ask" and blanked the value ratio, and the list greyed its margin. Now exempt (`poolHasSurvivorMix`, `isSurvivorBiased({ editionCount })`, the page's `poolMostlyOpened`); the EV-above-3×-ask check still applies. Also "1 editions" → "1 edition". Display-only; no data touched.
