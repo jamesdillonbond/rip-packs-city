@@ -30,7 +30,7 @@ const capture: { c: OgCapture | null } = { c: null }
 
 type Row = Record<string, unknown> | null
 
-function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; correctedError?: boolean; pinDrop?: Row; pinDropError?: boolean; noEnv?: boolean; throws?: boolean }) {
+function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; correctedError?: boolean; pinDrop?: Row; pinDropError?: boolean; poolSkew?: Row; noEnv?: boolean; throws?: boolean }) {
   if (opts.noEnv) {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "")
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -49,6 +49,7 @@ function mockDb(opts: { pack?: Row; packError?: boolean; corrected?: Row; correc
           if (opts.throws) throw new Error("socket hang up")
           if (table === "v_allday_pack_detail_ev")
             return { data: opts.correctedError ? null : opts.corrected ?? null, error: opts.correctedError ? { message: "timeout" } : null }
+          if (table === "topshot_pool_skew") return { data: opts.poolSkew ?? null, error: null }
           if (table === "v_pinnacle_pack_drop_ev")
             return { data: opts.pinDropError ? null : opts.pinDrop ?? null, error: opts.pinDropError ? { message: "timeout" } : null }
           return { data: opts.pack ?? null, error: opts.packError ? { message: "timeout" } : null }
@@ -131,6 +132,30 @@ describe("/api/og/pack — the verdict", () => {
     // The ratio must go too — an "80.10x" beside a suppressed figure is worse
     // than either alone.
     expect(text).not.toContain("80.10x")
+  })
+
+  // 2026-11-27: depletion alone no longer suppresses where the pool provably has no survivor mix.
+  it("does NOT suppress a ≥90%-drawn pool whose remaining mix is MEASURED to match launch", async () => {
+    mockDb({
+      pack: { ...HEALTHY, ev_depletion_pct: 98, edition_count: 232 },
+      poolSkew: { dist_id: "5020", listed_share: 1, skew: 0.99, fmv_coverage: 1, pool_fetched_at: new Date().toISOString() },
+    })
+    const text = ogText(await render(TS))
+    expect(text).toContain("+EV")
+    expect(text).not.toContain("EV N/A")
+  })
+
+  it("still suppresses when the measured mix is skewed (a chase pack)", async () => {
+    mockDb({
+      pack: { ...HEALTHY, ev_depletion_pct: 98, edition_count: 84 },
+      poolSkew: { dist_id: "5020", listed_share: 1, skew: 5.63, fmv_coverage: 1, pool_fetched_at: new Date().toISOString() },
+    })
+    expect(ogText(await render(TS))).toContain("EV N/A")
+  })
+
+  it("does NOT suppress a one-edition pool by depletion — every pull is that edition", async () => {
+    mockDb({ pack: { ...HEALTHY, ev_depletion_pct: 98, edition_count: 1 } })
+    expect(ogText(await render(TS))).toContain("+EV")
   })
 
   it("SUPPRESSES the EV when gross EV exceeds 3x the live ask, even on a shallow pool", async () => {

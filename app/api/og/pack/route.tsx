@@ -18,6 +18,7 @@ import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-font
 import { OgMark } from "@/lib/og/marks"
 import { isEvSnapshotStale } from "@/lib/pack-dist-verdict"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { POOL_SKEW_COLUMNS, poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 import { usdSignFirst } from "@/lib/usd-format"
 
@@ -68,6 +69,7 @@ interface PackRow {
   is_positive_ev: boolean | null
   depletion_pct: number | null
   ev_depletion_pct: number | string | null
+  edition_count: number | string | null
   secondary_ask: number | string | null
   secondary_available: boolean | null
   // Age of the pack_ev_latest snapshot this row was built from. `secondary_available`
@@ -87,7 +89,7 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
   let q = sb
     .from("pack_table_rows")
-    .select("title, tier, retail_price_usd, ev_pack_price, pack_ev, gross_ev, value_ratio, is_positive_ev, depletion_pct, ev_depletion_pct, secondary_ask, secondary_available, ev_snapshotted_at, collection_slug")
+    .select("title, tier, retail_price_usd, ev_pack_price, pack_ev, gross_ev, value_ratio, is_positive_ev, depletion_pct, ev_depletion_pct, edition_count, secondary_ask, secondary_available, ev_snapshotted_at, collection_slug")
     .eq("dist_id", distId)
     .limit(1)
   if (collectionSlug) q = q.eq("collection_slug", collectionSlug)
@@ -110,6 +112,27 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
 // so the card fell through to the raw per-pool / flat-mean EV — the exact inflated
 // number each correction exists to replace. A failed read now withholds the EV.
 type OgRead<T> = { ok: boolean; data: T | null }
+
+// Top Shot: is what is left in the pool MEASURED to match launch? (lib/packs/pool-skew.ts, 2026-11-27 —
+// the same gate the pack page and board use.) Any failure answers false, so the card keeps suppressing.
+async function fetchPoolMixFlatOg(distId: string): Promise<boolean> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return false
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb: any = createClient(url, key, { auth: { persistSession: false } })
+  try {
+    const { data, error } = await boundedRead(
+      sb.from("topshot_pool_skew").select(POOL_SKEW_COLUMNS).eq("dist_id", distId).maybeSingle(),
+      "og/pack/topshot_pool_skew",
+      OG_FETCH_TIMEOUT_MS,
+    )
+    if (error) return false
+    return poolMixMeasuredFlat((data as PoolSkewRow | null) ?? null)
+  } catch {
+    return false
+  }
+}
 
 async function fetchAllDayCorrectedOg(
   distId: string,
@@ -210,6 +233,13 @@ export async function GET(req: NextRequest) {
   const retail = num(row?.retail_price_usd)
   const grossEv = num(row?.gross_ev)
   const evDepPct = num(row?.ev_depletion_pct)
+  // A one-edition pool, or one whose remaining mix is MEASURED to match launch, is not
+  // survivor-biased however far it is drawn (2026-11-27 — mirrors the pack page).
+  const editionCount = num(row?.edition_count)
+  const isTopShot = row?.collection_slug === "nba-top-shot" || row?.collection_slug === "nba_top_shot" || collection === "nba-top-shot"
+  const poolMixFlat = isTopShot && distId && evDepPct !== null && evDepPct >= 90 && editionCount !== 1
+    ? await fetchPoolMixFlatOg(distId)
+    : false
   const secAsk = num(row?.secondary_ask)
   // Verdict anchor (2026-07-07 reframe): net / value ratio / +EV compare grossEV
   // ONLY to the live secondary ask — what a sealed pack actually resells for.
@@ -223,7 +253,7 @@ export async function GET(req: NextRequest) {
   // the EV, value ratio, and verdict when the pool is ≥90% depleted or gross EV >
   // 3× the live secondary ask. AllDay's odds-corrected EV (usedCorrectedEv) is exempt.
   const evSurvivorBiased = !usedCorrectedEv && (
-    (evDepPct !== null && evDepPct >= 90) ||
+    (evDepPct !== null && evDepPct >= 90 && editionCount !== 1 && !poolMixFlat) ||
     (secondaryAskAnchor !== null && grossEv !== null && grossEv > 3 * secondaryAskAnchor)
   )
 
