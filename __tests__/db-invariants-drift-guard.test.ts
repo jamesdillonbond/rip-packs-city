@@ -184,6 +184,18 @@ const PINS = [
     migration: "supabase/migrations/20261126231111_audit_20261126_topshot_offer_pull_legendary_ask_only_skip_180d.sql",
   },
   {
+    // Added 2026-11-27. All Day offer pull: the Top Shot rule (gates, half floor, Legendary skip, log) on allday_open_offers.
+    fn: "fmv_snapshots_pull_allday_thin_to_best_offer",
+    test: "supabase/tests/fmv_snapshots_pull_allday_thin_to_best_offer.sql",
+    migration: "supabase/migrations/20261127183000_audit_20261127_allday_thin_price_pulled_toward_best_offer.sql",
+  },
+  {
+    // Added 2026-11-27. Panini offer pull: LOW, under 100 copies, best fresh per-card offer, never below half; logged.
+    fn: "fmv_snapshots_pull_panini_low_to_best_offer",
+    test: "supabase/tests/fmv_snapshots_pull_panini_low_to_best_offer.sql",
+    migration: "supabase/migrations/20261127191500_audit_20261127_panini_low_price_pulled_toward_best_offer.sql",
+  },
+  {
     // Added 2026-11-13. All Day _compcap: the comparable cut never lands below the best open offer.
     fn: "fmv_snapshots_cap_allday_thin_to_comparables",
     test: "supabase/tests/fmv_snapshots_cap_allday_thin_to_comparables.sql",
