@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:41 PM PT — 🗄 APPLIED `20261127224121` — Sold-tab open-tx lane: a username-step timeout no longer rolls back the reads it collected
+
+- **Defect:** `run_sold_pack_open_tx_reads` (pg_cron 945, every 10 min) ran collect + dispatch + the opener-username step in one exception block. The username step re-derives ~50k sold packs' openers every tick (30–110 s); twice today (1:06 PM, 2:26 PM PT) it hit the 120 s cap and the block rolled back the collect and dispatch too, while the run record kept `collect: {rows_written: 244}` — a failed write published as rows written.
+- **Fix:** each step has its own exception block; `ok` = collect + dispatch; the username step reports `names_error` separately and runs only on the :06 tick (once an hour, not six times). Base md5 asserted (`a184e99f…`).
+- **Revert:** re-apply `run_sold_pack_open_tx_reads` from `20261127194434` (line 314).
+
 ### 2026-11-27 · 2:39 PM PT — /help/new-to-collecting: a beginner's guide to digital collectibles, blockchains, wallets and funding
 
 - Trevor asked whether the site walks new users through what digital collectibles, blockchains and wallets are, how RPC works across everything, and how to fund wallets ("Do it all"). /help answered how to use RPC but explained none of the basics, and nothing on the site covered funding.
