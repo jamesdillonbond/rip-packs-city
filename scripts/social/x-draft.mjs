@@ -245,7 +245,7 @@ async function mon() {
     const b = buyerOf(r)
     // A line ends with the team's hashtag only when Trevor confirmed it live (TEAM_HASHTAG; 11-23).
     const tag = r.team_name ? TEAM_HASHTAG[r.team_name] : null
-    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${BRAND[r.collection]?.handle.split(" ")[0] ?? coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}${tag ? ` ${tag}` : ""}`
+    return `${i + 1}. ${topSaleSubject(r)} — ${usd(r.price_usd)} on ${BRAND[r.collection]?.handle ?? coll(r.collection)}${b ? ` · bought by ${buyerLabel(b)}` : ""}${tag ? ` ${tag}` : ""}`
   })
   // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
   // count is a floor, not a total — say nothing rather than under-count.
@@ -269,7 +269,8 @@ async function mon() {
   const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length + uncatOver
   const now = new Date()
   // Trevor's format, 11-09: "This past week's top 10 sales, 11/2-11/9 📈"; each line names the collection by its
-  // official X account (Panini as plain @PaniniAmerica here); the count line leads with 💰.
+  // official X account (Panini as "@PaniniAmerica Blockchain" — Trevor, 11-27: "to clearly differentiate
+  // physical vs digital"); the count line leads with 💰.
   const head = `This past week's top ${top.length} sales, ${mdPT(new Date(now.getTime() - 7 * 86400000))}-${mdPT(now)} 📈`
   const tail = over > top.length ? [``, `💰${over} sales cleared ${usd(BIG_SALE_USD)} in the last 7 days.`] : []
   const unnamed = top.map((r, i) => (buyerOf(r) ? null : i + 1)).filter(Boolean)
@@ -817,7 +818,7 @@ async function breaking(now) {
     }
     return big.map((r) => {
       const b = buyerOf(r)
-      const on = BRAND[r.collection]?.handle.split(" ")[0] ?? coll(r.collection)
+      const on = BRAND[r.collection]?.handle ?? coll(r.collection)
       const draft = `One of the week's top sales ${BRAND[r.collection]?.emoji ?? "💰"}\n\n${topSaleSubject(r)} — ${usd(r.price_usd)} on ${on}${b ? ` · bought by ${buyerLabel(b)}` : ""}`
       return {
         sale: r,

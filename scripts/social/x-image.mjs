@@ -60,7 +60,7 @@ const COLL = {
   disney_pinnacle: { label: "Disney Pinnacle", accent: "#A855F7" },
   laliga_golazos: { label: "LaLiga Golazos", accent: "#22C55E" },
   panini_blockchain: { label: "Panini", accent: "#C084FC" },
-  candy_mlb: { label: "Candy MLB", accent: "#FB923C" },
+  candy_mlb: { label: "Candy", accent: "#FB923C" }, // Trevor, 11-27: "just show Candy instead of Candy MLB"
 }
 
 const usd = (n) =>
@@ -221,7 +221,7 @@ footer b{color:#fff;font-weight:400}
 }
 
 // ---------- mon: the week's top 10 sales ----------
-const SITE_NAMES = { nba_top_shot: "Top Shot", nfl_all_day: "All Day", disney_pinnacle: "Pinnacle", laliga_golazos: "Golazos", panini_blockchain: "Panini", candy_mlb: "Candy MLB" }
+const SITE_NAMES = { nba_top_shot: "Top Shot", nfl_all_day: "All Day", disney_pinnacle: "Pinnacle", laliga_golazos: "Golazos", panini_blockchain: "Panini", candy_mlb: "Candy" }
 // Same rules as x-draft.mjs's buyerOf / shortSet (kept in step by hand: this file is fetched alone).
 function buyerOf(r) {
   const n = String(r.buyer_name ?? "").trim()
