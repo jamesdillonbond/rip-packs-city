@@ -261,7 +261,7 @@ export default function NewToCollectingPage() {
           <p style={P}>
             <strong>Rip Packs City never needs your wallet.</strong> To show your collection, RPC only needs the public
             username or address — the same information anyone can already see on the blockchain. RPC will never ask you to
-            connect a wallet, sign anything, or share a password or recovery phrase.
+            link a wallet to it, sign anything, or share a password or recovery phrase.
           </p>
 
           <h2 id="by-collection" style={H2}>Each collection, its chain and its wallet</h2>
@@ -379,7 +379,7 @@ export default function NewToCollectingPage() {
           <h2 id="safety" style={H2}>Staying safe</h2>
           <ul style={UL}>
             <li><strong>Never share a recovery phrase or password</strong> — not with RPC, a &quot;support agent&quot; or anyone else. No real support team will ask for one.</li>
-            <li>RPC will never DM you first, ask you to connect a wallet, or ask you to sign a transaction to &quot;verify&quot; or &quot;claim&quot; something.</li>
+            <li>RPC will never DM you first, ask you to link a wallet, or ask you to sign a transaction to &quot;verify&quot; or &quot;claim&quot; something.</li>
             <li>Type marketplace addresses yourself or use the links above. Fake sites copy real ones to steal logins.</li>
             <li>Be wary of offers that look too good — a &quot;free airdrop&quot; or a private deal off-platform is the most common scam.</li>
             <li>Marketplaces charge fees when you sell, so a quick resale usually has to beat the price you paid by more than you&apos;d think.</li>
