@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:31 PM PT — New-user paths lead to the beginner's guide; first-run tour copy no longer Flow-only
+
+- Follow-on to the 2:39 PM PT /help/new-to-collecting guide (Trevor: "Keep going on this thread"). The guide is now linked from the three places a first-time visitor lands: the home hero (under Create free account), the dashboard's first-visit "Track your collection" form, and the first-run tour's welcome step (new optional `link` on a tour step).
+- Tour copy brought up to date: welcome no longer says "Flow blockchain collectibles" (RPC covers Solana, Aptos and Panini's chain too); "Moments" → "Moments, Pins and Cards" / "Moments or Cards"; the save-wallets step stops naming only the Top Shot identifier and says no password or wallet connection; Sniper is "across the collections we cover", not "on Top Shot". No collection named by hand (the tour registry test pins that).
+- Verified in the cloud clone: tsc clean, ESLint ratchet at baseline (150), 7 touched-area test files green (tour ×4, DashboardClient, HomePageMarketing, no-client-wallet-connect).
+- **Revert:** `git revert` this commit (by message); no DB change.
+
 ### 2026-11-27 · 3:35 PM PT — 🗄 APPLIED `20261127232140` + `20261127232846` + `20261127233155` — big-spender watch (internal intel): every buyer of a top sale tracked
 
 - **What:** Trevor: "start tracking any wallet that has hit any of our top sales", internal only. Tables `big_spender_wallets` / `big_spender_top_sales`, `refresh_big_spender_wallets(p_days)`, `get_big_spender_activity(p_hours, p_min_usd)`, `get_big_spender_summary(p_days)`, `big_spender_item_label(...)`; pg_cron **953** `rpc-big-spender-refresh` (`23 1,7,13,19 * * *`, created with `cron.schedule`); cadence watch `big_spender_refresh` (720 / 1440 min). Top sale = a collection's 25 highest sales in its PT month, $100 min, items and packs ranked separately. First fill: 1,777 top sales since 2025-11-01, 573 wallets. No anon/authenticated access (verified with `has_function_privilege`); nothing user-facing reads it. Runbook: `docs/operations/big-spender-watch.md`.
