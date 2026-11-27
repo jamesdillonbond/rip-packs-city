@@ -212,6 +212,10 @@ export const X_HANDLES = {
   // Trevor, 11-23 (from the 11-23 top-10 draft):
   incog8: "incog_eth",
   spinotron: "spinotron",
+  // Trevor, 11-27 (grail post; each profile ties to the marketplace account — memory buyer-x-handle-crosswalk):
+  tadtweets: "tadtweets", // Candy — Tad Smith, Candy Digital's CEO
+  cle_287: "cle_287", // Top Shot
+  viciousfrenchie: "St1ngray2", // Panini — linked from their own Panini profile
 }
 function buyerLabel(name) {
   const h = X_HANDLES[String(name).toLowerCase()]
