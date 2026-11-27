@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:20 PM PT — Pack page: a reward pack with a live secondary ask gets the same verdict as the board
+
+- The pack page refused any verdict on a retail-$0 pack ("no price-based verdict"), on a gate whose reason ("verdicts divide by retail") predates the 07-07 reframe that anchors every verdict on the secondary ask. The board, the share card and the concierge already judged those packs against their ask, so Fit Check (Diced) read −79.9 % on the board and "no verdict" on its page. Now: `showPriceVerdict` no longer gates on reward; "no verdict" only when a reward pack has no live ask. Source-pinned test (planted defect fails it).
+- **Revert:** revert the commit "Pack page: reward packs with a live ask get the ask-anchored verdict".
+
 ### 2026-11-27 · 2:57 PM PT — /help/new-to-collecting joins the e2e a11y gate
 
 - The beginner's guide (shipped 2:39 PM PT) goes on the `e2e/a11y.spec.ts` route list, with a dispatched e2e-smoke run as its first production axe read (light + dark, desktop + 390 px). Its /login link was checked rendered in Chrome on production.
