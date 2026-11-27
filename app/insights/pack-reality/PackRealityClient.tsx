@@ -547,7 +547,7 @@ export default function PackRealityClient({
             <strong>Pack EV</strong> uses the existing pack-EV pipeline (gross
             EV − pack price). The high-variance flag fires on any of{" "}
             <strong>FMV coverage &lt; 80%</strong>, the drop{" "}
-            <strong>60%+ depleted</strong>, or an EV over{" "}
+            <strong>60%+ drawn</strong> with what is left no longer matching the launch mix (or no way to tell), or an EV over{" "}
             <strong>3× the secondary ask</strong>; in those cases a few
             moments or a survivor sample can dominate the EV calc, so we cap the
             displayed value ratio at <strong>10×+</strong> and mute the dollar
