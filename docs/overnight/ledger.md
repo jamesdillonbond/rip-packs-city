@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 8:15 AM PT — main red for ~15 min on my 8:04 AM commit: a second test of /api/panini-properties
+
+`fe0ec47` reddened CI (unit shard 2/4 and component shard 1/2, one test each): `__tests__/panini-scope.test.tsx` also calls the route, and its Supabase mock had no `rpc`, so the new league-board read failed and the route answered 500. I had run only the new test file and the tree-walking guards — not `grep -rl <route> __tests__`, which CLAUDE.md asks for. The mock now answers the board read; no product code changed. Production was unaffected (the deploy for `fe0ec47` is READY and serves 14 leagues).
+
+**Revert:** n/a (test-only).
+
 ### 2026-11-27 · 8:08 AM PT — 📏 READS — offer-book index confirmed; the three 11-27 overnight Candy items re-measured: no change warranted (Claude Code cloud)
 
 - **`idx_tame_open_offers_by_edition_cover` (`20261127003011`) confirmed in production:** in `ts-listings-atlas-sync`, the `edition_offers` median went from **5.9 s to 2.1 s (−65 %)**, 384 runs before vs 188 after. The untouched steps in the same ticks are the controls, and they held flat (sync 3.4 s → 3.5 s, cached_listings 1.8 s → 1.5 s), so the drop is the index, not a quieter estate. Watch closed.
