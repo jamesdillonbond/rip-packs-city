@@ -294,6 +294,10 @@ export function toPropertyPage(data: unknown): PaniniPropertyPage | null | undef
   }
 }
 
+// ⚠ 2026-11-27: this read cost ~1M buffers / 3-6 s for EVERY league until migration 20261127155238 (a SQL
+// array helper inlined into a scan filter and re-ran per row), so the page passed its deadline and ISR kept
+// "Couldn't load this page" for 30 minutes at a time behind an HTTP 200. Now ~0.2 s. If this page degrades
+// again, EXPLAIN (ANALYZE, BUFFERS) get_panini_property_page first; e2e/smoke.spec.ts asserts the heading.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readPaniniPropertyPage(slug: string, db: any = supabaseAdmin): Promise<PaniniPropertyPageRead> {
   try {

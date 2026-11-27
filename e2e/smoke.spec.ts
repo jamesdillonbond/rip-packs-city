@@ -197,6 +197,11 @@ const PAGES: PageCheck[] = [
   { path: "/teams", name: "team hubs directory" },
   // 2026-11-26: the coverage map — every league and brand, and where its cards live.
   { path: "/leagues", name: "leagues and brands map" },
+  // 2026-11-27: a league page of each publisher. Every Panini league page rendered "Couldn't load this
+  // page" for hours behind an HTTP 200 (a read over its deadline, kept by ISR); expectText is the heading
+  // only a successful read renders, so that state reds here.
+  { path: "/panini-blockchain/property/nba", name: "Panini league page", expectText: /Panini NBA cards/i },
+  { path: "/candy-mlb/property/dc", name: "Candy brand page", expectText: /Candy DC cards/i },
   // 2026-10-22: a player hub (not in the sitemap — reached from search and the
   // per-collection player pages). Lillard is the case it was built for: Top
   // Shot + Panini on one page.
