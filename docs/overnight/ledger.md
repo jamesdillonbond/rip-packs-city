@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 4:19 PM PT — Binder "Unlocked" tile reads "—" when no moment has been lock-checked, not "$0" (Claude Code cloud, autonomous pass)
+
+- **Found on a live Top Shot binder** (`/nba-top-shot/collection?wallet=…`, 295 moments): every row read "Lock ?". `wallet_moments_cache.lock_checked_at` was NULL on all 295, yet the Unlocked tile said **$0**. That told the collector nothing in the wallet could be sold, when the truth is that nobody had checked. When the unlocked count is 0 and some moments are unchecked, `WalletStatRow` now renders "—", and the existing hover still names the unchecked count and FMV. A partly-checked wallet keeps its known figure (unchanged, per the 11-24 no-subtext layout). A wallet whose every checked moment is locked still reads a real $0.
+- The analytics "Liquid vs Locked" card already discloses the unchecked bucket with its count beside a "0 moments" caption, so it is unchanged.
+- **Proof:** two tests in `component-WalletStatRow.test.tsx`; planting the old expression reds one. `tsc` clean, 8 related suites (251 tests) green.
+- **Revert:** revert the commit "binder: Unlocked is unknown when no moment was lock-checked" (by message).
+
 ### 2026-11-26 · 4:10 PM PT — Sale ages never read older than they are; Candy "Parallel Printings" lists only printings of the same card (Claude Code cloud, autonomous pass)
 
 - **Relative ages floor, never round** (`relTime` in `components/entity/_shared.tsx`, 55 call sites on entity pages; `fmtAgo` in `lib/pack-dist-format.ts`). Found on `/ufc-strike/player/alexia-thainara`: a sale from April 2025 (19 months ago) read **"2 years ago"**, which is earlier than the March 2025 fight the Moment shows, and a 16-month-old sale beside it read "last year". Months and years now floor, so a stated age never exceeds the true one, and they read as spans ("1 year ago", not the calendar "last year"). The other ~10 formatters in the tree already floored.
