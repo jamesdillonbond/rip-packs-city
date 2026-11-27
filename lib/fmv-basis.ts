@@ -143,7 +143,9 @@ const PRICE_RULE_NOTES: Array<[RegExp, string]> = [
   [/_compcap(_|$)/, "held to an estimate from similar editions in the same set, because the ask was above what those sell for"],
   // 2026-11-27 (20261127164214): a never-sold Panini card's ask-based price blended with what the same card's other
   // printings sell for. A blend that moved the price DOWN reuses `_compcap` above; one that moved it UP is `_compblend`.
-  [/_compblend(_|$)/, "raised toward an estimate from the same card's other printings, because those sell for more than the ask-based price"],
+  // 20261127165742 added a second source (the same parallel's sales in the same product) for a card with no sold
+  // printing, so the note names both rather than claiming the narrower one.
+  [/_compblend(_|$)/, "raised toward an estimate from similar editions (the same card's other printings, or the same parallel in the same set), because those sell for more than the ask-based price"],
   [/_haircut(_|$)/, "discounted from the ask because very few sales back it"],
 ]
 

@@ -134,7 +134,7 @@ describe("fmvBasis", () => {
 
   it("priceRuleNotes: a Panini comparables blend says which way it moved the price (2026-11-27)", () => {
     expect(priceRuleNotes("panini-1.4.2_compblend")).toEqual([
-      "raised toward an estimate from the same card's other printings, because those sell for more than the ask-based price",
+      "raised toward an estimate from similar editions (the same card's other printings, or the same parallel in the same set), because those sell for more than the ask-based price",
     ])
     expect(priceRuleNotes("panini-1.4.2_compcap")[0]).toMatch(/^held to an estimate from similar editions/)
     expect(askCapFlag("panini-1.4.2_compcap")).toBe("comparables")
