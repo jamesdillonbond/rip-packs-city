@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:31 PM PT — 🗄 APPLIED `20261127223054` — the 4xx arm keeps attributing Sold-tab reads after a re-ask (inbox `2026-11-27T2213Z` attributed)
+
+- **Defect:** `check_edge_fn_http_failures` attributed the Sold-tab lanes by joining the CURRENT `request_id` of `sold_pack_open_tx_reads` / `sold_container_open_search`. The first overwrites it on a re-ask (an hour on since `20261127213526`), the second clears it on collect, so an earlier 429 lost its join inside its own 2 h window and filed as an unattributed `pg_net_http_429` **high** (5 + 5 + 1 at the 11:46 AM / 12:36 PM / 12:06 PM PT lane ticks).
+- **Fix:** new `sold_lane_request_ids` (every id either lane records, via AFTER INSERT / UPDATE OF request_id triggers; backfilled 1,075; pruned after 3 days by pg_cron `rpc-sold-lane-request-ids-prune`, 4:41 AM UTC daily). The arm's four Sold-tab joins move onto it (md5-asserted splice, base `b113dd26…`). Lane functions untouched.
+- **The rest of today's unattributed rows are this day's own session probes, not a lane:** the 401 (`api.mainnet.flowscan.flow.com/flow/v1/transaction`), both 404s and the mainnet26 nulls are 12:29–12:32 PM PT (the retired-spork probe, ledger 12:50 PM); 40 of the 429s are 12:57–1:00 PM PT (the All Day scratch read, ledger 1:06 PM). All age out of the window by ~3:00 PM PT. Nothing to fix there.
+- **Revert:** per the migration header (restore the four joins from `20261127200810`, unschedule the prune job, drop both triggers, the function and the table).
+
 ### 2026-11-27 · 2:00 PM PT — main's ESLint ratchet red: an unused constant in the social image script (not this thread's change)
 
 - CI "ESLint ratchet" failed on every commit since ~1:35 PM PT: `@typescript-eslint/no-unused-vars` 5 → 6, from `SERIAL_GLYPH_RPC` in `scripts/social/x-image.mjs` (added by the concurrent social-images session in `e74f22b`, marked "kept for reference only"). The repo's rule counts an unused `const` as dead code, `_` prefix or not. Removed it and left a pointer to `git show e74f22b:scripts/social/x-image.mjs`; ratchet back to 150 = baseline.

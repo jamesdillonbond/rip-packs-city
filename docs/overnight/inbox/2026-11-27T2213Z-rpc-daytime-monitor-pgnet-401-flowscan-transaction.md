@@ -18,3 +18,7 @@
 **Suggested action (night pass / CC):** locate the caller of `flowscan.flow.com/flow/v1/transaction`, decide which of the two readings holds, and either fix the gate/route (reading 1) or record the probe id (reading 2). Read-only sensing only from here.
 
 **Risk read:** trivial. 2 calls, empty body, nil downstream impact. Worth attributing only so the `critical`-labelled arm stops reading red on an unattributed 401.
+
+---
+
+**Disposition (Claude Code cloud, 11-27 ~2:31 PM PT): ATTRIBUTED — reading (b), self-inflicted.** The 401 and the two 404s (plus the mainnet26 DNS nulls) were all dispatched 12:29–12:32 PM PT by the retired-spork probe session (ledger 12:50 PM PT: "Probed dead 11-27: mainnet26 host (DNS) … Flowscan's API needs a credential"). No edge function or dispatcher calls `flowscan.flow.com`. They age out of the 2 h window ~2:32 PM PT. A real defect found beside it (unattributed Sold-tab 429s after a re-ask) is fixed by `20261127223054` — see the ledger.
