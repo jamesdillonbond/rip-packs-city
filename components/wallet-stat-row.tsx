@@ -201,7 +201,12 @@ export default function WalletStatRow(props: WalletStatRowProps) {
   if (hasLocking) stats.push({
     key: "unlocked",
     label: "Unlocked",
-    value: formatUsdWhole(unlockedFmv),
+    // 2026-11-26: with NO moment known unlocked and some never checked, "$0" claimed the collector
+    // could sell nothing — a fabricated zero (a 295-moment wallet, every one unchecked, read
+    // "Unlocked $0"). Unknown renders "—"; a partly-checked wallet keeps its known figure.
+    value: props.unlockedCount === 0 && lockUnknownCount != null && lockUnknownCount > 0
+      ? "—"
+      : formatUsdWhole(unlockedFmv),
     title: lockUnknownCount != null && lockUnknownCount > 0
       ? formatCount(lockUnknownCount) + " " + noun + " not checked yet" + (lockUnknownFmv != null ? " (" + formatCurrency(lockUnknownFmv) + ")" : "") + " — not counted here"
       : undefined,

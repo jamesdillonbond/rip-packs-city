@@ -100,6 +100,19 @@ describe("WalletStatRow", () => {
     expect(container.textContent).not.toContain("null locked")
   })
 
+  it("⛔ every moment unchecked → Unlocked is unknown (—), never a fabricated $0 (2026-11-26)", () => {
+    const { getByTestId } = render(<WalletStatRow {...props({ unlockedFmv: 0, unlockedCount: 0, lockedFmv: 0, lockedCount: 0, lockUnknownFmv: 57.16, lockUnknownCount: 295 })} />)
+    const el = getByTestId("binder-stat-unlocked")
+    expect(el.textContent).toBe("Unlocked—")
+    expect(el.textContent).not.toContain("$0")
+    expect(el.getAttribute("title")).toBe("295 moments not checked yet ($57.16) — not counted here")
+  })
+
+  it("a wallet whose every checked moment is locked still reads a real $0 Unlocked", () => {
+    const { getByTestId } = render(<WalletStatRow {...props({ unlockedFmv: 0, unlockedCount: 0, lockUnknownFmv: 0, lockUnknownCount: 0 })} />)
+    expect(getByTestId("binder-stat-unlocked").textContent).toBe("Unlocked$0")
+  })
+
   it("distinguishes a real computed $0 from missing data", () => {
     const { container } = render(<WalletStatRow {...props({ unlockedFmv: 0 })} />)
     expect(container.textContent).toContain("$0")
