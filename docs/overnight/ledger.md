@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 8:29 AM PT — Links to league pages no longer prefetch (14 of them shipped at 7:30 AM)
+
+The "By league" table added to Panini Analytics this morning rendered 14 `<Link>`s to ISR league pages with default viewport prefetch — the 11-12 `/teams` cold-regeneration storm shape, on the pages that had just been found serving a cached failed render. Those links, the tab's scope note and the Candy Packs league line now carry `prefetch={false}`; `__tests__/league-page-links-do-not-prefetch.test.ts` walks app/ and components/ for every link to a league page (inspected count asserted, planted defect proven). No DB change. Final rendered sweep of every scoped surface: clean.
+
+**Revert:** revert the commit "league page links: no prefetch" (by message).
+
 ### 2026-11-27 · 8:27 AM PT — 📏 MEASURED (not shipped) — a predictive FMV for never-sold Panini editions: comparables model + backtest (Claude Code cloud; Trevor: "The asking price shouldn't really matter … a predictive fmv … based upon what we've seen elsewhere")
 
 - Same-card comparables model, fitted per target-mint bucket on 24,392 real-sale pairs. Backtest on 1,035 ASK_ONLY editions' first sales: comparables-only 0.78 MdAE vs today's ask × 0.5 at 0.69 (biased toward ask rules: first sales are often buys at the ask, and over-asked cards never sell). **Blend √(ask rule × comparables) 0.58**, and 0.48 vs 0.69 for mint > 10. The Rolling Stones 1/1 is $984 today; the model gives ≈ $110 and the blend ≈ $330. Write-up and three options: `docs/proposals/panini-predictive-fmv-for-unsold-editions-2026-11-27.md`.
