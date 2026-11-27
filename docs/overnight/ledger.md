@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 8:27 AM PT — 📏 MEASURED (not shipped) — a predictive FMV for never-sold Panini editions: comparables model + backtest (Claude Code cloud; Trevor: "The asking price shouldn't really matter … a predictive fmv … based upon what we've seen elsewhere")
+
+- Same-card comparables model, fitted per target-mint bucket on 24,392 real-sale pairs. Backtest on 1,035 ASK_ONLY editions' first sales: comparables-only 0.78 MdAE vs today's ask × 0.5 at 0.69 (biased toward ask rules: first sales are often buys at the ask, and over-asked cards never sell). **Blend √(ask rule × comparables) 0.58**, and 0.48 vs 0.69 for mint > 10. The Rolling Stones 1/1 is $984 today; the model gives ≈ $110 and the blend ≈ $330. Write-up and three options: `docs/proposals/panini-predictive-fmv-for-unsold-editions-2026-11-27.md`.
+- **Revert:** none (analysis only; no price changed).
+
 ### 2026-11-27 · 8:15 AM PT — main red for ~15 min on my 8:04 AM commit: a second test of /api/panini-properties
 
 `fe0ec47` reddened CI (unit shard 2/4 and component shard 1/2, one test each): `__tests__/panini-scope.test.tsx` also calls the route, and its Supabase mock had no `rpc`, so the new league-board read failed and the route answered 500. I had run only the new test file and the tree-walking guards — not `grep -rl <route> __tests__`, which CLAUDE.md asks for. The mock now answers the board read; no product code changed. Production was unaffected (the deploy for `fe0ec47` is READY and serves 14 leagues).
