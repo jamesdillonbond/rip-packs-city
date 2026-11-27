@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-26 · 4:53 PM PT — 🗄 APPLIED `20261127005234` — Top Shot pack market: "Retail" is the drop price again, not today's lowest ask (Claude Code cloud, autonomous pass)
+
+- **Found live:** `/insights/topshot-pack-market` ("rank them by discount-to-retail") listed "Holiday of Hoops: Trade Ticket · Retail **$69.99** · median $7.74 · 0.11×". Its drop price is **$10.00**, so the real ratio is 0.77×. On pack pages, dist 8596 (a case topper with no standalone retail) read "Retail $209 · trades 1.20× retail — secondary premium" beside the page's own "No standalone retail price".
+- **Cause:** `v_topshot_pack_market.retail_price` came from `mv_pack_ev_latest.pack_price`, which is the secondary ask for **all 1,852** Top Shot dists (`price_source = 'secondary'`, `primary_price` NULL). The real drop price agreed with it on 26 of 1,356 qualifying dists.
+- **Now:** `retail_price` is `pack_distributions.metadata.retail_price_usd`, normalized exactly as `pack_table_rows` does (the source the pack page's price line uses). 0 (reward, box and case packs) and holding sentinels are NULL, so they get no ratio and no verdict. 245 qualifying dists keep a ratio (118 below 0.85×, 93 above 1.15×), enough for both 15-row lists. Same columns and types; `security_invoker=on` verified after; anon SELECT kept. The All Day board reads its own `allday_pack_supply.pack_price` and is untouched. The migration file is byte-exact to `schema_migrations` (md5 `9bad33d4…`).
+- **Watch:** the board refreshes within its 10-min ISR. Holiday of Hoops: Trade Ticket should read Retail $10.00, and dist 8596's resale line should carry no retail. Falsifier: either still shows the ask.
+- **Revert:** re-create the view from `20260924122704` (`retail_price := ev.pack_price` over `mv_pack_ev_latest`) `WITH (security_invoker = on)`.
+
 ### 2026-11-26 · 4:46 PM PT — Pack Sniper: a row's age says "ask moved", not a bare "2m ago" that read as "listed" (Claude Code cloud, autonomous pass)
 
 - **Found live** on `/insights/pack-sniper`: the "Just listed (2h)" tile read **0**, while rows showed "2m ago", "1h ago" and so on. The chip was `askChangedAt`, when the pack's lowest ask last changed (a cheaper listing, a sale or a delist), unlabelled, so it read as a listing time. A new row (first seen within 2 h, the tile's own rule) now reads "listed 20m ago"; every other row reads "ask moved 2m ago", and the chip has a title. The sort and tile logic are unchanged.
