@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 8:06 AM PT — Panini league pickers stop offering WWE and Collegiate (no cards on record)
+
+`/api/panini-properties` listed every league with a product in Panini's catalogue. WWE (5 products) and Collegiate (2) have 0 cards RPC has ever seen, so the scope bar and each League pill row offered a pick that emptied the tab and linked a league page that 404s. The index now lists a league only when the league board counts at least one card; a failed count is a 5xx, never the wider list. No DB change.
+
+**Revert:** revert the commit "panini leagues: offer only leagues with cards" (by message).
+
 ### 2026-11-27 · 7:57 AM PT — Panini league pages render again (every one was "Couldn't load this page" behind a 200)
 
 A rendered sweep of all 25 league / brand pages found all 16 Panini ones on the failed-read state. `get_panini_property_page` cost ~1M buffers and 3–6 s for any league (a SQL array helper inlined into a scan filter, re-run per row), so the page passed its read deadline and ISR kept the failure for 30 minutes at a time. The ids are now read once: ~0.2 s, json md5-identical on five leagues (`20261127155238`). `e2e/smoke.spec.ts` gains one league page per publisher with the heading only a successful read renders.
