@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
+import { askHeavyPct, poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
 
 const NOW = Date.parse("2026-11-27T19:00:00Z")
 // Base Set (Series 2, Release 32), measured 11-27: 98 % drawn, mix unchanged.
@@ -27,5 +27,18 @@ describe("poolMixMeasuredFlat — only ever clears a warning on a full measureme
     expect(poolMixMeasuredFlat({ ...flat, computed_at: null }, NOW)).toBe(false)
     expect(poolMixMeasuredFlat(null, NOW)).toBe(false)
     expect(poolMixMeasuredFlat(undefined, NOW)).toBe(false)
+  })
+})
+
+describe("askHeavyPct — the share of value resting on never-sold asks", () => {
+  it("names it at >= 50 % on a fresh measurement (Fit Check (Diced): 100 %)", () => {
+    expect(askHeavyPct({ ...flat, ask_value_share: "1.0000" }, NOW)).toBe(100)
+    expect(askHeavyPct({ ...flat, ask_value_share: 0.5 }, NOW)).toBe(50)
+  })
+  it("stays silent below 50 %, on a missing value, or on a stale measurement", () => {
+    expect(askHeavyPct({ ...flat, ask_value_share: "0.0011" }, NOW)).toBeNull()
+    expect(askHeavyPct({ ...flat, ask_value_share: null }, NOW)).toBeNull()
+    expect(askHeavyPct({ ...flat, ask_value_share: 1, computed_at: "2026-11-25T00:00:00Z" }, NOW)).toBeNull()
+    expect(askHeavyPct(null, NOW)).toBeNull()
   })
 })

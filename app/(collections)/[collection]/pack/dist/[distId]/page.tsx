@@ -107,7 +107,7 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { accentText } from "@/lib/accent-text"
 import { marketWalletHref } from "@/lib/analytics/wallet-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
-import { poolMixMeasuredFlat } from "@/lib/packs/pool-skew"
+import { askHeavyPct, poolMixMeasuredFlat } from "@/lib/packs/pool-skew"
 import { ogCardDayKey } from "@/lib/og/card-day-key"
 
 export const revalidate = 600
@@ -321,6 +321,7 @@ export default async function PackDetailPage(
   // Top Shot only: is what is left in the pool measurably the launch mix? (2026-11-27)
   const poolSkewRes = await fetchTopshotPoolSkew(collection, distId)
   const poolMixFlat = poolMixMeasuredFlat(poolSkewRes.data)
+  const askHeavy = askHeavyPct(poolSkewRes.data)
   const row = bundle.pack_row ?? null
   const fallback = bundle.dist_fallback ?? null
   if (!row && !fallback) {
@@ -1280,7 +1281,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="Actual EV"
           value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
-          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "No standalone retail — no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "No standalone retail — no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask${packEv > 0 && askHeavy != null ? ` · ${askHeavy}% from asks on never-sold Moments` : ""}` : undefined}
           color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         {/* Typical Pull EV (2026-07-16) — the value of a typical pull (weighted

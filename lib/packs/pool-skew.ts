@@ -33,6 +33,7 @@ export type PoolSkewRow = {
   fmv_coverage: number | string | null
   pool_fetched_at: string | null
   computed_at?: string | null
+  ask_value_share?: number | string | null
 }
 
 function n(v: number | string | null | undefined): number | null {
@@ -56,4 +57,19 @@ export function poolMixMeasuredFlat(row: PoolSkewRow | null | undefined, nowMs: 
   return true
 }
 
-export const POOL_SKEW_COLUMNS = "dist_id, listed_share, skew, fmv_coverage, pool_fetched_at, computed_at"
+export const POOL_SKEW_COLUMNS = "dist_id, listed_share, skew, fmv_coverage, pool_fetched_at, computed_at, ask_value_share"
+
+// How much of a pool's remaining value rests on ASKING prices for Moments that have never sold
+// (topshot_pool_skew.ask_value_share, migration 20261127203006). Returns a whole percent when it is
+// ≥ 50 % on a fresh measurement, else null. Callers show it only beside a POSITIVE verdict — a buy
+// signal resting on asks is the case worth a basis note (11-27: the only +EV Top Shot pack on the board,
+// Fit Check (Diced), was 100 % one never-sold Moment's ask). Pinnacle carries the same fact.
+export const ASK_VALUE_SHARE_MIN = 0.5
+export function askHeavyPct(row: PoolSkewRow | null | undefined, nowMs: number = Date.now()): number | null {
+  if (!row) return null
+  const share = n(row.ask_value_share ?? null)
+  if (share == null || share < ASK_VALUE_SHARE_MIN) return null
+  const computed = row.computed_at ? Date.parse(row.computed_at) : NaN
+  if (!Number.isFinite(computed) || nowMs - computed > POOL_SKEW_COMPUTED_MAX_AGE_MS) return null
+  return Math.round(share * 100)
+}

@@ -216,4 +216,12 @@ describe("PackPageClient toPackRow — Pinnacle drop pools", () => {
     expect(row.lowConfidenceTitle).toContain("60% of this pack's EV")
     expect(row.lowConfidenceTitle).not.toContain("backed by sales")
   })
+
+  // 2026-11-27: Top Shot sets ask_value_unit — Moments, never "pins" (rpc-units-pins-and-cards rule).
+  it("names the Top Shot unit when the API supplies it", () => {
+    warm.packs = { data: { rows: [apiRow({ ask_value_share_pct: 100, low_confidence_ev: true, ask_value_unit: "Moments that have never sold" })], total: 1 }, loading: false, error: null }
+    const [row] = readRows(render(<PackPageClient {...props()} />).container)
+    expect(row.lowConfidenceTitle).toContain("100% of this pack's EV rests on asking prices for Moments that have never sold")
+    expect(row.lowConfidenceTitle).not.toContain("pins")
+  })
 })

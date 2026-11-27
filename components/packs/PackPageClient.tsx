@@ -111,6 +111,8 @@ interface ApiRow {
   pool_gross_ev?: number | null
   sales_backed_ev?: number | null
   ask_value_share_pct?: number | null
+  /** Top Shot sets this ("Moments that have never sold"); Pinnacle leaves it unset. */
+  ask_value_unit?: string | null
 }
 
 interface ApiResponse {
@@ -282,7 +284,7 @@ function toPackRow(
     // Pinnacle: the basis FACT that most of the EV rests on asking prices
     // (shown as the "from asks" marker's title). No confidence framing.
     lowConfidenceTitle: r.ask_value_share_pct != null && Number(r.ask_value_share_pct) >= 50
-      ? `${Math.round(Number(r.ask_value_share_pct))}% of this pack's EV rests on asking prices for pins that have barely traded${r.sales_backed_ev != null ? (Number(r.sales_backed_ev) === 0 ? '; none of it is backed by sales' : `; $${Number(r.sales_backed_ev).toFixed(2)} of it is backed by sales`) : ''}.`
+      ? `${Math.round(Number(r.ask_value_share_pct))}% of this pack's EV rests on asking prices for ${r.ask_value_unit ?? 'pins that have barely traded'}${r.sales_backed_ev != null ? (Number(r.sales_backed_ev) === 0 ? '; none of it is backed by sales' : `; $${Number(r.sales_backed_ev).toFixed(2)} of it is backed by sales`) : ''}.`
       : null,
   }
 }

@@ -5,7 +5,7 @@ import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 import { apiErrorResponse } from "@/lib/api-error"
 import { accentInsensitiveRegex } from "@/lib/search/accent-regex"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { POOL_SKEW_COLUMNS, poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
+import { POOL_SKEW_COLUMNS, askHeavyPct, poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
 //
@@ -182,11 +182,19 @@ export async function GET(req: NextRequest) {
       console.error("[api/packs] pool skew merge", skewError.message)
     } else if (skewData?.length) {
       const nowMs = Date.now()
-      const flat = new Set(
-        (skewData as PoolSkewRow[]).filter((s) => poolMixMeasuredFlat(s, nowMs)).map((s) => String(s.dist_id)),
-      )
+      const byDist = new Map((skewData as PoolSkewRow[]).map((s) => [String(s.dist_id), s]))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      rows = (rows as any[]).map((r) => (flat.has(String(r.dist_id)) ? { ...r, pool_mix_flat: true } : r))
+      rows = (rows as any[]).map((r) => {
+        const s = byDist.get(String(r.dist_id))
+        if (!s) return r
+        let out = poolMixMeasuredFlat(s, nowMs) ? { ...r, pool_mix_flat: true } : r
+        // A POSITIVE verdict resting mostly on never-sold asks carries the existing "from asks" basis
+        // marker (same one Pinnacle uses). Not shown on −EV rows: it would not change the decision.
+        const margin = Number(r.calibrated_margin_pct ?? r.ev_margin_pct)
+        const askPct = Number.isFinite(margin) && margin > 0 ? askHeavyPct(s, nowMs) : null
+        if (askPct != null) out = { ...out, low_confidence_ev: true, ask_value_share_pct: askPct, ask_value_unit: "Moments that have never sold" }
+        return out
+      })
     }
   }
 
