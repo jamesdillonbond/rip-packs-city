@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 8:40 AM PT — Bid vs Floor lists only bids seen open in the last 24 h (Trevor caught a $91 Ace Bailey offer that was $68 live)
+
+The board's stored top offer stood for weeks once a bid was pulled: `sync_edition_offers_from_atlas` step (b) rewrites `highest_offer` only for editions verified in 24 h and `raise_edition_offers_from_chain` is raise-only. Ace Bailey Rookie Debut /99 (219:7423::17) read $91 (last seen 10-29; cancelled on chain 11-10) vs $68 on Top Shot. Before: of 303 "bid meets ask" rows, 9 had a bid seen open in 24 h. Migration `20261127162858_audit_20261127_offer_spread_shows_only_bids_seen_in_24h`: `edition_offers.highest_offer_seen_at/_seen_amount`, pg_cron `rpc-edition-offer-seen-stamp` (job 942, :08/:38), view gated on seen-in-24h + appends `offer_seen_at` (after: 3,724 rows, 8 meet-ask, Ace row gone, 46 ms / 12k hit buffers). `lib/insights/offer-spread-board.ts` selects `offer_seen_at` for Top Shot; `x-draft.mjs` Friday offer-spread quotes only bids seen in 6 h. **Follow-up (not done):** moment pages / checklists / `get_edition_high_offer` still read the unstamped `highest_offer`.
+
+**Revert:** `SELECT cron.unschedule('rpc-edition-offer-seen-stamp');` re-apply the 20260914170500 view body + `ALTER VIEW public.topshot_offer_ask_spread SET (security_invoker = on);` then `git revert` this commit.
+
 ### 2026-11-27 · 8:29 AM PT — Links to league pages no longer prefetch (14 of them shipped at 7:30 AM)
 
 The "By league" table added to Panini Analytics this morning rendered 14 `<Link>`s to ISR league pages with default viewport prefetch — the 11-12 `/teams` cold-regeneration storm shape, on the pages that had just been found serving a cached failed render. Those links, the tab's scope note and the Candy Packs league line now carry `prefetch={false}`; `__tests__/league-page-links-do-not-prefetch.test.ts` walks app/ and components/ for every link to a league page (inspected count asserted, planted defect proven). No DB change. Final rendered sweep of every scoped surface: clean.
