@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 8:08 AM PT — 📏 READS — offer-book index confirmed; the three 11-27 overnight Candy items re-measured: no change warranted (Claude Code cloud)
+
+- **`idx_tame_open_offers_by_edition_cover` (`20261127003011`) confirmed in production:** in `ts-listings-atlas-sync`, the `edition_offers` median went from **5.9 s to 2.1 s (−65 %)**, 384 runs before vs 188 after. The untouched steps in the same ticks are the controls, and they held flat (sync 3.4 s → 3.5 s, cached_listings 1.8 s → 1.5 s), so the drop is the index, not a quieter estate. Watch closed.
+- **candy-wallet-refresh "HIGH" (handoff item 1): working as designed, no fix.** All 6 failing runs are ONE wallet (`6uKec…`, ~125k cards) between 3:23 and 4:48 PM PT 11-26, during the Candy whale-wallet QA. A 125k-card wallet cannot be walked inside a 60 s anonymous request. The walk wrote what it read (no write errors), retired nothing, and returned `complete:false`; the tab then says it is showing the last daily census. There have been no runs since. Carving whale wallets onto their own cadence is optional; the daily census already covers them.
+- **candy-set-progress truncation (item 2):** the same wallet hitting the same honest `maxPages` cap (a truncated read is labelled as partial). Same disposition.
+- **candy-edition-holders MV refresh (item 3):** 22 of 24 runs in 3 days took 18–58 s against the 120 s cap. Both timeouts fell in heavy afternoon shipping and IO windows (11-25 7:33 PM, 11-26 1:33 PM), and the last 6 runs are clean. Per its own filing: no change on this reading. Re-check only if a timeout lands in a quiet window.
+- **384 same-tx twins (item 4):** applied by another session (`20261127012648`). The archive holds 384 rows. Closed.
+- **Revert:** none (reads only).
+
 ### 2026-11-27 · 8:06 AM PT — Panini league pickers stop offering WWE and Collegiate (no cards on record)
 
 `/api/panini-properties` listed every league with a product in Panini's catalogue. WWE (5 products) and Collegiate (2) have 0 cards RPC has ever seen, so the scope bar and each League pill row offered a pick that emptied the tab and linked a league page that 404s. The index now lists a league only when the league board counts at least one card; a failed count is a 5xx, never the wider list. No DB change.
