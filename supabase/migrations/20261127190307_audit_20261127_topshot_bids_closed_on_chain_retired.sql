@@ -29,6 +29,10 @@
 -- Cost measured as a SELECT: 2,214 rows, ~202k buffers, 10.8 s COLD (IO reads on the Atlas cover index); the
 -- steady-state population after the first run is the hourly new closures.
 --
+-- ⚠ EDITED IN PLACE 11-27 ~11:30 AM PT: as applied (version 20261127190307) both handlers read `WHEN OTHERS`,
+-- blind to a statement_timeout kill (R118 guard reddened CI). Live body fixed by 20261127193157; this file now
+-- carries the corrected handlers so the forward-only guard reads the intended body.
+--
 -- anon-exec: revoked (retire_closed_topshot_bids) — new function; revoked from PUBLIC, anon, authenticated below,
 -- EXECUTE granted to service_role (the pg_cron caller is the owner, postgres).
 --
@@ -106,7 +110,7 @@ BEGIN
      WHERE eo.collection_id = v_cid AND eo.external_id = b.external_id
        AND eo.highest_offer = b.highest_offer;
     GET DIAGNOSTICS v_retired = ROW_COUNT;
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
     v_err := left(SQLERRM, 300);
     v_retired := 0;
   END;
@@ -116,7 +120,7 @@ BEGIN
   IF v_err IS NULL AND v_retired > 0 THEN
     BEGIN
       v_raised := public.raise_edition_offers_from_chain();
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN query_canceled OR OTHERS THEN
       v_raise_err := left(SQLERRM, 300);
     END;
   END IF;
