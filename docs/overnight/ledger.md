@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 12:25 PM PT — 🗄 APPLIED `20261127200239` — Pack Reality "Honest +EV ranker": high-variance uses the measured pool mix
+
+- `topshot_pack_reality_top_ev` (view over the MV) recomputes `high_variance`: the ≥ 60 %-drawn arm now skips one-edition pools and pools whose mix is measured flat (`topshot_pool_skew`, same gate as lib/packs/pool-skew.ts). Coverage < 80 % and EV > 3× ask arms unchanged. Done in the view because `v_rpc_trust_health` depends on it (dropping the MV would cascade); `security_invoker=on` and anon SELECT verified after. Board copy updated to match. The ranker was empty at ship (0 rows), so nothing visible moved today.
+- **Revert:** `CREATE OR REPLACE VIEW public.topshot_pack_reality_top_ev WITH (security_invoker = on)` with the MV's own `high_variance` column in place of the recomputed expression; revert the commit "Pack Reality ranker: high-variance uses the measured pool mix".
+
 ### 2026-11-27 · 12:05 PM PT — Survivor-bias gate: a stalled measurement never clears a warning; "Almost sold out" tooltip no longer claims editions sold out
 
 - `poolMixMeasuredFlat` now also requires `topshot_pool_skew.computed_at` ≤ 24 h, so if the hourly job stops the warnings come back instead of a frozen ratio clearing them. The packs-board "Almost sold out" chip said "most editions in the pool are sold out" — the same supply-vs-editions confusion as the 9:40 chip; now "80% or more of the pack pool has already been pulled".
