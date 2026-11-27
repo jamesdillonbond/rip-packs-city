@@ -377,6 +377,7 @@ describe("fetchPackRealizedEv", () => {
         data: {
           modeled_gross_ev: 30,
           n_opens: 25,
+          n_valued: 25,
           realized_mean: 21,
           realized_median: 18,
           realized_to_modeled_ratio: 0.7,
@@ -389,6 +390,21 @@ describe("fetchPackRealizedEv", () => {
     // p90 and calibrated_ev do not exist on the All Day view — they must be
     // null, never silently borrowed from another field.
     expect(res.data).toMatchObject({ realized_p90: null, calibrated_ev: null, n_opens: 25 })
+  })
+
+  // 2026-11-26: the mean/median/ratio are over the VALUED opens, so the count the page gates on and
+  // prints must be those. Live: dist 413 had 2,407 opens, 2 valued, and read "2,407 attributed opens ·
+  // Model tracks actual pulls" from two priced packs.
+  it("⛔ All Day: the open count is the PRICED opens the mean is over, never every open", async () => {
+    const { db } = makeDb({
+      v_allday_pack_realized_ev: {
+        data: { modeled_gross_ev: 4.41, n_opens: 2407, n_valued: 2, realized_mean: 5.59, realized_median: 5.59, realized_to_modeled_ratio: 1.268 },
+        error: null,
+      },
+    })
+    const res = await fetchPackRealizedEv("nfl-all-day", "413", db)
+    expect(res.data?.n_opens).toBe(2)
+    expect(res.data?.n_opens).not.toBe(2407)
   })
 
   it("All Day: error → ok:false; absent → ok:true", async () => {

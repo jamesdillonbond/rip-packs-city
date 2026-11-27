@@ -599,7 +599,7 @@ export async function fetchPackRealizedEv(
     const { data, error } = await bounded(
       db
         .from("v_allday_pack_realized_ev")
-        .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_to_modeled_ratio")
+        .select("modeled_gross_ev, n_opens, n_valued, realized_mean, realized_median, realized_to_modeled_ratio")
         .eq("dist_id", distId)
         .maybeSingle(),
       "allday_pack_realized_ev",
@@ -613,7 +613,12 @@ export async function fetchPackRealizedEv(
       ok: true,
       data: {
         modeled_gross_ev: data.modeled_gross_ev ?? null,
-        n_opens: data.n_opens ?? null,
+        // 2026-11-26: the PRICED opens, as the open-history branch below already does. The view's
+        // mean, median and ratio are over n_valued; n_opens is every open. Passing n_opens let the
+        // page's ">= 10 opens" gate pass on 2 priced packs and print "2,407 attributed opens · Model
+        // tracks actual pulls" (dist 413; 572 All Day dists with < 10 priced opens). The public All Day
+        // pack-reality board already gates on n_valued.
+        n_opens: data.n_valued ?? null,
         realized_mean: data.realized_mean ?? null,
         realized_median: data.realized_median ?? null,
         realized_p90: null,
