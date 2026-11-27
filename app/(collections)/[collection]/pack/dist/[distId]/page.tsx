@@ -724,7 +724,8 @@ export default async function PackDetailPage(
   // appears to, or the pool is mostly opened, the EV is survivor-biased: render it
   // neutral and surface the secondary ask as the honest value estimate.
   const evInflatedVsAsk = isEvInflatedVsAsk({ secondaryAvailable, secondaryAsk, grossEv })
-  const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60
+  // A one-edition pool cannot be survivor-biased: every remaining pull is that edition (2026-11-27).
+  const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60 && editionCount !== 1
   // ⚠ A stale snapshot is a THIRD reason the EV must not headline, added
   // 2026-08-15. `+EV` is an affirmative buy signal, and this page published it
   // from whatever `pack_ev_history` last held, however old — the age appeared
@@ -753,6 +754,7 @@ export default async function PackDetailPage(
     useCorrectedEv,
     hasDropPool,
     depletionPct: poolDepletionPct,
+    editionCount,
     secondaryAvailable,
     secondaryAsk,
     grossEv,
@@ -1305,7 +1307,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="FMV coverage"
           value={fmvCoverage === null ? "—" : `${fmvCoverage}%`}
-          sub={editionCount === null ? undefined : `${editionCount} editions`}
+          sub={editionCount === null ? undefined : `${editionCount} ${editionCount === 1 ? "edition" : "editions"}`}
         />
         {/* F4 (2026-07-02): reward/quest packs (retail=0) mint-on-demand, so their
             total_minted / total_opened / total_pack_count counters are dead-by-design

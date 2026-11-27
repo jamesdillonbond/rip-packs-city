@@ -152,12 +152,16 @@ export function isSurvivorBiased(input: {
   secondaryAsk: number | null | undefined
   grossEv: number | null | undefined
   hasDropPool?: boolean
+  /** A one-edition pool (editionCount === 1) has no survivor mix: the depletion arm never fires
+   *  (2026-11-27). The EV-vs-ask arm still does — that is a price disagreement, not a mix. */
+  editionCount?: number | null
 }): boolean {
   const hasDropPool = input.hasDropPool ?? true
+  const mixed = input.editionCount == null || input.editionCount !== 1
   return (
     !input.useCorrectedEv &&
     hasDropPool &&
-    ((input.depletionPct != null && input.depletionPct >= 90) ||
+    ((mixed && input.depletionPct != null && input.depletionPct >= 90) ||
       isEvInflatedVsAsk({
         secondaryAvailable: input.secondaryAvailable,
         secondaryAsk: input.secondaryAsk,

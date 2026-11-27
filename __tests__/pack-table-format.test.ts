@@ -109,6 +109,10 @@ describe("marginClass", () => {
   })
   it("negative margin → red", () => {
     expect(marginClass(-0.1, 0.99)).toBe("text-red-400")
+    // 2026-11-27: a one-edition pool has no survivor mix — its positive margin keeps its colour.
+    expect(marginClass(0.5, 0.95, 1)).toBe("text-emerald-400")
+    expect(marginClass(0.5, 0.95, 2)).toBe("text-[color:var(--rpc-text-secondary)]")
+    expect(marginClass(0.5, 0.95, null)).toBe("text-[color:var(--rpc-text-secondary)]")
   })
   it("zero margin → secondary", () => {
     expect(marginClass(0)).toBe("text-[color:var(--rpc-text-secondary)]")

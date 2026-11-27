@@ -70,10 +70,17 @@ export function fmtPct(n: number | null | undefined): string {
 // instead of screaming a fake green margin. (Item 11, 2026-06-26 audit.)
 export const HEAVY_DEPLETION_THRESHOLD = 0.9
 
-export function marginClass(pct: number | null, poolDepletionPct?: number | null): string {
+// A one-edition pool has no survivor bias however far it is drawn: every remaining pull is the
+// same edition, so the mean IS a typical pull (2026-11-27, Fit Check (Diced): 80 % drawn, EV = its FMV).
+export function poolHasSurvivorMix(editionCount: number | null | undefined): boolean {
+  return editionCount == null || editionCount !== 1
+}
+
+export function marginClass(pct: number | null, poolDepletionPct?: number | null, editionCount?: number | null): string {
   if (pct == null) return 'text-[color:var(--rpc-text-muted)]'
   if (
     pct > 0 &&
+    poolHasSurvivorMix(editionCount) &&
     poolDepletionPct != null &&
     Number.isFinite(poolDepletionPct) &&
     poolDepletionPct >= HEAVY_DEPLETION_THRESHOLD

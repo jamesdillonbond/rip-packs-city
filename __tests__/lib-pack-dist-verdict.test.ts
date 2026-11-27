@@ -164,6 +164,11 @@ describe("isSurvivorBiased", () => {
   }
   it("fires on a ≥90% depleted pool", () => {
     expect(isSurvivorBiased({ ...base, depletionPct: 90 })).toBe(true)
+    // 2026-11-27: a one-edition pool is never survivor-biased by depletion (every pull is that edition)…
+    expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 1 })).toBe(false)
+    expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 2 })).toBe(true)
+    // …but EV > 3× a live ask still flags it: that is a price disagreement, not a mix.
+    expect(isSurvivorBiased({ ...base, depletionPct: 99, editionCount: 1, secondaryAvailable: true, secondaryAsk: 10, grossEv: 100 })).toBe(true)
     expect(isSurvivorBiased({ ...base, depletionPct: 95 })).toBe(true)
   })
   it("does not fire just below 90% depletion with no ask inflation", () => {
