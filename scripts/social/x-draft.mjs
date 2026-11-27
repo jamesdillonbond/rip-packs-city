@@ -345,6 +345,9 @@ const TEAM_HASHTAG = {
   "Los Angeles Lakers": "#LakeShow",
   // Trevor, 11-23 (showed the team logo in the composer). #RepTheHalo and #VamosArgentina did not.
   "Dallas Mavericks": "#MFFL",
+  // Trevor, 11-27 (grail post): #PorVida shows the logo. These did NOT and are not used: #LetsGoBucs,
+  // #DallasWings, #FeverRising, #NYGiants, #RiseUpDC, #RepBX.
+  "San Antonio Spurs": "#PorVida",
 }
 // Dates a slot is skipped on purpose, with why. The task reports skip_reason and offers --slot sat.
 const SKIP_DATES = {
