@@ -49,6 +49,8 @@ const ROUTES = [
   // OUTSIDE this list (light-theme contrast, an unlabelled select) — fixed, then
   // re-read clean on production in both themes before being added here.
   "/help",
+  // 2026-11-27: the beginner's guide; added with a dispatched e2e-smoke run as its first production read.
+  "/help/new-to-collecting",
   "/insights/parallel-premiums",
   "/insights/candy-mlb",
   "/insights/market",
