@@ -200,7 +200,7 @@ export default function CandyPackMarket() {
               NASCAR collector does not read a missing filter as missing data. */}
           <div data-testid="candy-pack-brand">
             <Note>
-              League: <Link href="/candy-mlb/property/mlb" style={{ color: "var(--rpc-text-primary)" }}>MLB</Link>. This is the only sealed Candy pack RPC tracks, so there is nothing to filter by league or brand here.
+              League: <Link prefetch={false} href="/candy-mlb/property/mlb" style={{ color: "var(--rpc-text-primary)" }}>MLB</Link>. This is the only sealed Candy pack RPC tracks, so there is nothing to filter by league or brand here.
             </Note>
           </div>
         </div>

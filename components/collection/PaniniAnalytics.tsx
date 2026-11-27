@@ -231,7 +231,7 @@ export default function PaniniAnalytics({
         <div role="status" data-testid="panini-analytics-scope-note" style={{ padding: "10px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, margin: "12px 0" }}>
           <Note>
             The charts and top lists here cover every Panini product, not {scope.name} alone; the &ldquo;By league&rdquo; table below splits the last 30 days.{" "}
-            <Link href={paniniScopePageHref("panini-blockchain", scope.slug)} style={{ color: "var(--rpc-text-primary)" }}>{scope.name} values and sales →</Link>
+            <Link prefetch={false} href={paniniScopePageHref("panini-blockchain", scope.slug)} style={{ color: "var(--rpc-text-primary)" }}>{scope.name} values and sales →</Link>
           </Note>
         </div>
       ) : null}
@@ -421,7 +421,7 @@ export default function PaniniAnalytics({
                 const picked = scope.slug === r.slug
                 return (
                   <tr key={r.slug} aria-current={picked ? "true" : undefined}>
-                    <td style={{ ...td, fontWeight: picked ? 700 : undefined }}><Link href={paniniScopePageHref("panini-blockchain", r.slug)} style={{ color: "inherit" }}>{r.name}</Link></td>
+                    <td style={{ ...td, fontWeight: picked ? 700 : undefined }}><Link prefetch={false} href={paniniScopePageHref("panini-blockchain", r.slug)} style={{ color: "inherit" }}>{r.name}</Link></td>
                     <td style={td}>{int(r.sales_30d)}</td>
                     <td style={td}>{usd(r.sales_30d_volume_usd)}</td>
                     <td style={td}>{r.sales_30d_volume_usd !== null && total > 0 ? (r.sales_30d_volume_usd > 0 && r.sales_30d_volume_usd / total < 0.005 ? "<1%" : `${Math.round((r.sales_30d_volume_usd / total) * 100)}%`) : "—"}</td>
