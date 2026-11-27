@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 11:32 AM PT — 🗄 APPLIED `20261127193157` — the closed-bid retire's error handlers now see a timeout kill (main red ~25 min on my 11:05 AM commit)
+
+- `20261127190307` shipped `retire_closed_topshot_bids()` with two `EXCEPTION WHEN OTHERS` handlers; a statement-timeout kill escapes those, so a killed run would have recorded nothing. `new-plpgsql-recording-handlers-catch-query-canceled` reddened unit shard 2/4 on `a9cf8086b` and the two commits after it. I ran the migration guards I knew about, not the full shard. Both handlers now read `WHEN query_canceled OR OTHERS` (live via `20261127193157`; the `190307` file edited in place to the same handlers, with a note). No data change; production unaffected.
+- **Revert:** n/a (re-apply the `190307` body with `WHEN OTHERS` — not recommended).
+
 ### 2026-11-27 · 11:45 AM PT — Pack share card (OG) uses the same survivor-bias gate as the page
 
 - `/api/og/pack` suppressed the EV on any ≥ 90 %-drawn pool. It now exempts one-edition pools and Top Shot pools whose remaining mix is measured flat (`topshot_pool_skew`, lib/packs/pool-skew.ts) — so the unfurl agrees with the pack page. A failed skew read keeps the suppression; EV > 3× ask still suppresses.
