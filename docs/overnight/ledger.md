@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:50 PM PT — legacy `/edition/<uuid>` links work again (the editions → collections embed names its FK)
+
+- **Found** on my own page check (3:29 PM PT): `/edition/<uuid>` threw "edition redirect unavailable"; the lookup error was PostgREST `PGRST201` — "more than one relationship was found for 'editions' and 'collections'". `pack_drop_pool`'s primary key holds both `collection_id` and `edition_id`, so PostgREST also sees a many-to-many path. Every legacy link errored (1 hit in 7 days — mine — so low traffic, but always broken).
+- **Fix:** `lib/edition/legacy-redirect.ts` selects `collections!editions_collection_id_fkey!inner(slug)`. Checked against the live REST API: old form → 300 PGRST201; new form → 200 `{"external_id":"3163","collections":{"slug":"nfl_all_day"}}` (same shape the code reads). Test pins the named FK and bans the bare form (fails on the old code). Preflight green. Only other `collections(` embed is `saved_wallets` (no second path).
+- **Revert:** `git revert` this commit (by message).
+
 ### 2026-11-27 · 3:31 PM PT — New-user paths lead to the beginner's guide; first-run tour copy no longer Flow-only
 
 - Follow-on to the 2:39 PM PT /help/new-to-collecting guide (Trevor: "Keep going on this thread"). The guide is now linked from the three places a first-time visitor lands: the home hero (under Create free account), the dashboard's first-visit "Track your collection" form, and the first-run tour's welcome step (new optional `link` on a tour step).
