@@ -1,4 +1,4 @@
-# Inbox index — 708 live filings
+# Inbox index — 710 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -34,10 +34,12 @@ failure it documents.
 
 ---
 
-## 2026-11-27 — 1 filing
+## 2026-11-27 — 2 filings
 - [HELD DELETE (not applied, confirmation timed out): 384 Top Shot sales stored twice under one tx hash (topshot_marketplace NFT-less + dapper_chain_tx_v1), March 23–30 2026, $1,842 double-counted; SQL editor or attended apply — Claude Code cloud, MEDIUM](2026-11-27T0125Z-claude-code-held-delete-384-same-tx-topshot-sale-twins.md)
+- [Candy set-progress read truncates for large candy wallets (maxPages=20 / 57014 timeout) — honest partial, 2 users/3 events, route read-budget as candy_mlb editions grew — rpc-daytime-monitor, LOW; swept onto main by the 11-27 overnight pass](2026-11-27T0107Z-rpc-daytime-monitor-candy-set-progress-large-wallet-truncation.md)
 
-## 2026-11-26 — 3 filings
+## 2026-11-26 — 4 filings
+- [candy-edition-holders MV refresh: 2nd statement-timeout in 24h (21:33Z + 03:33Z) under IO saturation during the afternoon shipping wave — SYMPTOM, re-measure in a quiet window over ≥ several days before acting — rpc-daytime-monitor, LOW/self-healing; swept onto main by the 11-27 overnight pass](2026-11-26T2207Z-daytime-monitor-candy-edition-holders-2nd-timeout.md)
 - [VM /sessions scratch disk 100% full blocks push route 1 (nightly VM clone); un-deletable cross-user `nobody` dirs; shallow sparse-clone fallback proven & used to push this — rpc-daytime-monitor, LOW/infra](2026-11-26T1936Z-rpc-daytime-monitor-vm-sessions-disk-full-blocks-push-route-1.md)
 - [HELD DELETE (not applied, confirmation timed out): two stale zero-yield suppressions whose own re-check conditions are met — `ufc-enrichment-drain` (live again via the backstop) and `pack-pull-source-rip-id-backfill` (examined 12,976 in 72 h); SQL editor or attended apply — Claude Code cloud, LOW](2026-11-26T0432Z-claude-code-held-delete-two-stale-zero-yield-suppressions.md)
 - [candy-edition-holders MV refresh: one statement timeout at 03:33Z (7/8 recent ticks ok; self-clears) — rpc-daytime-monitor, LOW](2026-11-26T0405Z-rpc-daytime-monitor-candy-edition-holders-refresh-timeout.md)

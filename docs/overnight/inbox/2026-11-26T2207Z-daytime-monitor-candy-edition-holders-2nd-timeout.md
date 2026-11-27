@@ -1,0 +1,16 @@
+# Daytime monitor inbox — 2026-11-26T22:07Z (rpc-daytime-monitor)
+
+Push UNAVAILABLE this run: the laptop-VM `/sessions` disk was 100% full (0 bytes
+avail; `df` Use% 100), so `git clone --filter=blob:none … $HOME/rpcwork-mon`
+fetched objects but the working-tree checkout failed with "No space left on
+device". Written to the mount instead per the push-route ROUTE-3 fallback; the
+nightly pass sweeps mount-only inbox files onto main (add the INDEX.md entry in
+that sweep commit). No git was run against the mounted `.git`.
+
+## Candidate 1 — candy-edition-holders MV refresh: 2nd statement-timeout recurrence, under elevated IO-wait (SYMPTOM — quiet-window re-measure; do NOT act on this reading)
+
+- **Title:** pg_cron `rpc-refresh-candy-edition-holders` (`33 */3`, REFRESH MATERIALIZED VIEW `mv_candy_edition_holders`, ~21.5k keys) hit `canceling statement due to statement timeout` again at 2026-11-26 21:33Z — the **2nd timeout in 24h** (first 03:33Z), crossing the ≥2-recurrence bar the night pass itself set when it closed inbox `2026-11-26T0405Z` as a one-off transient.
+- **Source:** `check_pgcron_recent_failures()` → rpc-refresh-candy-edition-holders, latest_status=failed, fails_in_window 2 / runs 8. `cron.job_run_details` for the job: failed 21:33Z + 03:33Z; succeeded on all 6 other 3h ticks today (e.g. 06:33Z ok 35.4s, 18:33Z ok). Error identical both times (statement timeout on the REFRESH).
+- **Context — why this is a SYMPTOM, not a cause (Section 1c):** positive control at 22:05Z read **9 of 9 active backend sessions in IO wait** (the spell signal), although `rpc_ops_snapshot()` itself still returned fast (so moderate IO contention, not a severe spell). Corroborating same-window read-timeouts: `drain-fmv-cold-tail/nba_top_shot` read exceeded 43894ms at 19:17Z; `panini-collector-walk` hit its 4-min per-walk soft cap at 21:32Z (by-design, re-walks next tick); 5 Vercel runtime-error groups, all count=1 read/statement-timeouts, clustered 21:06–22:06Z. All consistent with an IO-contention window during Trevor's active afternoon shipping wave — not a distinct bug. Every duration here is uninterpretable under saturation.
+- **Risk read:** LOW / self-healing. The refresh is idempotent; the next 3h tick re-runs it. All candy trust-health metrics are ok (candy_fmv_stale_hours 0.3, candy_fmv_pct_stale_30d 0, candy_sales_stale 1.9h; trust 42/42 ok, 0 breaches). No user-facing breakage — a skipped tick only leaves the holder MV ~3h staler than usual. After the 03:33Z recurrence, the 06:33Z tick ran ok in 35.4s with IO-wait 0.
+- **Suggested action — quiet-window RE-MEASURE, do NOT conclude from this reading:** in a quiet, uncontended window, measure the `REFRESH MATERIALIZED VIEW mv_candy_edition_holders` duration distribution over **≥ several days** (never an 8-run tail). If it is genuinely approaching the statement_timeout uncontended, weigh: `REFRESH … CONCURRENTLY` (needs a unique index on the MV), a dedicated longer statement_timeout for the jobid, or moving its `33 */3` start off the heavy-cron minute band. If the re-measure shows it times out ONLY under IO saturation, close again as saturation collateral — no change. Symptom observed under saturation — re-measure in a quiet window before acting.
