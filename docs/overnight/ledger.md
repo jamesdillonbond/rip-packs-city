@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 9:03 AM PT — Sold tab "Buyer pulled": the pull list stays on screen on a phone
+
+- Verified live in Trevor's binder (Claude in Chrome): the column renders on every Sold row (e.g. 🔥 $256.05, "Top: LeBron James · Legendary #14/39"). On a narrow screen, the expanded list sat in the sideways-scrolled table with the names off-screen. The panel is now pinned to the visible edge (`position: sticky`).
+- **Revert:** revert the commit "Sold tab: pin the pull list to the visible edge".
+
 ### 2026-11-27 · 8:58 AM PT — 🗄 APPLIED `20261127165742` — Panini never-sold cards with no sold printing of the same card: estimate from the same parallel in the same set + a forward-test instrument (Claude Code cloud; Trevor: "Work through everything still open")
 
 - **What:** `panini_comps_estimate` falls back to the 365-day median sale of the same `set_name` in the same `product_set_id` (other editions, ≥ 3 sales) when no same-card printing has sold; the blend trigger is unchanged. Re-stamped 107 ASK_ONLY editions (66 down), $9,894 → $2,750; backup `audit_20261127_panini_ask_only_comps_backup2`, 107 `fmv_restatements` (source `audit_20261127_panini_ask_only_comps_route2`). 134 still have too few comparable sales and stay on the ask rule. New `panini_comps_forward_test()` (service_role) scores first sales after 8:42 AM PT against the published price; empty at ship. Out-of-sample refit of the 20261127164214 bucket parameters: MdAE 0.553 vs 0.558 in-sample (old 0.693) — parameters kept. `_compblend` note text widened to name both sources (`lib/fmv-basis.ts`).
