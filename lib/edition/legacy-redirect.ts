@@ -55,7 +55,11 @@ export async function lookupLegacyEdition(
     ;({ data, error } = await withBoardBudget<{ data: unknown; error: { message: string } | null }>(
       db
         .from("editions")
-        .select("external_id, collections!inner(slug)")
+        // The FK is NAMED: pack_drop_pool's primary key holds both collection_id and edition_id, so PostgREST
+        // also sees a many-to-many editions↔collections path and a bare `collections!inner(slug)` fails with
+        // PGRST201 "more than one relationship was found" — every legacy /edition/<uuid> link errored (found
+        // 2026-11-27). Naming editions_collection_id_fkey keeps the response shape `collections: { slug }`.
+        .select("external_id, collections!editions_collection_id_fkey!inner(slug)")
         .eq("id", id)
         .maybeSingle(),
       `edition/legacy-redirect ${id}`,

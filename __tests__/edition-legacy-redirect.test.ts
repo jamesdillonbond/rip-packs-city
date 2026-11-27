@@ -133,7 +133,12 @@ describe("lookupLegacyEdition — the three states, driven rather than read", ()
     // The join is load-bearing: the collection slug comes from `collections`,
     // and an `!inner` join is what makes a slug-less edition a miss rather than
     // a half-built redirect target.
-    expect(calls.select[0]).toContain("collections!inner(slug)")
+    // 2026-11-27: and the FK must be NAMED. A table whose primary key holds both collection_id and edition_id
+    // (pack_drop_pool) gives PostgREST a second editions↔collections path, and the unnamed embed failed live
+    // with PGRST201 on every legacy link. Verified against the live API: the named form returns
+    // { external_id, collections: { slug } }.
+    expect(calls.select[0]).toContain("collections!editions_collection_id_fkey!inner(slug)")
+    expect(calls.select[0]).not.toMatch(/collections!inner\(/)
   })
 })
 
