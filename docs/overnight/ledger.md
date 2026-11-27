@@ -20,6 +20,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Measured after:** Index Only Scan, **8,877 buffers, 0 disk reads, 47.6 ms**, the same 2,178 rows.
 - **Watch:** read the next production rows of `pipeline_runs` `ts-listings-atlas-sync`. `extra.edition_offers.duration_ms` should fall from ~6–8 s toward ~2–3 s, since step (a0) at ~43k mostly-hit buffers remains. If the tick's `duration_ms` does not fall, the index did not move the production lane.
 - **Revert:** `DROP INDEX CONCURRENTLY IF EXISTS public.idx_tame_open_offers_by_edition_cover;` (one statement, no prefix).
+- ⓘ Time correction: the heading says 4:45 PM; that time came from a clock I assumed instead of read, and the guard forbids editing a heading. The real time is ~4:31 PM PT: migration version `20261127003011` is 4:30 PM PT, so the "~4:40/4:42 PM PT" times in the migration header are about 10 minutes late (left as applied).
 
 ### 2026-11-26 · 4:19 PM PT — Binder "Unlocked" tile reads "—" when no moment has been lock-checked, not "$0" (Claude Code cloud, autonomous pass)
 
