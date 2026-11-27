@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 12:55 PM PT — 🗄 APPLIED `20261127203006` — Top Shot "+EV" resting on never-sold asks gets the existing "from asks" basis note
+
+- The only Top Shot pack +EV against a live ask (Fit Check (Diced), "+58.3 %") was 100 % one never-sold /10 Moment priced at 0.9 × its own ask. `topshot_pool_skew.ask_value_share` (new column, same hourly job) = share of remaining value on never-sold ASK_ONLY editions. Board: the existing Pinnacle "from asks" marker ("N % of this pack's EV rests on asking prices for Moments that have never sold") on POSITIVE-margin rows only, ≥ 50 % — 1 row today (414 pools are ask-heavy, but on −EV rows the note would not change a decision, so it stays off). Pack page: "· N% from asks on never-sold Moments" on the +EV sub line. Previously-sold editions relabelled ASK_ONLY are not counted (they backtest well).
+- **Revert:** revert the commit "Top Shot: from-asks basis note on +EV packs resting on never-sold asks"; DB: `ALTER TABLE public.topshot_pool_skew DROP COLUMN ask_value_share;` + function body from `20261127184627`.
+
 ### 2026-11-27 · 12:15 PM PT — 🗄 APPLIED 6 migrations — Sold tab reads marketplace sales, names sold packs' pulls, and the All Day naming lane stops failing every lookup (Claude Code cloud; Trevor: "Keep digging and probing")
 
 - `20261127193527` (11:35 AM): a pull linked to a rip counts only if it shares the rip's open tx (2 of 27,501 were a moment bought before the open); pulls carry their parallel name; the opener-username leg asked Atlas in batches of 25 and resolved all 1,260 openers.
