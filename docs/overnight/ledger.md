@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 3:35 PM PT — 🗄 APPLIED `20261127232140` + `20261127232846` + `20261127233155` — big-spender watch (internal intel): every buyer of a top sale tracked
+
+- **What:** Trevor: "start tracking any wallet that has hit any of our top sales", internal only. Tables `big_spender_wallets` / `big_spender_top_sales`, `refresh_big_spender_wallets(p_days)`, `get_big_spender_activity(p_hours, p_min_usd)`, `get_big_spender_summary(p_days)`, `big_spender_item_label(...)`; pg_cron **953** `rpc-big-spender-refresh` (`23 1,7,13,19 * * *`, created with `cron.schedule`); cadence watch `big_spender_refresh` (720 / 1440 min). Top sale = a collection's 25 highest sales in its PT month, $100 min, items and packs ranked separately. First fill: 1,777 top sales since 2025-11-01, 573 wallets. No anon/authenticated access (verified with `has_function_privilege`); nothing user-facing reads it. Runbook: `docs/operations/big-spender-watch.md`.
+- **Revert:** `select cron.unschedule('rpc-big-spender-refresh'); delete from pipeline_cadence_watchlist where pipeline='big_spender_refresh';` then drop the 4 functions and 2 tables (exact statements in the runbook), and `git revert` this commit.
+
 ### 2026-11-27 · 3:40 PM PT — 🗄 DROPPED `public.scratch_ad_sold_open_tx_reads_20261127` (SQL editor) + edition pages verified
 
 - The Sold-tab handoff marked it droppable; before the drop: no view depends on it, no function or pg_cron command names it. Trevor approved ("I approve of you doing all of these actions"); the MCP's confirmation prompt expired unanswered, so it ran in the dashboard SQL editor with `lock_timeout = '3s'`. `to_regclass` now NULL.
