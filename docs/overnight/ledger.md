@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 1:55 PM PT — X images: All Day slabs lose their black square; every thumbnail the same size; serial marks only in a collection's own art
+
+Trevor, 11-27 (grail post): "The dart needs to get rid of the black backdrop … the same size as the other thumbnails" → "Yes do that. Also we need all of the thumbnail graphics to be the same size"; earlier, RPC's serial marks on Panini were "a no no". `scripts/social/x-image.mjs`: `cleanArt()` (in the Playwright browser) keys out the edge-connected black on All Day art and trims every image to its visible pixels — Monday grid and big sale; big-sale All Day art read at 1200 px with its official badge + serial art; Panini / Candy big sales draw no special-serial marks. Checked by rendering: Monday (10 cards, equal heights, Dart slab clean), big sale for Dart (All Day icons) and for a Panini 1/1 (no marks). `docs/social/x-calendar.md` Images section. Nothing on the site reads `scripts/social/`.
+
+**Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 1:29 PM PT — 🗄 APPLIED `20261127212929` — dropped the empty, superseded `topshot_pack_pull_import` (Trevor: "Do it")
 
 - Never held a row; its only dependents were its own two functions (`load_topshot_pack_pull_import`, `topshot_retired_spork_open_txs`), dropped with it. Superseded by `pack_reveal_import` (`20261127205829`). Guarded: refuses if the table holds a row.
