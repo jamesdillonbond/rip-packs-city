@@ -103,6 +103,8 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   { path: '/about',                            changeFrequency: 'monthly', priority: 0.5 },
   // 2026-10-24: help, FAQ and contact (app/help/page.tsx).
   { path: '/help',                             changeFrequency: 'monthly', priority: 0.4 },
+  // 2026-11-27: the beginner's guide (app/help/new-to-collecting/page.tsx).
+  { path: '/help/new-to-collecting',           changeFrequency: 'monthly', priority: 0.5 },
   // 2026-10-25: the /analytics section is anon-public (proxy.ts). Its hub, the
   // public FMV API doc and the methodology index are advertised; per-wallet and
   // per-set detail pages are not (an unbounded population, reached by links).

@@ -386,6 +386,10 @@ export default function LoginClient() {
               )}{" "}
               <Link href="/insights" style={{ color: "var(--rpc-text-muted)" }}>
                 Or browse without an account →
+              </Link>{" "}
+              {/* 2026-11-27: the beginner's primer, for a visitor who doesn't yet have a Dapper username to add. */}
+              <Link href="/help/new-to-collecting" style={{ color: "var(--rpc-text-muted)" }}>
+                New to digital collectibles? Start here →
               </Link>
             </div>
           </form>

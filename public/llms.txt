@@ -123,6 +123,7 @@ For <collection> in nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb, p
 - /blog/premium-chance-hit-vs-chance-hit — what a Top Shot Premium Chance Hit pack contains vs a Chance Hit pack, per Top Shot's published pack contents
 - /legal/fmv-methodology — how FMV is computed
 - /about — who builds this and why
+- /help/new-to-collecting — beginner's guide: digital collectibles, blockchains, wallets, which wallet each collection uses, and how to fund each platform
 - /privacy, /terms
 
 ## FMV, briefly

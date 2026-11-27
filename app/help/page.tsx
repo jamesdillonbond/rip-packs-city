@@ -43,6 +43,17 @@ const LINK: React.CSSProperties = { color: "var(--rpc-red-text)", textDecoration
 
 const FAQS: Faq[] = [
   {
+    // 2026-11-27: the basics primer (digital collectibles, blockchains, wallets, funding).
+    q: "I'm new — what are digital collectibles, blockchains and wallets?",
+    a: (
+      <>
+        Start with <Link href="/help/new-to-collecting" style={LINK}>New to digital collectibles?</Link> — a five-minute, plain-English guide
+        to what they are, which blockchain and wallet each collection uses, how to add funds on each platform, and how RPC
+        works across all of them.
+      </>
+    ),
+  },
+  {
     q: "What is Rip Packs City?",
     a: (
       <>
@@ -198,6 +209,11 @@ export default function HelpPage() {
           <p style={{ fontSize: 16, lineHeight: 1.6, color: "var(--rpc-text-secondary)", margin: "0 0 36px" }}>
             Quick answers below. For anything else, ask the concierge (the chat button in the corner) — it can explain any
             number on a page, look up a moment, or log a bug for the team — or email us.
+          </p>
+
+          <p style={{ border: "1px solid var(--rpc-border-hover)", borderRadius: "var(--radius-md, 10px)", padding: "14px 18px", margin: "0 0 20px", background: "var(--rpc-surface)", fontSize: 15, lineHeight: 1.6 }}>
+            <strong>New to digital collectibles?</strong> Read the{" "}
+            <Link href="/help/new-to-collecting" style={LINK}>beginner&apos;s guide</Link> first: what collectibles, blockchains and wallets are, and how to fund each platform.
           </p>
 
           <section aria-labelledby="contact-h" style={{ border: "1px solid var(--rpc-border-hover)", borderRadius: "var(--radius-md, 10px)", padding: "18px 20px", marginBottom: 40, background: "var(--rpc-surface)" }}>

@@ -175,6 +175,7 @@ const PAGES: PageCheck[] = [
   // pages already advertised to Googlebot, so a failure here is a true positive.
   { path: "/about", name: "about" },
   { path: "/help", name: "help" },
+  { path: "/help/new-to-collecting", name: "beginner's guide" },
   // 2026-10-25: /analytics is anon-public and its hub / API / methodology pages are in
   // the sitemap. Probed from the cloud sandbox before adding (after the deploy).
   { path: "/analytics", name: "analytics hub" },
