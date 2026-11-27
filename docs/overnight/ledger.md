@@ -13,6 +13,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 12:15 PM PT — 🗄 APPLIED 6 migrations — Sold tab reads marketplace sales, names sold packs' pulls, and the All Day naming lane stops failing every lookup (Claude Code cloud; Trevor: "Keep digging and probing")
+
+- `20261127193527` (11:35 AM): a pull linked to a rip counts only if it shares the rip's open tx (2 of 27,501 were a moment bought before the open); pulls carry their parallel name; the opener-username leg asked Atlas in batches of 25 and resolved all 1,260 openers.
+- `20261127194434` (11:44 AM): the Sold tab's rows are Dapper MARKETPLACE sales (`*_pack_sales_history`, back to 2023), which the reader never read; it reads both sources now. Trevor's 379 Top Shot + 93 All Day Sold rows all answer. Old opens route to the mainnet27 Flow node; pre-Oct-2025 ones are unreadable (#181).
+- `20261127194925` + `20261127195213` (11:49 / 11:52 AM): `seed_sold_pack_pulls()` (pg_cron `rpc-sold-pack-pull-seed`, 9-59/10) copies unnamed pull ids of sold packs into `pack_open_pulls` so the existing naming lanes name them: 1,198 Top Shot + ~11.3k All Day pulls (All Day's ids live in `allday_pack_pull`).
+- `20261127200810` (12:08 PM): the 4xx arm attributes the two Sold-tab Flow REST lanes (`sold-pack-reads-upstream-<code>`); 6 HTTP 429s had been filing as unattributed `pg_net_http_429` HIGH. Now info while 200s land.
+- `20261127201001` (12:10 PM): **pre-existing since 11-18:** `collect_wallet_pack_pulls` step (3) sent 200 ids per Atlas GetNFTs call; Atlas caps at 100, so every call was HTTP 400 and burned an attempt. 100 ids × 10 calls a tick now; attempts refunded. First fixed tick named 859 of 1,000. Applied as an md5-asserted splice whose result equals the committed body (prosrc `371f815b…`); pin + planted-defect test.
+- **Revert:** each file's header carries its revert; for `201001` re-apply the `20261119123000` body.
+
 ### 2026-11-27 · 12:25 PM PT — 🗄 APPLIED `20261127200239` — Pack Reality "Honest +EV ranker": high-variance uses the measured pool mix
 
 - `topshot_pack_reality_top_ev` (view over the MV) recomputes `high_variance`: the ≥ 60 %-drawn arm now skips one-edition pools and pools whose mix is measured flat (`topshot_pool_skew`, same gate as lib/packs/pool-skew.ts). Coverage < 80 % and EV > 3× ask arms unchanged. Done in the view because `v_rpc_trust_health` depends on it (dropping the MV would cascade); `security_invoker=on` and anon SELECT verified after. Board copy updated to match. The ranker was empty at ship (0 rows), so nothing visible moved today.
