@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:00 PM PT — main's ESLint ratchet red: an unused constant in the social image script (not this thread's change)
+
+- CI "ESLint ratchet" failed on every commit since ~1:35 PM PT: `@typescript-eslint/no-unused-vars` 5 → 6, from `SERIAL_GLYPH_RPC` in `scripts/social/x-image.mjs` (added by the concurrent social-images session in `e74f22b`, marked "kept for reference only"). The repo's rule counts an unused `const` as dead code, `_` prefix or not. Removed it and left a pointer to `git show e74f22b:scripts/social/x-image.mjs`; ratchet back to 150 = baseline.
+- **Revert:** restore the constant from `e74f22b` (the ratchet goes red again).
+
 ### 2026-11-27 · 2:55 PM PT — X posts: Spurs #PorVida confirmed; six team hashtags recorded as not showing a logo
 
 Trevor checked the grail post's hashtags in the composer: only #PorVida shows a logo. `TEAM_HASHTAG` gains "San Antonio Spurs": "#PorVida"; the six that did not (#LetsGoBucs, #DallasWings, #FeverRising, #NYGiants, #RiseUpDC, #RepBX) are noted beside it and in `docs/social/x-calendar.md`, with Trevor's rule that the hashtag follows the team on the card/Moment. Nothing on the site reads `scripts/social/`.
