@@ -125,7 +125,9 @@ export function askCapFlag(algoVersion: string | null | undefined): FmvCapFlag {
   // which the `_compcap` test below reads as "comparables" — the last thing that set the number wins.
   if (typeof algoVersion === "string" && /_bidpull$/.test(algoVersion)) return "offers"
   if (isSalesCappedAlgo(algoVersion)) return true
-  return typeof algoVersion === "string" && /_compcap(_bidfloor)?$/.test(algoVersion) ? "comparables" : false
+  // 2026-11-27: `_tiercap` (the Top Shot never-sold Legendary / Ultimate hold to its tier + set's sales) is a
+  // comparables hold too. SQL twin: get_edition_detail's basis_comparables, `_(compcap|tiercap)(_bidfloor)?$`.
+  return typeof algoVersion === "string" && /_(compcap|tiercap)(_bidfloor)?$/.test(algoVersion) ? "comparables" : false
 }
 
 /**
@@ -146,6 +148,9 @@ const PRICE_RULE_NOTES: Array<[RegExp, string]> = [
   // 20261127165742 added a second source (the same parallel's sales in the same product) for a card with no sold
   // printing, so the note names both rather than claiming the narrower one.
   [/_compblend(_|$)/, "raised toward an estimate from similar editions (the same card's other printings, or the same parallel in the same set), because those sell for more than the ask-based price"],
+  // 2026-11-27 (20261127184110): a never-sold Top Shot Legendary / Ultimate with no set comparable estimate, held to what
+  // other editions of its tier and set sell for (never below 40 % of the ask or the best offer).
+  [/_tiercap(_|$)/, "held to what other editions of the same tier and set sell for, because new editions there usually sell well under the ask"],
   [/_haircut(_|$)/, "discounted from the ask because very few sales back it"],
 ]
 

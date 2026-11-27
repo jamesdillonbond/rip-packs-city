@@ -140,6 +140,17 @@ describe("fmvBasis", () => {
     expect(askCapFlag("panini-1.4.2_compcap")).toBe("comparables")
   })
 
+  it("a Top Shot tier cap (_tiercap) reads as comparables and explains itself (2026-11-27)", () => {
+    expect(askCapFlag("topshot-gql-v1_tiercap")).toBe("comparables")
+    expect(askCapFlag("topshot-gql-v1_tiercap_bidfloor")).toBe("comparables")
+    expect(fmvBasis("ASK_ONLY", askCapFlag("topshot-gql-v1_tiercap"))?.label).toBe("held to comparables")
+    expect(priceRuleNotes("topshot-gql-v1_tiercap")).toEqual([
+      "held to what other editions of the same tier and set sell for, because new editions there usually sell well under the ask",
+    ])
+    // a later rule that set the number still wins
+    expect(askCapFlag("topshot-gql-v1_tiercap_salescap")).toBe(true)
+  })
+
   it("priceRuleNotes: plain words for each rule, in the order applied, and nothing internal", () => {
     expect(priceRuleNotes("1.8.3")).toEqual([])
     expect(priceRuleNotes(null)).toEqual([])

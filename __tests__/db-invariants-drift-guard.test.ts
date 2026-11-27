@@ -703,8 +703,9 @@ const PINS = [
     // Re-pointed 2026-11-04: basis_capped survives the Top Shot offer floor's _bidfloor suffix.
     // Re-pointed 2026-11-12: the editions arm's fmv carries basis_comparables (the All Day _compcap).
     // Re-pointed 2026-11-12 (evening): the editions arm's fmv carries basis_offer (the Top Shot _bidpull).
+    // Re-pointed 2026-11-27: basis_comparables also reads the Top Shot never-sold L/U tier cap (_tiercap).
     migration:
-      "supabase/migrations/20261113011738_audit_20261112_edition_detail_says_when_a_price_is_weighted_to_the_best_offer.sql",
+      "supabase/migrations/20261127184452_audit_20261127_edition_detail_tier_cap_reads_as_comparables.sql",
   },
   {
     fn: "get_platform_stats",

@@ -423,7 +423,7 @@ BEGIN
           'days_since_sale', fmv.days_since_sale,
           'cross_market_ask',fmv.cross_market_ask,
           'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)(_bidfloor)?$', false),
-          'basis_comparables', COALESCE(fmv.algo_version ~ '_compcap(_bidfloor)?$', false),
+          'basis_comparables', COALESCE(fmv.algo_version ~ '_(compcap|tiercap)(_bidfloor)?$', false),
           'basis_offer',     COALESCE(fmv.algo_version ~ '_bidpull$', false)
         )
       END
@@ -843,6 +843,12 @@ SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'b
 UPDATE public.fmv_snapshots SET algo_version = 'topshot-gql-v1_bidpull_compcap' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'true', 'editions arm: _bidpull_compcap is held to comparables');
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_offer'), 'false', 'editions arm: _bidpull_compcap is not basis_offer (the estimate set the number)');
+-- 2026-11-27: the Top Shot never-sold Legendary / Ultimate tier cap is a comparables hold too.
+UPDATE public.fmv_snapshots SET algo_version = 'topshot-gql-v1_tiercap' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'true', 'editions arm: a _tiercap row is held to comparables');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a _tiercap row is not capped at its own sales');
+UPDATE public.fmv_snapshots SET algo_version = 'topshot-gql-v1_tiercap_bidfloor' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_comparables'), 'true', 'editions arm: _tiercap_bidfloor is still held to comparables');
 UPDATE public.fmv_snapshots SET algo_version = NULL WHERE edition_id = '22222222-2222-2222-2222-222222222222';
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_offer'), 'false', 'editions arm: a NULL algo_version is not basis_offer (never NULL)');
 
