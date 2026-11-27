@@ -23,7 +23,7 @@ import Link from "next/link"
 import { slugifyPlayerName } from "@/lib/entity-labels"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
-import type { PaniniProductVolumeRow } from "@/lib/panini/product-volume"
+import type { PaniniLeagueVolumeRow, PaniniProductVolumeRow } from "@/lib/panini/product-volume"
 import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 type Num = number | null
@@ -192,6 +192,7 @@ function DailyBars({ daily }: { daily: PaniniDay[] }) {
 export default function PaniniAnalytics({
   data,
   byProduct,
+  byLeague,
 }: {
   data: PaniniSalesAnalytics | null
   /**
@@ -199,6 +200,8 @@ export default function PaniniAnalytics({
    * undefined = not supplied (section absent); null = the read failed (said so); [] = none on record.
    */
   byProduct?: PaniniProductVolumeRow[] | null
+  /** 30-day sales by league / brand (2026-11-27). Same three states as byProduct. */
+  byLeague?: PaniniLeagueVolumeRow[] | null
 }) {
   const [allTime, setAllTime] = useState(false)
   // 2026-11-26: these figures are not split by league / brand. A visitor who picked one on another tab is
@@ -227,7 +230,7 @@ export default function PaniniAnalytics({
       {scope.slug && scope.name ? (
         <div role="status" data-testid="panini-analytics-scope-note" style={{ padding: "10px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, margin: "12px 0" }}>
           <Note>
-            These figures cover every Panini product, not {scope.name} alone.{" "}
+            The charts and top lists here cover every Panini product, not {scope.name} alone; the &ldquo;By league&rdquo; table below splits the last 30 days.{" "}
             <Link href={paniniScopePageHref("panini-blockchain", scope.slug)} style={{ color: "var(--rpc-text-primary)" }}>{scope.name} values and sales →</Link>
           </Note>
         </div>
@@ -404,6 +407,33 @@ export default function PaniniAnalytics({
           </tr>
         ))}
       </Table>
+      {byLeague !== undefined ? (
+        <div data-testid="panini-analytics-leagues">
+          <H2>By league · last 30 days</H2>
+          {byLeague === null ? (
+            <div data-testid="panini-analytics-leagues-failed"><Note>Sales by league couldn&apos;t be loaded — this is not the same as no sales.</Note></div>
+          ) : byLeague.length === 0 ? (
+            <Note>No league has a sale on record in the last 30 days.</Note>
+          ) : (
+            <Table head={["League", "Sales", "Volume", "Share", "Products"]}>
+              {byLeague.map((r) => {
+                const total = byLeague.reduce((s, x) => s + (x.sales_30d_volume_usd ?? 0), 0)
+                const picked = scope.slug === r.slug
+                return (
+                  <tr key={r.slug} aria-current={picked ? "true" : undefined}>
+                    <td style={{ ...td, fontWeight: picked ? 700 : undefined }}><Link href={paniniScopePageHref("panini-blockchain", r.slug)} style={{ color: "inherit" }}>{r.name}</Link></td>
+                    <td style={td}>{int(r.sales_30d)}</td>
+                    <td style={td}>{usd(r.sales_30d_volume_usd)}</td>
+                    <td style={td}>{r.sales_30d_volume_usd !== null && total > 0 ? `${Math.round((r.sales_30d_volume_usd / total) * 100)}%` : "—"}</td>
+                    <td style={td}>{int(r.products)}</td>
+                  </tr>
+                )
+              })}
+            </Table>
+          )}
+          <Note>Sales on record, which arrive hours to days late; refreshed hourly. Each league&apos;s own page has its values and products. <Link href="/leagues" style={{ color: "inherit" }}>Every league →</Link></Note>
+        </div>
+      ) : null}
       {byProduct !== undefined ? (
         <>
           <H2>Top products by volume · last 30 days</H2>

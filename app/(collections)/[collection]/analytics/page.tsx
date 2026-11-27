@@ -12,7 +12,8 @@
 
 import CollectionAnalyticsClient from "./CollectionAnalyticsClient";
 import PaniniAnalytics from "@/components/collection/PaniniAnalytics";
-import { topProductsByVolume } from "@/lib/panini/product-volume";
+import { leaguesByVolume, topProductsByVolume } from "@/lib/panini/product-volume";
+import { fetchPaniniPropertyBoard } from "@/lib/panini/properties";
 import { listPaniniProducts } from "@/lib/panini/product";
 import { fetchPaniniSalesAnalytics } from "@/lib/panini/sales-analytics-read";
 
@@ -24,8 +25,9 @@ export default async function AnalyticsPage(props: { params: Promise<{ collectio
   const { collection } = await props.params;
   if (collection === "panini-blockchain") {
     // 2026-10-25: + top products by 30-day volume from the hourly product rollup (Top Shot's "Volume by Series").
-    const [data, products] = await Promise.all([fetchPaniniSalesAnalytics(), listPaniniProducts().catch(() => null)]);
-    return <PaniniAnalytics data={data} byProduct={topProductsByVolume(products === null ? null : products.map((r) => ({ name: r.name, slug: r.slug, sales_30d: r.sales_30d, sales_30d_volume_usd: r.sales_30d_volume_usd ?? null, sales_30d_median_usd: r.sales_30d_median_usd ?? null })))} />;
+    // 2026-11-27: + 30-day sales by league / brand from the same hourly rollup (get_panini_property_board).
+    const [data, products, leagues] = await Promise.all([fetchPaniniSalesAnalytics(), listPaniniProducts().catch(() => null), fetchPaniniPropertyBoard().catch(() => ({ ok: false as const, board: null }))]);
+    return <PaniniAnalytics data={data} byProduct={topProductsByVolume(products === null ? null : products.map((r) => ({ name: r.name, slug: r.slug, sales_30d: r.sales_30d, sales_30d_volume_usd: r.sales_30d_volume_usd ?? null, sales_30d_median_usd: r.sales_30d_median_usd ?? null })))} byLeague={leaguesByVolume(leagues.ok ? leagues.board.properties : null)} />;
   }
   return <CollectionAnalyticsClient />;
 }

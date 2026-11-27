@@ -13,7 +13,7 @@ vi.mock("next/link", () => ({ default: ({ children, href }: any) => <a href={hre
 
 import PaniniAnalytics, { COMPLETE_PCT, isCompleteDay, type PaniniSalesAnalytics } from "@/components/collection/PaniniAnalytics"
 import { parsePaniniSalesAnalytics } from "@/lib/panini/sales-analytics"
-import { topProductsByVolume } from "@/lib/panini/product-volume"
+import { leaguesByVolume, topProductsByVolume } from "@/lib/panini/product-volume"
 
 function payload(over: Partial<PaniniSalesAnalytics> = {}): PaniniSalesAnalytics {
   return {
@@ -236,5 +236,35 @@ describe("PaniniAnalytics — top products by volume", () => {
     const ok = render(<PaniniAnalytics data={payload()} byProduct={topProductsByVolume(rows)} />).container
     expect(ok.querySelector('a[href="/panini-blockchain/product/big"]')?.textContent).toBe("Big")
     expect(ok.querySelector('a[href="/panini-blockchain/product/quiet"]')).toBeNull()
+  })
+})
+
+// 2026-11-27 — "By league": the last 30 days split by league / brand, from the league board's rollup.
+describe("PaniniAnalytics — by league", () => {
+  const rows = [
+    { slug: "wnba", name: "WNBA", products: 4, sales_30d: 10, sales_30d_volume_usd: 100 },
+    { slug: "nba", name: "NBA", products: 18, sales_30d: 30, sales_30d_volume_usd: 300 },
+    { slug: "moonbirds", name: "Moonbirds", products: 1, sales_30d: 0, sales_30d_volume_usd: null },
+  ]
+  it("ranks by volume, drops leagues with no sale, and keeps a failed read as null", () => {
+    expect(leaguesByVolume(rows)!.map((r) => r.slug)).toEqual(["nba", "wnba"])
+    expect(leaguesByVolume(null)).toBeNull()
+  })
+  it("not supplied = no section; failed = said; rows carry a share of the listed volume and link the league's page", () => {
+    expect(render(<PaniniAnalytics data={payload()} />).container.querySelector('[data-testid="panini-analytics-leagues"]')).toBeNull()
+    cleanup()
+    const failed = render(<PaniniAnalytics data={payload()} byLeague={null} />).container
+    expect(failed.querySelector('[data-testid="panini-analytics-leagues-failed"]')?.textContent).toContain("not the same as no sales")
+    cleanup()
+    expect(render(<PaniniAnalytics data={payload()} byLeague={[]} />).container.textContent).toContain("No league has a sale on record")
+    cleanup()
+    const ok = render(<PaniniAnalytics data={payload()} byLeague={leaguesByVolume(rows)} />).container
+    const section = ok.querySelector('[data-testid="panini-analytics-leagues"]')!
+    const trs = [...section.querySelectorAll("tbody tr")].map((r) => [...r.querySelectorAll("td")].map((c) => c.textContent))
+    expect(trs.map((r) => [r[0], r[1], r[3], r[4]])).toEqual([["NBA", "30", "75%", "18"], ["WNBA", "10", "25%", "4"]])
+    expect(section.querySelector('a[href="/panini-blockchain/property/nba"]')?.textContent).toBe("NBA")
+    expect(section.textContent).not.toContain("Moonbirds")
+    // the URL word never renders
+    expect((section.textContent ?? "").toLowerCase()).not.toContain("property")
   })
 })
