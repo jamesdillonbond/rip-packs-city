@@ -39,6 +39,7 @@ Work through every applicable item before applying, and the verification items a
 10. **Write pattern is delete-then-insert, NEVER upsert.** `collection_id` is `NOT NULL`. Daily duplicate snapshots are intentional history, not a bug.
 11. **`CREATE INDEX CONCURRENTLY` must be a standalone `execute_sql`**, NOT inside `apply_migration` (which wraps in a transaction). ⚠ **In practice `CONCURRENTLY` is reachable ONLY via a one-statement pg_cron job (libpq), never `execute_sql`.**
 12. **Latest-per-edition is `SELECT DISTINCT ON (edition_id) ... ORDER BY edition_id, computed_at DESC`.** Any `LIMIT 1` over snapshot history without `ORDER BY computed_at DESC` reads an arbitrary partition row. Never filter snapshot history *before* a `DISTINCT ON` re-stamp (the Step-6 self-perpetuating-NO_DATA class of bug).
+13. ⛔ **Trigger DDL / `ALTER TABLE` on an EXISTING hot table (fmv_snapshots above all) locks every reader out until COMMIT.** `DROP TRIGGER IF EXISTS` takes ACCESS EXCLUSIVE (on every partition, even when the trigger is absent) and `apply_migration` wraps the whole file in one transaction, so a re-stamp after it holds the lock for its whole run. On 11-27 three applies 500'd edition pages on every collection (74 `get_edition_detail` timeouts, 31 users). **Put `SET LOCAL lock_timeout = '3s';` at the top, and the lock-taking DDL LAST or in its own migration.** Guard: `__tests__/migration-lock-taking-ddl-sets-lock-timeout.test.ts`.
 
 ## Destructive operations
 

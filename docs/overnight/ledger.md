@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:45 PM PT — guard: a migration that locks an existing table must set `lock_timeout` (root cause of today's edition-page timeouts)
+
+- **Found:** the day's top Vercel error, `[edition] get_edition_detail … statement timeout` (74 in 24 h, 31 users), came in bursts at 8:42 AM, 10:41 AM and 1:32 PM PT — the apply times of `20261127164214`, `184110` and `213224`, which each `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` on `fmv_snapshots` inside one transaction. Postgres log at 10:41:10 AM PT: readers `still waiting for AccessShareLock on relation 18563` (fmv_snapshots), then cancelled. Self-inflicted, by migrations; nothing data-side is wrong.
+- **Shipped:** `__tests__/migration-lock-taking-ddl-sets-lock-timeout.test.ts` (ban at zero for migrations after `20261127223054`; proven with a planted file and against the real `184110` file), the rule in `docs/reference/database.md` (end) and `docs/cowork-skills/rpc-migration/SKILL.md` item 13. No production change.
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 2:31 PM PT — 🗄 APPLIED `20261127223054` — the 4xx arm keeps attributing Sold-tab reads after a re-ask (inbox `2026-11-27T2213Z` attributed)
 
 - **Defect:** `check_edge_fn_http_failures` attributed the Sold-tab lanes by joining the CURRENT `request_id` of `sold_pack_open_tx_reads` / `sold_container_open_search`. The first overwrites it on a re-ask (an hour on since `20261127213526`), the second clears it on collect, so an earlier 429 lost its join inside its own 2 h window and filed as an unattributed `pg_net_http_429` **high** (5 + 5 + 1 at the 11:46 AM / 12:36 PM / 12:06 PM PT lane ticks).
