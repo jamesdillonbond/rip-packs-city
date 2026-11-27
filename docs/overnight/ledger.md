@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:10 PM PT — X images: Top Shot renders trimmed on solid pixels (they read smaller than the cards)
+
+Trevor, 11-27: "Top shot looks smaller". `cleanArt()` trimmed at alpha > 8, which counts a Top Shot render's soft glow as artwork (Fudd 1/1: 50–545 px tall at > 8, 87–508 at > 100), so the slab drew ~15 % shorter than the cards. Now trims at alpha > 100. `scripts/social/x-image.mjs`; checked by rendering the grail image (Top Shot slabs now the cards' height).
+
+**Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 1:35 PM PT — 🗄 APPLIED `20261127213224` + `20261127213338` — Top Shot never-sold parallels held to what the same parallel of the same set sells for (Trevor: "Figure out what makes sense as fmv for that moment" → "Apply it")
 
 - **The case:** Memphis Grizzlies Fit Check (Diced) /10 published $315 (0.9 × one $350 ask, never sold). Its other printings sit at $4–5; the other 29 teams' Fit Check Diced /10 sold 11 times in a year, median $40; best offer $10. Now **$40**, so its pack (dist 2869, $199 ask) stops reading +58 % once pack EV recomputes.
