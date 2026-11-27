@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 7:57 AM PT — Panini league pages render again (every one was "Couldn't load this page" behind a 200)
+
+A rendered sweep of all 25 league / brand pages found all 16 Panini ones on the failed-read state. `get_panini_property_page` cost ~1M buffers and 3–6 s for any league (a SQL array helper inlined into a scan filter, re-run per row), so the page passed its read deadline and ISR kept the failure for 30 minutes at a time. The ids are now read once: ~0.2 s, json md5-identical on five leagues (`20261127155238`). `e2e/smoke.spec.ts` gains one league page per publisher with the heading only a successful read renders.
+
+**Revert:** DB — re-apply `get_panini_property_page` from `20261126193845`. Code — revert the commit "panini league pages: smoke the rendered heading" (by message).
+
 ### 2026-11-27 · 7:29 AM PT — Panini Analytics by league: a small share reads "<1%"
 
 Found looking at the live table: Serie A (,702 of 34k) read "0%" beside 347 sales. A share under half a percent now reads "<1%". Display only.
