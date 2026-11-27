@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:25 PM PT — X posts: three buyer handles Trevor confirmed today go into X_HANDLES
+
+tadtweets → @tadtweets (Candy), cle_287 → @cle_287 (Top Shot), ViciousFrenchie → @St1ngray2 (Panini), from today's handle lookup Trevor confirmed. `scripts/social/x-draft.mjs` `X_HANDLES`, `docs/social/x-calendar.md`. Nothing on the site reads `scripts/social/`.
+
+**Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 1:43 PM PT — 🗄 APPLIED `20261127213526` + `20261127213601` — Sold-tab lanes retry rate-limited reads, seed lane hourly, reader shows imported serials; Dune backfill scheduled 12-14
 
 - `20261127213526` (1:35 PM): the open-tx dispatcher never re-asked a pack whose read came back HTTP 429 (13 stuck); now anything but a final outcome is asked again an hour on. `rpc-sold-pack-pull-seed` → hourly (:09): it ran 55–120 s every 10 min (3 of 14 killed at the 120 s cap) while seeding 0.
