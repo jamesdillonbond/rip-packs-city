@@ -33,7 +33,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-11-27 · 9:40 AM PT — Pack cards: the "🔥 X/N remain" chip is now "🔥 N% opened", and one-edition packs get none (Trevor: "Why does this show a 1/1 in it when it doesn't have one?")
 
-- The chip's "X of N editions remain" was invented: it was fed `ev_depletion_pct`, the share of SUPPLY opened, not editions sold out (8 sampled ≥90 %-opened Top Shot pools: 0 % of editions sold out, chip said e.g. "1/34"). 773 one-edition packs always read "🔥 1/1 remain" (read as a one-of-one serial); 575 more were clamped up to "1/N". Display-only change in `lib/pack-table-format.ts` + tooltip; no data touched.
+- The chip's "X of N editions remain" was invented: it was fed `ev_depletion_pct`, the share of SUPPLY opened, not editions sold out (e.g. dist 7155, 94 % opened: 127 of 167 editions still in packs, chip said "10/167"; ⚠ corrected 10:55 AM PT — an earlier "0 % of editions sold out" sample was an artifact: `topshot_atlas_dist_editions` never stores a remaining = 0 row, sold-out editions vanish from it). 773 one-edition packs always read "🔥 1/1 remain" (read as a one-of-one serial); 575 more were clamped up to "1/N". Display-only change in `lib/pack-table-format.ts` + tooltip; no data touched.
 - **Revert:** revert the commit "Pack cards: depletion chip states % opened, none on one-edition packs".
 
 ### 2026-11-27 · 9:03 AM PT — Sold tab "Buyer pulled": the pull list stays on screen on a phone

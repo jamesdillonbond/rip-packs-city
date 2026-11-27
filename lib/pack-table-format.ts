@@ -128,9 +128,11 @@ export const POOL_DEPLETION_THRESHOLD = 0.7
 // this chip used to read "🔥 X/N remain" and claim X of N EDITIONS survived, with
 // X = round(N × (1 − depletion)). But the depletion it is fed
 // (pack_table_rows.ev_depletion_pct) is the share of the SUPPLY opened, not the
-// share of editions sold out — measured 11-27: 8 sampled ≥90 %-opened Top Shot
-// pools had 0 % of their editions sold out, yet the chip said e.g. "1/34 remain".
-// The count was invented, clamped to ≥1 (575 rows), and on the 773 one-edition
+// share of editions sold out — e.g. dist 7155 (94 % opened) still lists 127 of its
+// 167 editions with copies in packs, yet the chip said "10/167 remain". (Caution:
+// topshot_atlas_dist_editions never stores a remaining_count = 0 row — a sold-out
+// edition DISAPPEARS from it — so "editions sold out" must be read as edition_count
+// minus the rows present, never as rows with remaining = 0.) The count was invented, clamped to ≥1 (575 rows), and on the 773 one-edition
 // packs it always read "🔥 1/1 remain" — on Top Shot, "1/1" means a one-of-one
 // serial. The chip now states what is measured, and a one-edition pack gets no
 // chip: every pull is the same edition, so there is no mix to skew.
