@@ -15,6 +15,7 @@
 //     (dist 5223: 0.10). Its mix is unmeasurable.
 //   - skew < 1.5 over what is listed.
 //   - fmv_coverage ≥ 0.95 of the remaining copies.
+//   - the measurement itself is ≤ 24 h old (computed_at — the hourly job; if it stops, nothing clears),
 //   - the pool read is ≤ 60 days old. (The board's depletion and EV come from this same read —
 //     1,524 of 1,633 Top Shot pools agree within 1.5 points — so this is a sanity bound, not a gate
 //     that makes the ratio fresher than the EV it qualifies.)
@@ -23,6 +24,7 @@ export const POOL_SKEW_MAX = 1.5
 export const POOL_LISTED_SHARE_MIN = 0.95
 export const POOL_SKEW_FMV_COVERAGE_MIN = 0.95
 export const POOL_SKEW_MAX_AGE_MS = 60 * 24 * 3600 * 1000
+export const POOL_SKEW_COMPUTED_MAX_AGE_MS = 24 * 3600 * 1000
 
 export type PoolSkewRow = {
   dist_id: string
@@ -30,6 +32,7 @@ export type PoolSkewRow = {
   skew: number | string | null
   fmv_coverage: number | string | null
   pool_fetched_at: string | null
+  computed_at?: string | null
 }
 
 function n(v: number | string | null | undefined): number | null {
@@ -48,7 +51,9 @@ export function poolMixMeasuredFlat(row: PoolSkewRow | null | undefined, nowMs: 
   if (skew == null || skew >= POOL_SKEW_MAX) return false
   if (cov == null || cov < POOL_SKEW_FMV_COVERAGE_MIN) return false
   if (!Number.isFinite(fetched) || nowMs - fetched > POOL_SKEW_MAX_AGE_MS) return false
+  const computed = row.computed_at ? Date.parse(row.computed_at) : NaN
+  if (!Number.isFinite(computed) || nowMs - computed > POOL_SKEW_COMPUTED_MAX_AGE_MS) return false
   return true
 }
 
-export const POOL_SKEW_COLUMNS = "dist_id, listed_share, skew, fmv_coverage, pool_fetched_at"
+export const POOL_SKEW_COLUMNS = "dist_id, listed_share, skew, fmv_coverage, pool_fetched_at, computed_at"

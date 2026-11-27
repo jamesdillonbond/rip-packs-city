@@ -138,7 +138,7 @@ describe("/api/og/pack — the verdict", () => {
   it("does NOT suppress a ≥90%-drawn pool whose remaining mix is MEASURED to match launch", async () => {
     mockDb({
       pack: { ...HEALTHY, ev_depletion_pct: 98, edition_count: 232 },
-      poolSkew: { dist_id: "5020", listed_share: 1, skew: 0.99, fmv_coverage: 1, pool_fetched_at: new Date().toISOString() },
+      poolSkew: { dist_id: "5020", listed_share: 1, skew: 0.99, fmv_coverage: 1, pool_fetched_at: new Date().toISOString(), computed_at: new Date().toISOString() },
     })
     const text = ogText(await render(TS))
     expect(text).toContain("+EV")
@@ -148,7 +148,7 @@ describe("/api/og/pack — the verdict", () => {
   it("still suppresses when the measured mix is skewed (a chase pack)", async () => {
     mockDb({
       pack: { ...HEALTHY, ev_depletion_pct: 98, edition_count: 84 },
-      poolSkew: { dist_id: "5020", listed_share: 1, skew: 5.63, fmv_coverage: 1, pool_fetched_at: new Date().toISOString() },
+      poolSkew: { dist_id: "5020", listed_share: 1, skew: 5.63, fmv_coverage: 1, pool_fetched_at: new Date().toISOString(), computed_at: new Date().toISOString() },
     })
     expect(ogText(await render(TS))).toContain("EV N/A")
   })

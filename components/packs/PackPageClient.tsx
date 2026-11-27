@@ -648,7 +648,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             onClick={() => setAlmostSoldOut((v) => !v)}
             className={chipBase + ' ' + (almostSoldOut ? '' : chipInactive)}
             style={almostSoldOut ? { backgroundColor: '#F97316', color: labelOn('#F97316') } : undefined}
-            title="Pool depletion ≥ 80% — most editions in the pool are sold out"
+            title="80% or more of the pack pool has already been pulled"
           >
             Almost sold out
           </button>

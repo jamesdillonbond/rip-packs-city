@@ -3,7 +3,7 @@ import { poolMixMeasuredFlat, type PoolSkewRow } from "@/lib/packs/pool-skew"
 
 const NOW = Date.parse("2026-11-27T19:00:00Z")
 // Base Set (Series 2, Release 32), measured 11-27: 98 % drawn, mix unchanged.
-const flat: PoolSkewRow = { dist_id: "1740", listed_share: "1.0000", skew: "0.99", fmv_coverage: "1.0000", pool_fetched_at: "2026-11-20T00:00:00Z" }
+const flat: PoolSkewRow = { dist_id: "1740", listed_share: "1.0000", skew: "0.99", fmv_coverage: "1.0000", pool_fetched_at: "2026-11-20T00:00:00Z", computed_at: "2026-11-27T18:23:00Z" }
 
 describe("poolMixMeasuredFlat — only ever clears a warning on a full measurement", () => {
   it("clears a pool whose remaining mix matches launch", () => {
@@ -22,6 +22,9 @@ describe("poolMixMeasuredFlat — only ever clears a warning on a full measureme
     expect(poolMixMeasuredFlat({ ...flat, skew: null }, NOW)).toBe(false)
     expect(poolMixMeasuredFlat({ ...flat, pool_fetched_at: "2026-09-01T00:00:00Z" }, NOW)).toBe(false)
     expect(poolMixMeasuredFlat({ ...flat, pool_fetched_at: null }, NOW)).toBe(false)
+    // The hourly measurement stopped: a frozen ratio never clears a warning.
+    expect(poolMixMeasuredFlat({ ...flat, computed_at: "2026-11-25T00:00:00Z" }, NOW)).toBe(false)
+    expect(poolMixMeasuredFlat({ ...flat, computed_at: null }, NOW)).toBe(false)
     expect(poolMixMeasuredFlat(null, NOW)).toBe(false)
     expect(poolMixMeasuredFlat(undefined, NOW)).toBe(false)
   })
