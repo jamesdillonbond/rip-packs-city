@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 1:20 PM PT — X posts: Panini is "@PaniniAmerica Blockchain" in every post; images say "Candy", not "Candy MLB"
+
+Trevor, 11-27: name Panini "@PaniniAmerica Blockchain" "to clearly differentiate physical vs digital" (the Sunday report already did; the Monday top-10 and big-sale lines stripped it to "@PaniniAmerica"), and the images show "Candy" instead of "Candy MLB" while Panini stays "Panini" on the image. `scripts/social/x-draft.mjs` (two `.split(" ")[0]` removed), `scripts/social/x-image.mjs` (`COLL` + `SITE_NAMES` Candy label), `docs/social/x-calendar.md`. Checked: `x-draft.mjs --slot mon` now prints "on @PaniniAmerica Blockchain". Nothing on the site reads `scripts/social/`.
+
+**Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 12:50 PM PT — 🗄 APPLIED `20261127203636` — landing table for Top Shot pack contents from retired sporks (empty; source needs Dune credits)
 
 - 18,564 Top Shot packs saved wallets sold were opened before 2025-10-14 (68k moments) and have no pull rows; no Flow node serves those blocks. Probed dead 11-27: mainnet26 host (DNS), Atlas (Top Shot pulls read "0"), Top Shot public GraphQL (530), Find Labs historical API (503); Flowscan's API needs a credential we do not hold. Source found: PackNFT's `Revealed(id, salt, nfts)` event lists a pack's full contents; Dune has it.
