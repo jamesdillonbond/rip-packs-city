@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 2:39 PM PT — /help/new-to-collecting: a beginner's guide to digital collectibles, blockchains, wallets and funding
+
+- Trevor asked whether the site walks new users through what digital collectibles, blockchains and wallets are, how RPC works across everything, and how to fund wallets ("Do it all"). /help answered how to use RPC but explained none of the basics, and nothing on the site covered funding.
+- New anon-public page `app/help/new-to-collecting/page.tsx` (under /help/, so proxy.ts already serves it): collectibles, blockchains (Flow · Aptos · Solana · Panini's chain), custodial vs self-custody wallets, a per-collection card (unit · chain · wallet · paying · what to give RPC · official site), funding on Dapper / Panini / Candy / UFC Strike (each linking the platform's own help; facts checked 11-27), using RPC across collections, safety, glossary. Keeps the standing rules: identifiers only, never a wallet connect; Moments / Pins / Cards; "Standard"; dollars; no FMV confidence.
+- Linked from: /help (callout + first FAQ), /login (under the sign-up/sign-in form), the footer ("NEW TO COLLECTING"), the concierge prompt (Common Questions), llms.txt, the sitemap (110 → 111, test updated) and the e2e smoke list. Not yet in the e2e a11y gate list — that list takes a route only after a production axe read.
+- **Revert:** `git revert` this commit (by message); no DB change.
+
 ### 2026-11-27 · 2:45 PM PT — guard: a migration that locks an existing table must set `lock_timeout` (root cause of today's edition-page timeouts)
 
 - **Found:** the day's top Vercel error, `[edition] get_edition_detail … statement timeout` (74 in 24 h, 31 users), came in bursts at 8:42 AM, 10:41 AM and 1:32 PM PT — the apply times of `20261127164214`, `184110` and `213224`, which each `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` on `fmv_snapshots` inside one transaction. Postgres log at 10:41:10 AM PT: readers `still waiting for AccessShareLock on relation 18563` (fmv_snapshots), then cancelled. Self-inflicted, by migrations; nothing data-side is wrong.
