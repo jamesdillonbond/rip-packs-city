@@ -132,6 +132,14 @@ describe("fmvBasis", () => {
     expect(isSalesCappedAlgo(undefined)).toBe(false)
   })
 
+  it("priceRuleNotes: a Panini comparables blend says which way it moved the price (2026-11-27)", () => {
+    expect(priceRuleNotes("panini-1.4.2_compblend")).toEqual([
+      "raised toward an estimate from the same card's other printings, because those sell for more than the ask-based price",
+    ])
+    expect(priceRuleNotes("panini-1.4.2_compcap")[0]).toMatch(/^held to an estimate from similar editions/)
+    expect(askCapFlag("panini-1.4.2_compcap")).toBe("comparables")
+  })
+
   it("priceRuleNotes: plain words for each rule, in the order applied, and nothing internal", () => {
     expect(priceRuleNotes("1.8.3")).toEqual([])
     expect(priceRuleNotes(null)).toEqual([])

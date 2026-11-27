@@ -141,6 +141,9 @@ const PRICE_RULE_NOTES: Array<[RegExp, string]> = [
   [/_bidfloor(_|$)/, "lifted to the best open offer, because that offer was above the price"],
   [/_bidpull(_|$)/, "moved between the lowest ask and the best open offer, weighted toward the offer, because thinly traded editions mostly sell at the offer"],
   [/_compcap(_|$)/, "held to an estimate from similar editions in the same set, because the ask was above what those sell for"],
+  // 2026-11-27 (20261127164214): a never-sold Panini card's ask-based price blended with what the same card's other
+  // printings sell for. A blend that moved the price DOWN reuses `_compcap` above; one that moved it UP is `_compblend`.
+  [/_compblend(_|$)/, "raised toward an estimate from the same card's other printings, because those sell for more than the ask-based price"],
   [/_haircut(_|$)/, "discounted from the ask because very few sales back it"],
 ]
 
