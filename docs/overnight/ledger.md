@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:45 PM PT — 🗄 APPLIED `20261128013007` + page — Whale Watch: collection chips and linked names
+
+- **What:** Trevor: "Keep going". `refresh_whale_watch_board()` now adds `key` + `top_collection` to leaders, `key` to moves, and `by_collection` (each collection's top 10 for 7d / 30d). It ran in 9 s; anon EXECUTE is still false. On /insights/whales, collection chips switch the leaderboard to one collection, and names link to that collection's wallet page (`whaleHref` → `topFanHref`, rel=nofollow). The lib still reads an older snapshot without the new fields.
+- **Revert:** re-apply the function body from `20261127234801_audit_20261127_whale_watch_board.sql`, then `git revert` this commit.
+
 ### 2026-11-27 · 5:45 PM PT — 🗄 APPLIED `20261128013306` + script fix — the Panini linked walk: a hung walk no longer starves every other collector (Trevor: "Figure it out")
 
 - **What happened today, corrected:** the walk runs in two-hourly batches on Trevor's box (~7:40, 9:20, 11:20, 1:20, 3:20, 5:20). The 11:20 AM and 1:20 PM batches failed identically (16 walks: collection list read, every collection-details page silent, 0 answers, `profile_state unknown`) while `panini-ingest` in the same browser ran 1,226/1,226 ok — so a transient on Panini's collection pages or the viewer's session, not the box; the 3:20 PM batch recovered on its own (7/7 ok). My earlier "no runs since 1:52 PM" was a reading between batches. Nothing was lost: a failed walk adds nothing and retires nothing.
