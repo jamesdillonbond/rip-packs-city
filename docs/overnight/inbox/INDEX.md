@@ -35,7 +35,7 @@ failure it documents.
 ---
 
 ## 2026-11-28 — 2 filings
-- [Three heavy refresh jobs trending at/over their 120s statement_timeout caps (candy-edition-holders MV, topshot-moment-id-editions daily, panini-rookie-board) — all fail-soft, quiet-window re-measure — rpc-daytime-monitor, MED/LOW](2026-11-28T1611Z-rpc-daytime-monitor-refresh-jobs-trending-at-statement-timeout-caps.md)
+- [✅ DISPOSITIONED 11-28 ~8:28 AM PT (Claude Code cloud): item 2 FIXED `20261128162818` (verify 11-29 2:23 AM PT); items 1 and 3 measured — no trend, no change — Three heavy refresh jobs trending at/over their 120s statement_timeout caps (candy-edition-holders MV, topshot-moment-id-editions daily, panini-rookie-board) — all fail-soft, quiet-window re-measure — rpc-daytime-monitor, MED/LOW](2026-11-28T1611Z-rpc-daytime-monitor-refresh-jobs-trending-at-statement-timeout-caps.md)
 
 - [✅ FIXED 11-28 ~7:44 AM PT (Claude Code cloud): `20261128154406` — a box-score 404 is not_found, not a run error; verified 8:21 AM PT — nba-espn-projections (new Fast Break box-score lane, shipped 11-27 ~9:45 PM PT) failed a whole run on ONE ESPN gamesummary HTTP 404 — box-score drain should skip the 404'd game and finish ok; 1/24 runs in 14h, self-recovered, no data lost — rpc-daytime-monitor, LOW](2026-11-28T0713Z-rpc-daytime-monitor-nba-espn-projections-boxscore-404-fails-run.md)
 
