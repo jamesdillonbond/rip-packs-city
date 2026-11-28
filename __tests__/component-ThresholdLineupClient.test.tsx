@@ -110,4 +110,26 @@ describe("ThresholdLineupClient", () => {
     fireEvent.click(screen.getByText("Save this lineup"))
     await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/exceeds use budget/))
   })
+
+  it("states RPC's own record this run once a night is scored, and says nothing before", () => {
+    warm = { data: { ...okData, trackRecord: { scored: 4, cleared: 3, avgPredicted: 0.71, pending: 1 } }, loading: false, error: null }
+    const { container, unmount } = render(<ThresholdLineupClient {...props} />)
+    expect(container.textContent).toContain("cleared 3 of 4 nights")
+    expect(container.textContent).toContain("71% chance on average")
+    unmount()
+    warm = { data: { ...okData, trackRecord: { scored: 0, cleared: 0, avgPredicted: null, pending: 1 } }, loading: false, error: null }
+    expect(render(<ThresholdLineupClient {...props} />).container.textContent).not.toContain("cleared")
+  })
+
+  it("says the record failed to load rather than implying there is none", () => {
+    warm = { data: { ...okData, trackRecord: null, trackRecordFailed: true }, loading: false, error: null }
+    expect(render(<ThresholdLineupClient {...props} />).container.textContent).toContain("record for this run couldn't be loaded")
+  })
+
+  it("labels a Pro night and tells the collector to sync when Pro eligibility is unknown", () => {
+    warm = { data: { ...okData, dataStatus: "pro_eligibility_unknown", lineup: null, slateBest: null }, loading: false, error: null }
+    const { container } = render(<ThresholdLineupClient {...props} mode="pro" />)
+    expect(container.textContent).toContain("Pro · Tonight")
+    expect(container.textContent).toContain("Sync from Top Shot")
+  })
 })

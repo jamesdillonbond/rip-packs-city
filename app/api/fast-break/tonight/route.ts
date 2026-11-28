@@ -30,6 +30,7 @@ import {
   type Targets,
   type ThresholdPlayer,
 } from "@/lib/fast-break/threshold-optimizer"
+import { PROJ_COLUMN, summarizeTrackRecord, type TrackRecord } from "@/lib/fast-break/track-record"
 
 export const dynamic = "force-dynamic"
 
@@ -52,12 +53,6 @@ function todayInET(now: Date = new Date()): string {
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
-/** Projection column for each target stat. */
-const PROJ_COLUMN: Record<StatKey, string> = {
-  pts: "proj_points", reb: "proj_rebounds", ast: "proj_assists", stl: "proj_steals",
-  blk: "proj_blocks", tov: "proj_turnovers", fg3m: "proj_threes", fg3a: "proj_three_attempts",
-  fgm: "proj_fgm", fga: "proj_fga", ftm: "proj_ftm", fta: "proj_fta",
-}
 
 function fail(error: string, status = 500) {
   return NextResponse.json({ error }, { status, headers: ROUTE_HEADERS })
@@ -284,9 +279,29 @@ export async function POST(req: NextRequest) {
           .slice(0, 15)
       : []
 
+    // The model's own record this run (fast_break_predictions, scored from box scores). A failed
+    // read is reported as such, not as "no record yet", and does not sink tonight's lineup.
+    let trackRecord: TrackRecord | null = null
+    let trackRecordFailed = false
+    {
+      const { data: preds, error: predErr } = await supabase
+        .from("fast_break_predictions")
+        .select("predicted_p, cleared")
+        .eq("run_id", runId)
+        .eq("kind", "slate_best")
+      if (predErr) {
+        console.error("[fast-break-tonight] predictions:", predErr.message)
+        trackRecordFailed = true
+      } else {
+        trackRecord = summarizeTrackRecord((preds ?? []) as any[])
+      }
+    }
+
     return NextResponse.json(
       {
         walletAddr,
+        trackRecord,
+        trackRecordFailed,
         runId,
         runName: run.name,
         mode: isPro ? "pro" : "classic",

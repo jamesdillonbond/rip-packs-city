@@ -34,6 +34,8 @@ interface TonightResponse {
   eligibleCount: number
   onSlateCount: number
   lineup: TonightLineup | null
+  trackRecord?: { scored: number; cleared: number; avgPredicted: number | null; pending: number } | null
+  trackRecordFailed?: boolean
   slateBest: {
     winProbability: number
     missing: Array<{ nbaPlayerId: string; fullName: string | null; teamAbbr: string | null; reason: "not_owned" | "no_uses_left" }>
@@ -298,6 +300,11 @@ export default function ThresholdLineupClient({ walletAddr, runId, gameDate, mod
       )}
 
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+        {data.trackRecordFailed
+          ? "RPC's record for this run couldn't be loaded. "
+          : data.trackRecord && data.trackRecord.scored > 0
+            ? `This run, the best lineup RPC picked from the whole slate cleared ${data.trackRecord.cleared} of ${data.trackRecord.scored} night${data.trackRecord.scored === 1 ? "" : "s"}; it had given those nights a ${Math.round((data.trackRecord.avgPredicted ?? 0) * 100)}% chance on average. `
+            : ""}
         Projections blend ESPN&apos;s season numbers with each player&apos;s games so far. The chance shown is an estimate from how much each stat swings night to night — a guide, not a promise.
       </div>
     </div>
