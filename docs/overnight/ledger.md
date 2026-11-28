@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 7:00 PM PT — 🗄 APPLIED `20261128025619` + pg_cron 959 — Candy whale usernames on a schedule
+
+- **What:** Trevor: "Yes do that. Keep going … Make sure any scheduled tasks live outside this thread". The database can fetch candy.io card pages itself (pg_net, 200, measured 6:58 PM PT), so the Chrome method is now a pg_cron lane: `run_big_spender_candy_usernames()` every 10 min (`2-52/10`) checks up to 12 unresold cards per unnamed Solana whale (12 requests per run, 3 in flight per wallet) into new `big_spender_candy_owner_checks`, names a wallet once two cards agree with no tie, and deletes its responses from `net._http_response`. Logs `big_spender_candy_usernames` with per-step errors; `ok` is false if any step errored. Cadence watches added for it and for the Atlas lane 958, which had none (60 / 180 min). First two manual runs: 24 checks, all 200, responses cleaned up. anon EXECUTE / SELECT false.
+- **Revert:** `select cron.unschedule('rpc-big-spender-candy-usernames'); drop function public.run_big_spender_candy_usernames(); drop table public.big_spender_candy_owner_checks; delete from pipeline_cadence_watchlist where pipeline in ('big_spender_candy_usernames','big_spender_usernames');`
+
 ### 2026-11-27 · 6:55 PM PT — 🗄 APPLIED `20261128025030` — Candy whale usernames from candy.io
 
 - **What:** Trevor: "Use chrome and find them on the candy site". For each of the 59 unnamed Solana whales, fetched candy.io/collectibles/<mint> for up to three cards it bought and never resold and read "Owned by @…". Saved a name only when two cards agree: **30 of 59** (e.g. tadtweets, thekandyman, kgarz31, 69_superman_69, rormac). Nine showed a name on one card only (left NULL); twenty showed none. Several usernames own two wallets; both are labelled. Board refreshed: Candy 30d leaders now 6 of 10 named. Names survive the refresh (upsert coalesces; no wallet_usernames row for Solana keys).
