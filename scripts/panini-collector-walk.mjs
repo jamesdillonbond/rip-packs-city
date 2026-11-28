@@ -245,6 +245,38 @@ export function pastWalkCap(walkStartedMs, nowMs, capMin) {
 }
 
 /**
+ * The longest ONE walk may run before the run gives up on it (2026-11-27). The cap above is checked
+ * between collections, so it cannot stop a call that never returns — and over CDP some calls carry
+ * no deadline of their own (ctx.newPage(), for one). On 11-27 joesplosion's walk hung twice running
+ * (3:52 and 5:20 PM PT): the batch watchdog killed the first mid-read, nothing was posted, and the
+ * plan (ordered by the last POSTED walk) put the same collector first again, so each two-hour batch
+ * spent its whole budget on one hung walk. A walk past this deadline is abandoned and posted as an
+ * incomplete read (which retires nothing), so the run moves on to the next collector.
+ * Cap + 2.5 min: measured walks overrun their cap by at most ~1 min (282-298 s on a 4-min cap).
+ * No cap configured -> 10 min + 2.5.
+ */
+export function walkDeadlineMs(capMin) {
+  const c = Number(capMin)
+  return Math.round(((c > 0 ? c : 10) + 2.5) * 60_000)
+}
+
+/** What an abandoned (hung) walk posts: incomplete, nothing read, the reason named. */
+export function hungWalkResult(deadlineMs) {
+  return {
+    holdings: [],
+    total: null,
+    unopenedPacks: null,
+    profileState: "unknown",
+    answers: 0,
+    error: `walk did not finish within ${(deadlineMs / 60_000).toFixed(1)} min — abandoned (a browser call hung); posted as an incomplete read, nothing retired`,
+    sampleKeys: null,
+    source: null,
+    foreign: 0,
+    names: new Map(),
+  }
+}
+
+/**
  * The order a walk reads a profile's collections in: the list rotated to start at a day-dependent
  * index. A profile too big for the cap (2026-10-03: 30 of 128, 28 of 65, 4 of 54) used to restart
  * at collection 0 every walk, so everything past the cap was NEVER read. Rotating the start by day
@@ -723,7 +755,11 @@ async function main() {
         if (!hb.ok) log(`heartbeat not recorded (http ${hb.status})`)
       }
       log(`walking ${nickname}`)
-      const res = await walkProfile(ctx, nickname, { maxPages, log, capMin: process.env.PANINI_COLLECTOR_WALK_MAX_MIN })
+      const capMin = process.env.PANINI_COLLECTOR_WALK_MAX_MIN
+      const deadlineMs = walkDeadlineMs(capMin)
+      const walked = await withDeadline(walkProfile(ctx, nickname, { maxPages, log, capMin }), deadlineMs)
+      if (walked === TIMED_OUT) log(`  ${nickname}: walk did not finish within ${(deadlineMs / 60_000).toFixed(1)} min — abandoning it and moving on`)
+      const res = walked === TIMED_OUT ? hungWalkResult(deadlineMs) : walked
       const complete = isComplete(res.holdings.length, res.total, res.error)
       const line = {
         username: nickname,

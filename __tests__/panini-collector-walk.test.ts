@@ -26,6 +26,8 @@ import {
   ingestPayloads,
   mayStartWalk,
   pastWalkCap,
+  walkDeadlineMs,
+  hungWalkResult,
   walkOrder,
   mergeTargets,
   operationOf,
@@ -319,5 +321,29 @@ describe("namesNoUser — an answer for the signed-in viewer, never for a named 
   })
   it("an unparseable body is not credited", () => {
     expect(namesNoUser("not json")).toBe(false)
+  })
+})
+
+// 2026-11-27: a walk that never returns (joesplosion, 3:52 and 5:20 PM PT) is abandoned at a deadline and
+// posted as an incomplete read, so the run moves on instead of the batch watchdog killing everything.
+describe("walkDeadlineMs / hungWalkResult", () => {
+  it("gives a walk its cap plus 2.5 min — past every measured overrun, inside both runners' watchdogs", () => {
+    expect(walkDeadlineMs("4")).toBe(6.5 * 60_000)
+    expect(walkDeadlineMs("10")).toBe(12.5 * 60_000)
+    expect(walkDeadlineMs(undefined)).toBe(12.5 * 60_000)
+    // daily runner: last start at BUDGET 40 + deadline < HARD 55 (scripts/panini-collector-walk.bat)
+    expect(40 * 60_000 + walkDeadlineMs("10")).toBeLessThan(55 * 60_000)
+    // a normal capped walk (measured max 298 s on a 4-min cap) is never abandoned
+    expect(298_000).toBeLessThan(walkDeadlineMs("4"))
+  })
+
+  it("an abandoned walk posts INCOMPLETE with nothing read and says why — never a complete empty profile", () => {
+    const r = hungWalkResult(walkDeadlineMs("4"))
+    expect(r.holdings).toEqual([])
+    expect(r.profileState).toBe("unknown")
+    expect(isComplete(r.holdings.length, r.total, r.error)).toBe(false)
+    expect(r.error).toMatch(/did not finish within 6\.5 min/)
+    expect(r.error).toMatch(/nothing retired/)
+    expect([...r.names]).toEqual([])
   })
 })
