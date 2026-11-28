@@ -143,13 +143,13 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                     <thead>
                       <tr style={{ color: dim, ...mono, textAlign: "left" }}>
-                        <th style={th}>#</th>
-                        <th style={th}>Collector</th>
-                        <th style={{ ...th, textAlign: "right" }}>Spent</th>
-                        <th style={{ ...th, textAlign: "right" }}>Buys</th>
-                        <th style={{ ...th, textAlign: "right" }}>Biggest buy</th>
-                        <th style={th}>Collections</th>
-                        <th style={th}>Last buy</th>
+                        <th scope="col" style={th}>#</th>
+                        <th scope="col" style={th}>Collector</th>
+                        <th scope="col" style={{ ...th, textAlign: "right" }}>Spent</th>
+                        <th scope="col" style={{ ...th, textAlign: "right" }}>Buys</th>
+                        <th scope="col" style={{ ...th, textAlign: "right" }}>Biggest buy</th>
+                        <th scope="col" style={th}>Collections</th>
+                        <th scope="col" style={th}>Last buy</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -173,7 +173,7 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
               )}
             </section>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 24 }}>
               <MoveList
                 id="ww-moves"
                 title="Latest big buys"
