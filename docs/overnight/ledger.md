@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:45 PM PT — 🗄 APPLIED `20261128024418` — big-spender watch: one wallet key per wallet
+
+- **What:** Trevor: "Keep going and apply the fix". Some `pinnacle_sales` rows store the buyer as a bare 16-hex Flow address (no `0x`), so 23 Disney Pinnacle whales were tracked under that bare key, labelled Solana, linked to the Candy wallet page and never sent to Atlas for a name. New `big_spender_key(text)` (lower-cases a 0x key, prefixes 0x to a bare 16-hex key, leaves Solana base58 untouched; anon EXECUTE false) now wraps every key read in `refresh_big_spender_wallets`, `get_big_spender_activity` and `refresh_whale_watch_board`. Ledger keys rewritten in place; the 23 rows deleted and rebuilt by a 365-day refresh (19 merged into their existing 0x wallet, 4 new). After: 0 bare-hex keys in either table, board 25/25 leaders, 42 moves, 11 Flow whales still unnamed (Atlas queue 958 picks them up). Live prosrc md5 = file bodies for all four functions.
+- **Revert:** re-apply the three bodies from `20261127232846` and `20261128015710`, then `drop function public.big_spender_key(text);` and run `select refresh_big_spender_wallets(365); select refresh_whale_watch_board();`.
+
 ### 2026-11-27 · 6:50 PM PT — Docs: Top Fans census first-run notes, session log, RETURN QUERY type lesson
 
 - **What:** docs/features/top-fans.md (the non-census read is now read-then-dropped; first-run checks name the hand-rebuilt DB half and the ek-mismatch risk, with the 11-27 validation numbers), docs/sessions/2026-11.md (this thread), docs/reference/database.md (RETURN QUERY needs exact column types; CALL a new set-returning function once). Docs only.
