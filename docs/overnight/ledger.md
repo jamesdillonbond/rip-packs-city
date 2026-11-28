@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:15 PM PT — 🗄 APPLIED `20261128015710` + page — Whale Watch: bought items link to their pages; Top Sales links to Whale Watch
+
+- **What:** Trevor: "Keep going". `refresh_whale_watch_board()` adds `link_key` to every move (edition external id, Pinnacle render id, Panini edition id, pack dist id; none for Candy packs). After the refresh, 57 of 57 moves were linked. On /insights/whales each bought item links to its edition or pack detail page (`whaleItemHref`); one live sample per kind returned 200. /insights/top-sales links to Whale Watch.
+- **Revert:** re-apply the function body from `20261128013007_audit_20261127_whale_watch_board_links_and_collections.sql`, then `git revert` this commit.
+
 ### 2026-11-27 · 5:50 PM PT — Top Collector census: route + helper tests (CI coverage ratchet back over its gates)
 
 - **What:** `main` was red on the coverage ratchet (functions 93.58 < 93.6, statements 91.66 < 91.8) because the new census route had no tests. Added `__tests__/api-cron-top-collector-census-dune.test.ts` (21 cases: auth, refused collection, unconfigured, the full upload→execute→page→stage→finalize walk, resume, and each failure face failing the run and dropping the stage) and `__tests__/top-fans-format-helpers.test.ts`. Removed the uncalled `mapCsv` (the CSV is built in the database). No runtime change.
