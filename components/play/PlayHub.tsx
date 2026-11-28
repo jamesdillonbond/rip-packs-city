@@ -34,9 +34,9 @@ export default function PlayHub({ collection, accent }: { collection: string; ac
       key: "fast-break",
       title: "Fast Break",
       blurb:
-        "Build the optimal Fast Break lineup from your wallet — projections, captain pick, and slate-aware optimization.",
+        "Tonight's Fast Break targets and the five players plus Captain from your wallet most likely to clear them — with uses left per Moment.",
       href: `/${collection}/fast-break`,
-      live: false,
+      live: true,
       icon: "⚡",
     },
     {

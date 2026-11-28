@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     // 1. Run lookup + range/size validation.
     const { data: run, error: runErr } = await supabase
       .from("fast_break_runs")
-      .select("id, lineup_size, has_captain, start_date, end_date")
+      .select("id, lineup_size, has_captain, start_date, end_date, objective")
       .eq("id", runId)
       .single()
     if (runErr || !run) {
@@ -114,12 +114,15 @@ export async function POST(req: NextRequest) {
     // 2. Eligibility lookup — required so the function can fall back to
     // the run's tier→total_allowed mapping when inserting a brand-new
     // fast_break_player_uses row for an added player.
+    // Regular-season runs ('thresholds', 2026-27) count uses per Moment by price band or tier
+    // (get_fb_eligible_players_v2); playoff runs keep the tier caps of v1.
+    const eligibleFn = (run as any).objective === "thresholds" ? "get_fb_eligible_players_v2" : "get_fb_eligible_players"
     const { data: eligibleRaw, error: eligErr } = await (supabase as any).rpc(
-      "get_fb_eligible_players",
+      eligibleFn,
       { p_wallet_addr: walletAddr, p_run_id: runId },
     )
     if (eligErr) {
-      console.error("[fast-break-lineup] get_fb_eligible_players:", eligErr.message)
+      console.error(`[fast-break-lineup] ${eligibleFn}:`, eligErr.message)
       return NextResponse.json(
         { error: "eligible_rpc_failed" },
         { status: 500, headers: ROUTE_HEADERS },
@@ -165,7 +168,8 @@ export async function POST(req: NextRequest) {
       return {
         nba_player_id: p.nbaPlayerId,
         highest_tier: e?.highest_tier ?? "COMMON",
-        total_allowed: Number(e?.total_allowed ?? 1),
+        // v2 returns NULL for an unlimited Moment; the counter column is a smallint budget.
+        total_allowed: e && e.total_allowed === null && (run as any).objective === "thresholds" ? 99 : Number(e?.total_allowed ?? 1),
       }
     })
 

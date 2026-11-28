@@ -41,6 +41,8 @@ export interface ActiveRun {
   has_captain: boolean
   start_date: string | null
   end_date: string | null
+  /** 'thresholds' = regular-season nightly stat targets (2026-27); 'max_points' = playoff format. */
+  objective?: "max_points" | "thresholds" | null
 }
 
 export interface SlateGame {
@@ -72,7 +74,7 @@ export async function fetchActiveRun(
       Promise.resolve(
         db
           .from("fast_break_runs")
-          .select("id, name, lineup_size, has_captain, start_date, end_date")
+          .select("id, name, lineup_size, has_captain, start_date, end_date, objective")
           .eq("is_active", true)
           .maybeSingle(),
       ),

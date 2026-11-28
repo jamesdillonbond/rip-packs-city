@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { fetchActiveRun, fetchSlate } from "@/lib/fast-break/page-data"
 import { fetchPinnedWallet } from "@/lib/wallet/pinned-wallet"
 import FastBreakClient from "@/components/fast-break/FastBreakClient"
+import ThresholdLineupClient from "@/components/fast-break/ThresholdLineupClient"
 import SlateRow from "@/components/fast-break/SlateRow"
 
 export const dynamic = "force-dynamic"
@@ -161,14 +162,19 @@ export default async function FastBreakPage(props: {
               </div>
             </div>
           )}
-          <FastBreakClient
-            walletAddr={topShotWallet}
-            runId={run.id}
-            runName={run.name}
-            lineupSize={run.lineup_size as 2 | 3}
-            hasCaptain={run.has_captain}
-            gameDate={gameDate}
-          />
+          {run.objective === "thresholds" ? (
+            /* Regular season (2026-27): nightly combined-stat targets. */
+            <ThresholdLineupClient walletAddr={topShotWallet} runId={run.id} gameDate={gameDate} />
+          ) : (
+            <FastBreakClient
+              walletAddr={topShotWallet}
+              runId={run.id}
+              runName={run.name}
+              lineupSize={run.lineup_size as 2 | 3}
+              hasCaptain={run.has_captain}
+              gameDate={gameDate}
+            />
+          )}
         </>
       )}
     </section>
@@ -199,7 +205,7 @@ export default async function FastBreakPage(props: {
           Connect your Top Shot wallet to see your optimal lineup
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6, marginBottom: 16 }}>
-          The optimizer reads your eligible moments, joins them against tonight&apos;s DraftKings projections, and recommends a 3-player lineup ranked by Fantasy Points and serial sum.
+          The optimizer reads your Moments and their uses left this run, projects tonight&apos;s stats, and picks the five players plus Captain most likely to clear tonight&apos;s Fast Break targets.
         </div>
         <Link href="/dashboard" className="rpc-btn-primary" style={{ display: "inline-block", textDecoration: "none" }}>
           Pin a wallet on your dashboard

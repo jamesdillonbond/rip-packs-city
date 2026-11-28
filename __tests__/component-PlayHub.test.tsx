@@ -121,7 +121,7 @@ describe("PlayHub — rendering", () => {
 
     for (const slug of FEATURES) expect(screen.getByText(titleFor(slug))).toBeTruthy()
     expect(screen.getByText(/ranked by net EV/)).toBeTruthy()
-    expect(screen.getByText(/optimal Fast Break lineup/)).toBeTruthy()
+    expect(screen.getByText(/five players plus Captain from your wallet/)).toBeTruthy()
     expect(screen.getByText(/Lock ROI calculator/)).toBeTruthy()
   })
 
