@@ -44,6 +44,7 @@ import PinnacleCharacterChecklist from "@/components/pinnacle/PinnacleCharacterC
 import PaniniPlayerChecklist from "@/components/panini/PaniniPlayerChecklist"
 import { getCollection } from "@/lib/collections"
 import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
+import { fetchRookieCutLines, type RookieCutLines } from "@/lib/topshot/rookie-cut-lines"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
@@ -292,13 +293,40 @@ async function fetchCandyTopCollectors(playerId: string, limit: number): Promise
   return sectionRowsResult<CandyCollector>("candy player top collectors", "get_candy_player_top_collectors", { p_player_id: playerId, p_limit: limit })
 }
 
+// Year-end rookie cut lines (2026-11-27): what the #3 (Blue Chip) and #26 (Rookie
+// Yearbook) holders of this rookie hold today. A PROXY for Top Shot's own boards (they
+// rank by locked Top Shot Score); an OPEN line reads "fewer than N collectors", never $0.
+function RookieCutLinesStrip({ cut }: { cut: RookieCutLines }) {
+  return (
+    <div style={{ padding: "0 4px 10px" }}>
+      <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-primary)", display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
+        <span style={{ fontWeight: 700 }}>Year-end cut lines today</span>
+        {cut.lines.map((l) => (
+          <span key={l.rank}>
+            #{l.rank} <span style={{ color: "var(--rpc-text-muted)" }}>({l.reward}{l.rank === 3 ? ", All-Rookie players" : ""})</span>:{" "}
+            {l.open
+              ? <>open — fewer than {l.rank} collectors</>
+              : <>{fmtCount(l.moments)} {l.moments === 1 ? "Moment" : "Moments"} · {fmtUsd(l.valueUsd)}</>}
+          </span>
+        ))}
+        {cut.collectors != null && <span style={{ color: "var(--rpc-text-muted)" }}>{fmtCount(cut.collectors)} collectors</span>}
+      </div>
+      <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 4 }}>
+        Top Shot ranks its own boards by locked Top Shot Score. These lines count every Moment held, at RPC value, so treat them as a guide. Boards lock one week after the All-Rookie teams are named.
+      </div>
+    </div>
+  )
+}
+
 async function TopCollectorsSection({ playerName, candyPlayerId = null }: { playerName: string; candyPlayerId?: string | null }) {
   const isCandy = candyPlayerId != null
-  const [{ rows: collectors, ok }, coverage] = await Promise.all([
+  const [{ rows: collectors, ok }, coverage, cutLines] = await Promise.all([
     isCandy ? fetchCandyTopCollectors(candyPlayerId, 10) : fetchTopCollectors(playerName, 10),
     isCandy
       ? Promise.resolve({ row: null as IndexCoverage | null, ok: true })
       : sectionRowResult<IndexCoverage>("player index coverage", "get_topshot_rookie_index_coverage", { p_player_name: playerName }),
+    // Top Shot 2026 class only (the helper checks the class); null = nothing to show.
+    isCandy ? Promise.resolve(null) : fetchRookieCutLines(playerName),
   ])
   const coverageNote = isCandy ? null : indexCoverageNote(coverage.row, coverage.ok)
   const candyHolders = isCandy ? ((collectors[0] as CandyCollector | undefined)?.total_holders ?? null) : null
@@ -327,6 +355,7 @@ async function TopCollectorsSection({ playerName, candyPlayerId = null }: { play
           {coverageNote}
         </div>
       )}
+      {cutLines && <RookieCutLinesStrip cut={cutLines} />}
       <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {collectors.map(c => {
           // Same fabrication as Top Sales above — latent here only because

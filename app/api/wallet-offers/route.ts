@@ -24,6 +24,11 @@
 //     the edition floor for an edition / parallel offer, that exact Moment's
 //     seen listing for a serial offer (lib/market/open-offer-flags.ts).
 //   - a failed RPC or count is an error response, never `rows: []`.
+//   - `above_value` (2026-11-27): an edition / parallel offer more than 20 % over RPC's
+//     FMV (lib/market/open-offer-flags.ts — never a serial offer). FMV comes from
+//     get_fmv_for_editions in 500-id slices (PostgREST clamps an RPC result at 1,000
+//     rows). The flag is additive: a failed FMV read leaves every row's `fmv_usd` null
+//     and `summary.above_value` NULL ("could not check"), never 0 ("none are above").
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse } from "@/lib/api-error"
@@ -86,10 +91,37 @@ export type WalletOpenOfferRow = {
   serial_ask_usd: number | null
   serial_ask_seen_at: string | null
   age_days: number | null
+  /** RPC FMV of the edition / parallel bid on (non-serial offers only); null = unknown or not read. */
+  fmv_usd: number | null
   outbid: boolean
   superseded: boolean
   stale: boolean
   at_or_above_floor: boolean
+  above_value: boolean
+}
+
+/** FMV for the editions the wallet's non-serial offers bid on. null = the read failed. */
+async function fmvForOfferEditions(rows: any[]): Promise<Map<string, number> | null> {
+  const ids = Array.from(new Set(rows.filter((r) => r.offer_type !== "serial" && r.edition_id).map((r) => String(r.edition_id))))
+  const out = new Map<string, number>()
+  for (let i = 0; i < ids.length; i += 500) {
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).rpc("get_fmv_for_editions", {
+        p_collection_id: TOPSHOT_UUID,
+        p_edition_ids: ids.slice(i, i + 500),
+      }),
+      "api/wallet-offers/get_fmv_for_editions",
+    )
+    if (error) {
+      console.error("[wallet-offers] get_fmv_for_editions", error.message)
+      return null
+    }
+    for (const row of (Array.isArray(data) ? data : []) as Array<{ edition_id: string; fmv_usd: number | string | null }>) {
+      const v = num(row.fmv_usd)
+      if (v != null && v > 0) out.set(String(row.edition_id), v)
+    }
+  }
+  return out
 }
 
 const num = (v: unknown): number | null => {
@@ -119,6 +151,7 @@ async function openView(collectionSlug: string, collectionUuid: string, wallet: 
   if (countRes.error) throw new Error(countRes.error.message)
   if (typeof countRes.count !== "number") throw new Error("offers count(open) returned no count")
 
+  const fmvByEdition = await fmvForOfferEditions(rpcRes.data as any[])
   const now = Date.now()
   const rows: WalletOpenOfferRow[] = (rpcRes.data as any[]).map((r) => {
     const base = {
@@ -140,6 +173,8 @@ async function openView(collectionSlug: string, collectionUuid: string, wallet: 
       serial_ask_usd: num(r.serial_ask_usd),
       serial_ask_seen_at: r.serial_ask_seen_at ?? null,
       age_days: num(r.age_days),
+      fmv_usd:
+        r.offer_type !== "serial" && r.edition_id && fmvByEdition ? fmvByEdition.get(String(r.edition_id)) ?? null : null,
     }
     return { ...base, ...classifyOpenOffer(base, now) }
   })
@@ -159,6 +194,7 @@ async function openView(collectionSlug: string, collectionUuid: string, wallet: 
         superseded: rows.filter((r) => r.superseded).length,
         stale: rows.filter((r) => r.stale).length,
         at_or_above_floor: rows.filter((r) => r.at_or_above_floor).length,
+        above_value: fmvByEdition ? rows.filter((r) => r.above_value).length : null,
       },
       rows,
     },

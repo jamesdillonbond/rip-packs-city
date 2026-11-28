@@ -14,9 +14,17 @@
 //                     the edition, a DIFFERENT serial (2026-11-14: one wallet had 274 of its newest 500
 //                     offers flagged this way, every one a ~$1 serial bid against a ~$0.69 floor).
 //                     A null floor / unseen listing is unknown, never 0, so it never sets this flag.
+//   above_value       (2026-11-27) an EDITION or PARALLEL offer more than ABOVE_VALUE_RATIO (20 %) over
+//                     RPC's FMV for what it bids on. ⚠ NEVER a serial offer: a serial bid targets one
+//                     exact serial (often a low or special one) and edition FMV is the wrong yardstick —
+//                     on 2026-11-27, 1,607 of 2,663 saved-wallet serial offers sat above edition FMV, almost
+//                     all deliberate. A null FMV is unknown, never 0, so it never sets this flag.
 import { isBidStale } from "@/lib/market/bid-age"
 
-export type OpenOfferFlags = { outbid: boolean; superseded: boolean; stale: boolean; at_or_above_floor: boolean }
+export type OpenOfferFlags = { outbid: boolean; superseded: boolean; stale: boolean; at_or_above_floor: boolean; above_value: boolean }
+
+/** An edition / parallel offer above FMV × this ratio is flagged "above RPC value". */
+export const ABOVE_VALUE_RATIO = 1.2
 
 /** Flags for one row. Outbid wins over superseded: another wallet beating you is the fact that matters. */
 export function classifyOpenOffer(
@@ -28,6 +36,8 @@ export function classifyOpenOffer(
     floor_usd: number | null
     serial_ask_usd?: number | null
     created_at: string | null
+    /** RPC FMV of the edition / parallel the offer bids on; null = unknown. */
+    fmv_usd?: number | null
   },
   now: number = Date.now(),
 ): OpenOfferFlags {
@@ -37,6 +47,8 @@ export function classifyOpenOffer(
   const stale = isBidStale(r.created_at, now)
   const buyNow = r.offer_type === "serial" ? r.serial_ask_usd ?? null : r.floor_usd
   const at_or_above_floor = amt != null && buyNow != null && amt >= buyNow
-  return { outbid, superseded, stale, at_or_above_floor }
+  const fmv = r.fmv_usd ?? null
+  const above_value = r.offer_type !== "serial" && amt != null && fmv != null && fmv > 0 && amt > fmv * ABOVE_VALUE_RATIO
+  return { outbid, superseded, stale, at_or_above_floor, above_value }
 }
 

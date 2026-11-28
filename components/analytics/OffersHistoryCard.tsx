@@ -65,10 +65,14 @@ export type OpenOfferRow = {
   serial_ask_usd: number | null
   serial_ask_seen_at: string | null
   age_days: number | null
+  /** RPC FMV of the edition / parallel bid on (non-serial offers); null = unknown. */
+  fmv_usd?: number | null
   outbid: boolean
   superseded: boolean
   stale: boolean
   at_or_above_floor: boolean
+  /** Edition / parallel offer more than 20 % over RPC's value (never a serial offer). */
+  above_value?: boolean
 }
 
 export type OpenOffersResponse = {
@@ -81,6 +85,8 @@ export type OpenOffersResponse = {
     superseded: number
     stale: number
     at_or_above_floor: number
+    /** null = the value check could not run (never "none are above value"). */
+    above_value?: number | null
   } | null
   rows: OpenOfferRow[]
 }
@@ -103,9 +109,9 @@ function trackedSinceLabel(iso: string | undefined): string | null {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })
 }
 
-/** Outbid first, then at-or-above-floor, then stale, then newest. */
+/** Outbid first, then above RPC value, then at-or-above-floor, then stale, then newest. */
 export function sortOpenOffers(rows: OpenOfferRow[]): OpenOfferRow[] {
-  const rank = (r: OpenOfferRow) => (r.outbid ? 0 : r.at_or_above_floor ? 1 : r.stale ? 2 : 3)
+  const rank = (r: OpenOfferRow) => (r.outbid ? 0 : r.above_value ? 1 : r.at_or_above_floor ? 2 : r.stale ? 3 : 4)
   return [...rows].sort((a, b) => {
     const d = rank(a) - rank(b)
     if (d !== 0) return d
@@ -147,6 +153,9 @@ function OpenOffersView({ data, urlSlug }: { data: OpenOffersResponse; urlSlug: 
           {s.superseded > 0 && <span>· <b style={{ color: "var(--rpc-text-secondary)" }}>{s.superseded.toLocaleString("en-US")}</b> superseded by you</span>}
           <span>· <b style={{ color: "var(--rpc-warning-text)" }}>{s.stale.toLocaleString("en-US")}</b> stale</span>
           <span>· <b style={{ color: "var(--rpc-success-text)" }}>{s.at_or_above_floor.toLocaleString("en-US")}</b> at/above floor</span>
+          {s.above_value != null && s.above_value > 0 && (
+            <span>· <b style={{ color: "var(--rpc-warning-text)" }}>{s.above_value.toLocaleString("en-US")}</b> above RPC value</span>
+          )}
         </div>
       )}
       {s?.truncated && (
@@ -206,6 +215,11 @@ function OpenOffersView({ data, urlSlug }: { data: OpenOffersResponse; urlSlug: 
                       <Chip label={`Superseded by your ${fmt(o.own_higher_usd)}`} color="var(--rpc-text-secondary)" title="Your own higher offer is on the same Moment. No other wallet is beating it." />
                     )}
                     {o.stale && <Chip label="Stale 14d+" color="var(--rpc-warning-text)" title="Open 14 days or more without being accepted. Still open." />}
+                    {/* Edition / parallel offers only — a serial offer bids on one exact serial and
+                        edition FMV is the wrong yardstick (lib/market/open-offer-flags.ts). */}
+                    {o.above_value && o.offer_type !== "serial" && o.fmv_usd != null && (
+                      <Chip label={`Above RPC value (${fmt(o.fmv_usd)})`} color="var(--rpc-warning-text)" title={`Your offer is more than 20% over RPC's value for this edition (${fmt(o.fmv_usd)}).`} />
+                    )}
                     {/* "At/above floor" compares against what THIS offer can buy. For a serial offer
                         that is the exact Moment's seen listing, never the edition floor (a different
                         serial) — lib/market/open-offer-flags.ts. */}

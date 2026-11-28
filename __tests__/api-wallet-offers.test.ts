@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   failCount: null as string | null,
   rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
   rpcResult: { data: null, error: null } as { data: unknown; error: { message: string } | null },
+  fmvResult: { data: [], error: null } as { data: unknown; error: { message: string } | null },
 }))
 
 function builder(table: string) {
@@ -52,7 +53,7 @@ vi.mock("@/lib/supabase", () => ({
     from: (t: string) => builder(t),
     rpc: (fn: string, args: Record<string, unknown>) => {
       state.rpcCalls.push({ fn, args })
-      return Promise.resolve(state.rpcResult)
+      return Promise.resolve(fn === "get_fmv_for_editions" ? state.fmvResult : state.rpcResult)
     },
   },
 }))
@@ -67,6 +68,7 @@ beforeEach(() => {
   state.failCount = null
   state.rpcCalls = []
   state.rpcResult = { data: null, error: null }
+  state.fmvResult = { data: [], error: null }
 })
 
 describe("GET /api/wallet-offers", () => {
@@ -153,7 +155,8 @@ describe("GET /api/wallet-offers?view=open", () => {
     expect(state.rpcCalls).toEqual([{ fn: "get_topshot_wallet_open_offers", args: { p_wallet: W, p_limit: 3000 } }])
     expect(body).toMatchObject({ supported: true, view: "open", wallet: W })
     // open is the MEASURED head count (2 in the mock), not rows.length (5)
-    expect(body.summary).toEqual({ open: 2, shown: 7, truncated: false, outbid: 2, superseded: 1, stale: 1, at_or_above_floor: 2 })
+    // above_value 0: no row carries an edition_id, so no FMV is read and none is flagged
+    expect(body.summary).toEqual({ open: 2, shown: 7, truncated: false, outbid: 2, superseded: 1, stale: 1, at_or_above_floor: 2, above_value: 0 })
     const by = Object.fromEntries(body.rows.map((r: { offer_id: string }) => [r.offer_id, r]))
     expect(by.a).toMatchObject({ outbid: true, superseded: false, top_other_bid: 6 })
     expect(by.b).toMatchObject({ outbid: false, superseded: true, own_higher_usd: 9 })
@@ -163,6 +166,38 @@ describe("GET /api/wallet-offers?view=open", () => {
     expect(by.e.at_or_above_floor).toBe(false)
     expect(by.f.at_or_above_floor).toBe(false)
     expect(by.g.at_or_above_floor).toBe(true)
+  })
+
+  it("flags an edition / parallel offer over 1.2x RPC value — never a serial one, never on an unknown FMV", async () => {
+    state.rpcResult = {
+      data: [
+        row({ offer_id: "p", offer_type: "subedition", edition_id: "ed-par", amount_usd: "12.10" }), // 1.21x -> flagged
+        row({ offer_id: "q", offer_type: "edition", edition_id: "ed-std", amount_usd: "11.90" }), // 1.19x -> not
+        row({ offer_id: "s", offer_type: "serial", edition_id: "ed-par", amount_usd: "50.00" }), // serial: never, and no FMV read for it
+        row({ offer_id: "u", offer_type: "edition", edition_id: "ed-unpriced", amount_usd: "99.00" }), // no FMV row -> unknown
+      ],
+      error: null,
+    }
+    state.fmvResult = { data: [{ edition_id: "ed-par", fmv_usd: "10.00" }, { edition_id: "ed-std", fmv_usd: "10.00" }], error: null }
+    const body = await (await GET(req(`wallet=${W}&collection=nba-top-shot&view=open`))).json()
+    const fmvCall = state.rpcCalls.find((c) => c.fn === "get_fmv_for_editions")
+    expect((fmvCall?.args.p_edition_ids as string[]).sort()).toEqual(["ed-par", "ed-std", "ed-unpriced"])
+    const by = Object.fromEntries(body.rows.map((r: { offer_id: string }) => [r.offer_id, r]))
+    expect(by.p).toMatchObject({ above_value: true, fmv_usd: 10 })
+    expect(by.q).toMatchObject({ above_value: false, fmv_usd: 10 })
+    expect(by.s).toMatchObject({ above_value: false, fmv_usd: null })
+    expect(by.u).toMatchObject({ above_value: false, fmv_usd: null })
+    expect(body.summary.above_value).toBe(1)
+  })
+
+  it("a failed FMV read reports above_value as unknown (null), never 0, and keeps the offers", async () => {
+    state.rpcResult = { data: [row({ offer_id: "p", offer_type: "edition", edition_id: "ed-1", amount_usd: "50.00" })], error: null }
+    state.fmvResult = { data: null, error: { message: "boom" } }
+    const res = await GET(req(`wallet=${W}&collection=nba-top-shot&view=open`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.summary.above_value).toBeNull()
+    expect(body.rows[0]).toMatchObject({ offer_id: "p", above_value: false, fmv_usd: null })
   })
 
   it("says truncated when the measured open total exceeds the rows returned", async () => {
@@ -193,5 +228,16 @@ describe("GET /api/wallet-offers?view=open", () => {
     expect(await res.json()).toMatchObject({ supported: false, rows: [], summary: null })
     expect(state.rpcCalls).toHaveLength(0)
     expect(state.reads).toHaveLength(0)
+  })
+})
+
+describe("classifyOpenOffer — above_value", () => {
+  it("never flags a serial offer, even with an FMV beside it", async () => {
+    const { classifyOpenOffer } = await import("@/lib/market/open-offer-flags")
+    const base = { amount_usd: 50, top_other_bid: null, own_higher_usd: null, floor_usd: null, created_at: new Date().toISOString(), fmv_usd: 10 }
+    expect(classifyOpenOffer({ ...base, offer_type: "serial" }).above_value).toBe(false)
+    expect(classifyOpenOffer({ ...base, offer_type: "subedition" }).above_value).toBe(true)
+    expect(classifyOpenOffer({ ...base, offer_type: "edition", fmv_usd: null }).above_value).toBe(false)
+    expect(classifyOpenOffer({ ...base, offer_type: "edition", amount_usd: 12 }).above_value).toBe(false)
   })
 })
