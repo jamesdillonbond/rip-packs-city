@@ -15,7 +15,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-11-27 · 6:00 PM PT — test: TopFansTable test follows the "leaderboard" copy from 5dc28b9
 
-- **What:** `5dc28b9` renamed Top Fans to "Top Collector Leaderboard" while `34e84f8` (the render test) was in flight, so the failed-panel assertion matched the old copy and reddened CI. The assertion now matches "Couldn't load the NBA Top Shot leaderboard". Test-only.
+- **What:** `5dc28b9` renamed Top Fans to "Top Collector Leaderboard" while `34e84f8` (the render test) was in flight, so the failed-panel assertion matched the old copy and reddened CI. Another session re-pinned the assertion first (`69afb3a`); this commit (`fc1dc66`) only updates the test's header comment to the new name. Test-only.
 - **Revert:** `git revert` this commit.
 
 ### 2026-11-27 · 5:30 PM PT — re-pin: `component-top-fans-table.test.tsx` asserted the pre-rename copy ("Couldn't load NBA Top Shot top fans")
