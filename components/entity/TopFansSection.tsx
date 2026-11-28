@@ -12,7 +12,7 @@
 // see, and a block of "none" on every page is noise, not information. If every panel is measured
 // empty, the section renders nothing. That is only correct because the failed state is kept.
 
-import { fetchTopFans, unitsFor, type TopFansPanel } from "@/lib/entity/top-fans"
+import { fetchTopFans, hasFullCollectorCensus, unitsFor, type TopFansPanel } from "@/lib/entity/top-fans"
 import type { TopFansTargetSpec } from "@/lib/entity/top-fans-targets"
 import TopFansTable from "@/components/entity/TopFansTable"
 
@@ -21,6 +21,9 @@ export type TopFansTarget = TopFansTargetSpec
 export async function loadTopFansPanels(targets: TopFansTarget[]): Promise<TopFansPanel[]> {
   const panels = await Promise.all(
     targets.map(async (t): Promise<TopFansPanel> => {
+      const base = { collectionId: t.collection.id, urlSlug: t.collection.urlSlug, label: t.collection.displayName, units: unitsFor(t.collection.urlSlug) }
+      // No full census → no ranking (a partial one named the wrong #1). Not even read.
+      if (!hasFullCollectorCensus(t.collection.urlSlug)) return { ...base, ok: true, data: null, pending: true }
       try {
         const { ok, data } = await fetchTopFans({ collectionId: t.collection.id, kind: t.kind, key: t.key, name: t.name ?? null })
         return { collectionId: t.collection.id, urlSlug: t.collection.urlSlug, label: t.collection.displayName, units: unitsFor(t.collection.urlSlug), ok, data }
@@ -31,7 +34,10 @@ export async function loadTopFansPanels(targets: TopFansTarget[]): Promise<TopFa
     }),
   )
   // Drop measured-empty panels only; keep failed (ok:false) and never-built (data:null) ones.
-  return panels.filter((p) => !(p.ok && p.data && p.data.rows.length === 0))
+  // Pending panels sort last so a page opens on a real ranking when it has one.
+  return panels
+    .filter((p) => !(p.ok && p.data && p.data.rows.length === 0))
+    .sort((a, b) => Number(a.pending === true) - Number(b.pending === true))
 }
 
 export default async function TopFansSection({ targets, subject, title }: { targets: TopFansTarget[]; subject: string; title?: string }) {

@@ -210,7 +210,7 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
         const targets = playerHubTopFansTargets(panels.filter((p) => ids.has(p.collection.id)))
         return targets.length === 0 ? null : (
           <Suspense key={`fans-${g.sport}`} fallback={null}>
-            <TopFansSection targets={targets} subject={hub.name} title={manyPeople ? `Top Fans · ${g.label}` : "Top Fans"} />
+            <TopFansSection targets={targets} subject={hub.name} title={manyPeople ? `Top Collector Leaderboard · ${g.label}` : "Top Collector Leaderboard"} />
           </Suspense>
         )
       })}

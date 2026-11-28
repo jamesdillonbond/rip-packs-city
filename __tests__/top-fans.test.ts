@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { normalizeTopFans, rankTopFans, topFanHref, topFansUpdatedLabel, type TopFanRow } from "@/lib/entity/top-fans-format"
+import { hasFullCollectorCensus, normalizeTopFans, rankTopFans, topFanHref, topFansUpdatedLabel, type TopFanRow } from "@/lib/entity/top-fans-format"
 import { franchiseHubTopFansTargets, paniniFranchiseKey, playerHubTopFansTargets, PANINI_COLLECTION_ID } from "@/lib/entity/top-fans-targets"
 import { getCollectionByUrlSlug, getCollectionByUuid } from "@/lib/collection-slug"
 import { stripSqlComments } from "../scripts/lib/strip-sql-comments.mjs"
@@ -103,5 +103,21 @@ describe("the precompute (source facts, newest migration)", () => {
   it("the reader is not anon-executable", () => {
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION public\.get_entity_top_fans\(uuid, text, text, text, integer\) FROM PUBLIC, anon, authenticated/)
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION public\.refresh_entity_top_fans\(uuid\) FROM PUBLIC, anon, authenticated/)
+  })
+})
+
+describe("a ranking is shown only from a FULL holder census (Trevor 11-27: every wallet, not the ones we captured)", () => {
+  it("Panini and Candy rank; the walked-wallet and partial owner-map collections do not", () => {
+    expect(hasFullCollectorCensus("panini-blockchain")).toBe(true)
+    expect(hasFullCollectorCensus("candy-mlb")).toBe(true)
+    for (const s of ["nba-top-shot", "nfl-all-day", "laliga-golazos", "ufc-strike", "disney-pinnacle"]) {
+      expect(hasFullCollectorCensus(s)).toBe(false)
+    }
+  })
+  it("the section never reads a ranking for a collection without one", () => {
+    const src = readFileSync("components/entity/TopFansSection.tsx", "utf8")
+    const gate = src.indexOf("if (!hasFullCollectorCensus(")
+    expect(gate).toBeGreaterThan(-1)
+    expect(gate).toBeLessThan(src.indexOf("await fetchTopFans("))
   })
 })

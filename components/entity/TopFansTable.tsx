@@ -39,7 +39,7 @@ function Chip({ on, onClick, disabled, title, children }: { on: boolean; onClick
   )
 }
 
-export default function TopFansTable({ panels, subject, title = "Top Fans" }: { panels: TopFansPanel[]; subject: string; title?: string }) {
+export default function TopFansTable({ panels, subject, title = "Top Collector Leaderboard" }: { panels: TopFansPanel[]; subject: string; title?: string }) {
   const [active, setActive] = useState(0)
   const [metric, setMetric] = useState<TopFansMetric>("fmv")
   if (panels.length === 0) return null
@@ -66,7 +66,7 @@ export default function TopFansTable({ panels, subject, title = "Top Fans" }: { 
       )}
       <div role="group" aria-label="Rank by" style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 10 }}>
         <span className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginRight: 4 }}>Rank by</span>
-        <Chip on={effMetric === "items"} onClick={() => setMetric("items")}>{panel.units}</Chip>
+        <Chip on={effMetric === "items"} onClick={() => setMetric("items")} disabled={panel.pending}>{panel.units}</Chip>
         <Chip on={effMetric === "fmv"} onClick={() => setMetric("fmv")}>FMV</Chip>
         <Chip
           on={effMetric === "special"}
@@ -76,9 +76,13 @@ export default function TopFansTable({ panels, subject, title = "Top Fans" }: { 
         >Special serials</Chip>
       </div>
 
-      {!panel.ok || !data ? (
+      {panel.pending ? (
+        <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12, lineHeight: 1.6 }}>
+          The {panel.label} leaderboard is waiting on a full on-chain count of every wallet that holds {subject}, not just the wallets RPC has seen. It will appear here once that count is in.
+        </div>
+      ) : !panel.ok || !data ? (
         <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12 }}>
-          Couldn&apos;t load {panel.label} top fans right now — try again shortly.
+          Couldn&apos;t load the {panel.label} leaderboard right now — try again shortly.
         </div>
       ) : rows.length === 0 ? (
         <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12 }}>
@@ -87,9 +91,9 @@ export default function TopFansTable({ panels, subject, title = "Top Fans" }: { 
             : <>No collector RPC can see holds {subject} on {panel.label} yet.</>}
         </div>
       ) : (
-        <div className="rpc-scroll-x" {...scrollRegion("Top fans")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="rpc-mono" aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(80px, auto) minmax(70px, auto) minmax(96px, auto)", gap: 12, padding: "0 12px", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-muted)", minWidth: 480 }}>
-            <span>#</span><span>Fan</span>
+            <span>#</span><span>Collector</span>
             <span style={{ textAlign: "right" }}>{panel.units}</span>
             <span style={{ textAlign: "right" }}>Special</span>
             <span style={{ textAlign: "right" }}>FMV</span>

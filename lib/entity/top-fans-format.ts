@@ -39,9 +39,27 @@ export interface TopFansPanel {
   units: string
   ok: boolean
   data: TopFansData | null
+  /** true = this collection has no full holder census yet; no ranking is shown, only that it is coming. */
+  pending?: boolean
 }
 
 export const TOP_FANS_LIMIT = 10
+
+/**
+ * Collections whose owner source is a FULL census of every holder (Trevor, 2026-11-27: "We need to
+ * have this for every possible wallet, not just the ones we've captured"). Every other collection's
+ * ranking is built from the wallets RPC happens to know, so it can name the wrong #1 — it renders as
+ * "full count in progress" until the on-chain census (Dune, every Deposit since 2020) lands.
+ *   panini-blockchain — every serial Panini's API returns, by owner
+ *   candy-mlb         — Candy's daily on-chain wallet census
+ * Not full (11-27): Top Shot / All Day / Golazos / UFC (walked wallets only), Pinnacle (owner map sees
+ * 477k of 1.62M minted pins — it only reaches back to the Dec 2025 spork).
+ */
+export const TOP_COLLECTORS_FULL_CENSUS: ReadonlySet<string> = new Set(["panini-blockchain", "candy-mlb"])
+
+export function hasFullCollectorCensus(urlSlug: string): boolean {
+  return TOP_COLLECTORS_FULL_CENSUS.has(urlSlug)
+}
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
