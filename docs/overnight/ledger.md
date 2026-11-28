@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:55 PM PT — Top Collector census pipeline (Dune, every holder) — code + saved Dune queries; DB migration NOT applied
+
+- Trevor: wait for the 12/14 Dune credit reset; keep building. Saved public Dune queries 9205180 / 9205183 / 9205184 / 9205185 (Top Shot, All Day, Golazos, Pinnacle; never executed — no credits). `dune-proxy` gains `POST /upload_csv` (census map tables only) + those ids in its allowlist (deploys via workers-deploy.yml). New route `/api/cron/top-collector-census-dune`, weekly workflow `top-collector-census.yml` (first fire Mon 12/15). The page now ranks only when the reader says `census_complete` (fallback: Panini, Candy).
+- ⚠ Migration `audit_20261127_top_collector_census` timed out on its Supabase approval question — not applied, not committed. Until it is, the route fails at its first RPC (logged ok=false) and pages behave exactly as at 5:10 PM PT.
+- **Revert:** `git revert` "Top Collector census pipeline" (by message); redeploy dune-proxy; archive the four Dune queries.
+
 ### 2026-11-27 · 5:21 PM PT — Top Collector Leaderboard loader gets component tests (coverage margin)
 
 - The component coverage ratchet (90.85 %) went red from `a0abee4` with TopFansTable (0/23) and TopFansSection (0/16) untested. Two other sessions added TABLE tests (`34e84f8`, `281e668`); the server loader `TopFansSection.tsx` stayed 0/16 in the component report (only a source scan in `top-fans.test.ts`, which the .tsx-only component config does not count), leaving the global ≈ 0.01 pt over the line.
