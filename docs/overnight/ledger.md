@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:30 PM PT — re-pin: `component-top-fans-table.test.tsx` asserted the pre-rename copy ("Couldn't load NBA Top Shot top fans")
+
+- The concurrent session's `34e84f8` test was written against the component before `5dc28b9` renamed it to "Top Collector Leaderboard" ("Couldn't load the NBA Top Shot leaderboard"), so it failed on main by itself. The property (a failed panel says it failed, no table) is unchanged; only the spelling moved — the assertion now matches the current copy. Both TopFansTable test files pass (14 tests).
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 5:25 PM PT — main's "Component coverage — merge + coverage ratchet" red since 4:34 PM PT: Top Collector Leaderboard table shipped with no component test (not this thread's change)
 
 - CI failed on every code push from `d8c3d82` (Whale Watch) through `5dc28b9`: functions 89.29 % < 89.3 %, statements 90.75 % < 90.85 %. The new `components/entity/TopFansTable.tsx` ("use client", in the gate's `components/entity/**` include) had no component test.
