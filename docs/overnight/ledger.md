@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:00 PM PT — test: TopFansTable test follows the "leaderboard" copy from 5dc28b9
+
+- **What:** `5dc28b9` renamed Top Fans to "Top Collector Leaderboard" while `34e84f8` (the render test) was in flight, so the failed-panel assertion matched the old copy and reddened CI. The assertion now matches "Couldn't load the NBA Top Shot leaderboard". Test-only.
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 5:30 PM PT — re-pin: `component-top-fans-table.test.tsx` asserted the pre-rename copy ("Couldn't load NBA Top Shot top fans")
 
 - The concurrent session's `34e84f8` test was written against the component before `5dc28b9` renamed it to "Top Collector Leaderboard" ("Couldn't load the NBA Top Shot leaderboard"), so it failed on main by itself. The property (a failed panel says it failed, no table) is unchanged; only the spelling moved — the assertion now matches the current copy. Both TopFansTable test files pass (14 tests).
