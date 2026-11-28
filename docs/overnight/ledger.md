@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:25 PM PT — main's "Component coverage — merge + coverage ratchet" red since 4:34 PM PT: Top Collector Leaderboard table shipped with no component test (not this thread's change)
+
+- CI failed on every code push from `d8c3d82` (Whale Watch) through `5dc28b9`: functions 89.29 % < 89.3 %, statements 90.75 % < 90.85 %. The new `components/entity/TopFansTable.tsx` ("use client", in the gate's `components/entity/**` include) had no component test.
+- Added `__tests__/top-fans-table-client.test.tsx` (9 tests): pending census note, failed read ≠ "no collectors", measured empty, FMV default ranking (@username, shortened wallet, partial-FMV `*`, `rel=nofollow`), item/special re-rank, special-empty copy, untracked-serial chip disabled, collection chips. TopFansTable 95.6 % statements. Full component suite locally: 429 files pass, All files 90.86 % statements / 89.48 % functions — over both thresholds.
+- **Revert:** `git revert` this commit (the ratchet goes red again).
+
 ### 2026-11-27 · 5:40 PM PT — test: TopFansTable render test (component coverage gate red since 17d0687)
 
 - **What:** `17d0687` (Top Fans) shipped `components/entity/TopFansTable.tsx` with no test (0 % coverage), dropping the component gate's global statements to 90.77 % against the 90.85 % threshold (red on `17d0687`, `a0abee4`, `bc63f28`). Adds `__tests__/component-top-fans-table.test.tsx`: three panel states, rank-by chips, the hub collection chips, and the disabled special-serial ranking where serials aren't tracked. TopFansTable is now at 95.7 %; the merged 4-shard gate measures 90.87 % locally. Test-only.
