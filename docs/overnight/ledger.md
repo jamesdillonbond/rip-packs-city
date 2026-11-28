@@ -13,6 +13,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:07 PM PT — Dashboard saves a UFC Strike Aptos address; its holdings count in Portfolio FMV
+
+- Trevor said yes (3:57 PM PT) to the gap left by the beginner's-guide thread: a collector whose UFC Strike Moments are on Aptos had no way to save that wallet, so the binder search was the only place they showed.
+- `POST /api/profile/saved-wallets` accepts an Aptos account (0x + 64 hex) under UFC Strike ONLY (UFC's registry `dbChain` stays `flow`; any other collection still 400s `address_chain_mismatch`) and schedules no Flow warm / cache stamp for it.
+- Dashboard: the one chain-detected field takes an Aptos address (first visit and "+ Add"; copy, placeholder and add label name it). `refreshStats` reads an Aptos wallet from `/api/ufc/aptos-holdings?aptos=` (live, one retry) instead of collection-stats, shaped as the single UFC Strike stats row, so Total Assets, Portfolio FMV, Collections and the card count it; unpriced Aptos Moments are counted, not valued; a failed read is a failed wallet (headline "—" + retry), never $0. The card shows ONE UFC Strike tile linking the binder's Aptos view (not seven Flow zeros); no Verify (Top Shot listing check).
+- Binder: `fetchSavedWalletForCollection` prefers the Flow wallet when a collector has saved both. /help and /help/new-to-collecting say where to save the Aptos address.
+- Background readers checked: DB lanes match `^0x[0-9a-f]{16}$`, pack value and trophy-buy sync are Flow-only, so an Aptos row reaches no Flow script.
+- Tests: save route (Aptos under UFC saves without a warm; under Top Shot 400s), binder preference, two dashboard cases (one UFC tile from the live read with collection-stats never asked; a failed read never shows $0). tsc clean, ESLint ratchet at baseline, 214 related test files green.
+- **Revert:** `git revert` this commit (by message); no DB change. Saved Aptos rows a collector added stay harmless (nothing reads them but this path) and can be removed from the card.
+
 ### 2026-11-27 · 4:05 PM PT — 🗄 APPLIED `20261127235852` — dropped the unused `purge_fmv_snapshots_today_except(uuid[], timestamptz, uuid[])`
 
 - Trevor: "You do it" (answering "the old 3-argument purge function is unused now — drop it whenever you like"). Replaced at 3:20 PM PT by `purge_fmv_snapshots_today_except_before` (`20261127231105`). Checked first: the deployed route calls only the `_before` sibling; 0 pg_cron commands, 0 SQL functions and no code path name the old one. Live after: `purge_fmv_snapshots_today` (untouched sibling) and `purge_fmv_snapshots_today_except_before`.
