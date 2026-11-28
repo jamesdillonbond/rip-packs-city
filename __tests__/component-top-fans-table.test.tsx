@@ -73,7 +73,7 @@ describe("TopFansTable", () => {
 
   it("a FAILED panel says it couldn't load and shows no table", () => {
     const { container } = render(<TopFansTable panels={[{ ...TS, ok: false, data: null }]} subject="Cooper Flagg" />)
-    expect(container.textContent).toMatch(/Couldn.t load NBA Top Shot top fans/)
+    expect(container.textContent).toMatch(/Couldn.t load the NBA Top Shot leaderboard/)
     expect(container.querySelectorAll("a").length).toBe(0)
   })
 
