@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 8:31 AM PT — 📝 DOCS — which pg_cron jobs the 120 s cap binds (by owner); near-cap sweep found nothing else to fix
+- `docs/reference/cron-and-schedulers.md`: the cap binds only `postgres`-owned jobs without a `SET statement_timeout` prefix (`cron_heavy` runs at 600 s; a function's own proconfig timeout is inert). Sweep after `20261128162818`: jobid 926 (declares 300 s, max 116 s) is `cron_heavy`-owned so safe; 886 / 913 are self-budgeted at 90 s; nothing else near the cap.
+- **Revert:** docs only.
+
 ### 2026-11-28 · 8:28 AM PT — 🗄 APPLIED `20261128162818` — pg_cron 632 (topshot moment-id editions) runs under its declared 300 s budget
 - **What:** `cron.alter_job(632)` adds the `SET statement_timeout = '300s';` prefix to `SELECT public.refresh_topshot_moment_id_editions();` (schedule unchanged, `23 10 * * *` = 2:23 AM PT). No function change.
 - **Why:** the function declares `statement_timeout=300s`, inert under pg_cron, so it ran under the 120 s default: 88–119 s daily for ten days, then a 120 s timeout 11-28 2:23 AM PT (inbox `2026-11-28T1611Z` item 2). Control: same-owner jobs 638 / 436 / 818 with this prefix succeeded at 211 / 189 / 169 s in the last 3 days. Verify on the 11-29 2:23 AM PT run.

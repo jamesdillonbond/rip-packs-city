@@ -3236,3 +3236,22 @@ A lane paused on cron-job.org (or `cron.alter_job(active := false)`) keeps its a
 - **A deadline checked BETWEEN chunks needs a FIXED headroom of at least one chunk's worst case, not only a percentage of the timeout.** `refresh_wmc_fmv_changed` budgeted 60 % of `statement_timeout`: 18 s under the route's 30 s PostgREST cap left 12 s, while one chunk can wait `lock_timeout` (8 s) before working. 5 route ticks in 11 h died at exactly 30 s. `20261126033441` made it `GREATEST(LEAST(0.6×t, t − 20 s), 5 s)`: route 10 s, `cron_heavy` 600 s unchanged at 360 s. The first 17 runs after had 0 failures and a 14.2 s max (was 20–28 s).
 - **Retiring a lane retires its HELPERS.** The 11-18 Studio retirement paused three lanes but left `rpc-head-sweep-cursor-unlatch` resetting their cursors hourly for 7 days. It could never find work, and the Zero-Yield arm flagged it. When pausing a lane, grep `cron.job.command` and the function bodies for its cursor or state tables, and pause every job that only serves it, with its watchlist row (`20261126035731`).
 - **Two jobs that write one table in different row orders: separate their START MINUTES before reaching for a lock (2026-11-26).** `rpc-ts-sold-floor-clear` (jobid 825, ~17 s) and `rpc-atlas-market-drain` (`1-59/2`, ~13 s) both update `topshot_atlas_market_events`. Every one of the floor clear's 5 deadlocks from 11-24 to 11-26 fell on an ODD minute, where both started in the same second. `20261126150605` moved its odd ticks back one minute (`4,10,14,24,30,34,44,50,54`, same 9/h). Rejected: (a) sharing the drain's advisory lock, because the drain uses `pg_try_advisory_xact_lock` and SKIPS when it is held, so it would lose ~6 of 30 ticks/h of market feed to cure ~3 self-healing failures/day; (b) `SKIP LOCKED` in the floor arm, because a skipped sold listing stays open after its floor is cleared, and the next listings sync can re-read it as the floor with nothing left to clear it (database.md, the 11-25 rule). **Before moving a job, measure pg_cron seconds started per minute** (`cron.job_run_details`, 24 h). Minute 4 = 36 s/h vs 5 = 55, so the move was load-neutral.
+
+## ⚠ WHICH pg_cron JOBS THE 120 s CAP ACTUALLY BINDS — by OWNER, not by duration (2026-11-28)
+
+The database default `statement_timeout` is **120 s**, but it is not every job's ceiling. Three facts decide it (all read live 2026-11-28):
+- **Owner `cron_heavy` → 600 s** (`pg_roles.rolconfig statement_timeout=600s`). Its jobs routinely run 200–600 s and succeed (jobids 616, 617, 303 …). Do not "fix" one for running long.
+- **Owner `postgres` → 120 s**, unless the command carries a `SET statement_timeout = '…s';` prefix (30+ jobs do; postgres-owned 638 / 436 / 818 succeeded at 211 / 189 / 169 s with it).
+- **A function's own `proconfig statement_timeout` is INERT under pg_cron** — `refresh_topshot_moment_id_editions()` declared 300 s and still died at 120 s every time it crossed it (fixed by the prefix, `20261128162818`).
+- **Self-budgeted functions are not near-cap risks:** `refresh_saved_wallet_acquisitions(90)` (jobid 886, p50 93 s / max 119 s) and `refresh_wallet_pack_value_cache(90)` (913) stop themselves at `p_budget_seconds` — the 90 was chosen to fit the cap.
+
+**The sweep that finds the real ones** — postgres-owned, unprefixed, typical run ≥ 60 s; then read each function's arguments for a budget before acting:
+```sql
+with r as (select jobid, percentile_cont(.5) within group (order by extract(epoch from end_time-start_time)) p50,
+                  max(extract(epoch from end_time-start_time)) mx
+             from cron.job_run_details where start_time > now() - interval '7 days' group by 1)
+select j.jobid, j.jobname, round(r.p50) p50, round(r.mx) mx, left(j.command, 70)
+  from cron.job j join r using (jobid)
+ where j.active and j.username = 'postgres' and j.command !~* '^\s*set ' and r.p50 >= 60 order by r.mx desc;
+```
+On 2026-11-28 it returned 886, 913, 914, 828 — all self-budgeted or far from the cap — after 632 was fixed.
