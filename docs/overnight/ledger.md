@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:05 PM PT — 🗄 APPLIED `20261127234801` + route/page/OG — public Whale Watch board (/insights/whales)
+
+- **What:** Trevor: "a whale watcher page" → "this page can be user-facing". New public board `/insights/whales` + `/api/public/insights/whales` + `/api/og/insights/whales`, reading ONE precomputed row `whale_watch_board` (service role) written hourly by `refresh_whale_watch_board()` on pg_cron **954** (`27 * * * *`, ~16 s; created with `cron.schedule`). It shows 7d / 30d biggest spenders, buys ≥ $250 in the last 7 days, and the 30 days' biggest buys. Buys only; trades between reciprocal pairs are left out. Cadence watch `whale_watch_board` (180 / 360 min). Registered in the board registry, sitemap (111 → 112), llms.txt, e2e smoke, OG render sweep and the /insights hub; the hub tile for /insights/top-sales is now titled "Top Sales". Nothing is granted to anon or authenticated.
+- **Revert:** `select cron.unschedule('rpc-whale-watch-board'); delete from pipeline_cadence_watchlist where pipeline='whale_watch_board'; drop function public.refresh_whale_watch_board(); drop table public.whale_watch_board;` then `git revert` this commit.
+
 ### 2026-11-27 · 4:40 PM PT — 📝 DOCS — offer-pull thread close-out; fmv-recalc purge-fix self-heal check scheduled as its own task
 
 - No code or DB change. focus.md: Panini first-log-rows read closed (11 pulled, 0 below_bid / under_half); new bullet for the fmv-recalc purge race pointing at standalone scheduled task `trig_01Ts2fbbokgcuqpDW9fx4K4y` (Fri 11-27 8:17 PM PT) that confirms the ~490 editions missing since 2:48 PM PT regained today's rows. Session log entry. Project handoff doc rewritten CLOSED.
