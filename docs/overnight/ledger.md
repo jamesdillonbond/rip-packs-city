@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:21 PM PT — Top Collector Leaderboard loader gets component tests (coverage margin)
+
+- The component coverage ratchet (90.85 %) went red from `a0abee4` with TopFansTable (0/23) and TopFansSection (0/16) untested. Two other sessions added TABLE tests (`34e84f8`, `281e668`); the server loader `TopFansSection.tsx` stayed 0/16 in the component report (only a source scan in `top-fans.test.ts`, which the .tsx-only component config does not count), leaving the global ≈ 0.01 pt over the line.
+- New `__tests__/component-top-fans-section.test.tsx` (4 tests, tests only): `loadTopFansPanels` drops measured-empty, keeps failed (threw or ok:false), never reads a collection without a full census and sorts it last; `TopFansSection` renders nothing when all empty and the table when rows exist. TopFansSection 16/16. No product code touched; did not duplicate the table tests.
+- **Revert:** delete the test file.
+
 ### 2026-11-27 · 6:00 PM PT — test: TopFansTable test follows the "leaderboard" copy from 5dc28b9
 
 - **What:** `5dc28b9` renamed Top Fans to "Top Collector Leaderboard" while `34e84f8` (the render test) was in flight, so the failed-panel assertion matched the old copy and reddened CI. Another session re-pinned the assertion first (`69afb3a`); this commit (`fc1dc66`) only updates the test's header comment to the new name. Test-only.
