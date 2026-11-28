@@ -91,3 +91,7 @@ DROP FUNCTION IF EXISTS public.refresh_entity_top_fans(uuid);
 DROP TABLE IF EXISTS public.entity_top_fans, public.entity_top_fans_totals, public.entity_top_fans_runs;
 ```
 Code: `git revert` the commit "Top Fans on every team and player page and both hubs" (by message).
+
+## 2026-11-27 ~6:50 PM PT — the older walked-wallet "Top Collectors" panels retired
+
+The player page still carried three pre-leaderboard rankings, each over a partial owner set: Top Shot (`get_topshot_rookie_collectors`, the rookie ownership index), Pinnacle (`get_pinnacle_character_top_collectors`, the owner map from Dec 2025), and Candy (`get_candy_player_top_collectors`, a full census, but a duplicate of the leaderboard's Candy tab). Two of them published exactly the partial ranking Trevor rejected, on the same page where the leaderboard says "waiting on a full count". All three are removed; the Top Collector Leaderboard is the one ranking. The year-end rookie cut lines, which were drawn inside the Top Shot panel, now have their own **Rookie Cut Lines** section (Top Shot 2026 class only). The database functions are untouched (other surfaces may read them). `lib/entity/index-coverage-note.ts` had no other caller and was deleted. Tests re-pinned as absences: `panini-entity-pages`, `rookie-cut-lines`, `pinnacle-top-collectors-unknown-mint-is-not-zero`.

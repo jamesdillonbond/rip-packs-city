@@ -12,8 +12,11 @@ describe("Pinnacle Top Collectors — an unknown mint total is not zero", () => 
   it("never coalesces total_minted to 0", () => {
     expect(src).not.toMatch(/total_minted \?\? 0/)
   })
-  it("prints a share only when the denominator covers the copies seen", () => {
-    expect(src).toMatch(/const share = minted != null && row\.seen_copies <= minted \?/)
-    expect(src).toMatch(/share == null\s*\?/)
+  // 2026-11-27: the panel and its coverage line were retired with the other walked-wallet rankings (the Top
+  // Collector Leaderboard ranks only from a full census). The "X of 0 copies" line cannot render because its only
+  // source is no longer read — pinned as that absence, not deleted.
+  it("no longer reads the partial Pinnacle owner-map ranking the coverage line came from", () => {
+    expect(src).not.toContain("get_pinnacle_character_top_collectors")
+    expect(src).not.toMatch(/Covers \{fmtCount\(row\.seen_copies\)\}/)
   })
 })

@@ -8,7 +8,7 @@
 import { fetchPaniniPlayerTeams, PANINI_PLAYER_TEAMS_SHOWN } from "@/lib/panini/player-teams"
 import { franchiseHubPath } from "@/lib/franchise-hub-path"
 import type { Metadata } from "next"
-import { displayAddress, truncateAddressForDisplay } from "@/lib/address"
+import { truncateAddressForDisplay } from "@/lib/address"
 import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -45,7 +45,6 @@ import PaniniPlayerChecklist from "@/components/panini/PaniniPlayerChecklist"
 import { getCollection } from "@/lib/collections"
 import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
 import { fetchRookieCutLines, type RookieCutLines } from "@/lib/topshot/rookie-cut-lines"
-import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import TopFansSection from "@/components/entity/TopFansSection"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
@@ -267,33 +266,6 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
   )
 }
 
-interface RookieCollector {
-  wallet_address: string
-  username: string | null
-  moments_held: number
-  est_value_usd: number | null
-  rnk: number
-}
-
-// Three-state for the same reason, in its QUIETEST form: this section renders
-// NOTHING when empty, so a failed read made the whole block vanish. An absence is
-// not a claim, which is why it is the sub-class that goes unnoticed — but on a
-// player who has collectors it still tells the reader there are none, silently.
-async function fetchTopCollectors(playerName: string, limit: number): Promise<{ rows: RookieCollector[]; ok: boolean }> {
-  return sectionRowsResult<RookieCollector>("player top collectors", "get_topshot_rookie_collectors", { p_player_name: playerName, p_limit: limit })
-}
-
-// Streamed independently (Suspense) off the rookie ownership index. The index is
-// rookie-scoped, so a non-rookie player returns zero rows and the whole section —
-// header included — renders nothing. Never blocks or fails the rest of the page.
-// Candy MLB (Top Shot parity, 2026-10-26): keyed by players.id inside the Candy
-// collection, over Candy's daily full census (wallet_moments_cache) — exact, not an
-// index sample, so there is no coverage note. Treasury + listing escrow excluded.
-interface CandyCollector extends RookieCollector { total_holders: number }
-async function fetchCandyTopCollectors(playerId: string, limit: number): Promise<{ rows: CandyCollector[]; ok: boolean }> {
-  return sectionRowsResult<CandyCollector>("candy player top collectors", "get_candy_player_top_collectors", { p_player_id: playerId, p_limit: limit })
-}
-
 // Year-end rookie cut lines (2026-11-27): what the #3 (Blue Chip) and #26 (Rookie
 // Yearbook) holders of this rookie hold today. A PROXY for Top Shot's own boards (they
 // rank by locked Top Shot Score); an OPEN line reads "fewer than N collectors", never $0.
@@ -319,136 +291,15 @@ function RookieCutLinesStrip({ cut }: { cut: RookieCutLines }) {
   )
 }
 
-async function TopCollectorsSection({ playerName, candyPlayerId = null }: { playerName: string; candyPlayerId?: string | null }) {
-  const isCandy = candyPlayerId != null
-  const [{ rows: collectors, ok }, coverage, cutLines] = await Promise.all([
-    isCandy ? fetchCandyTopCollectors(candyPlayerId, 10) : fetchTopCollectors(playerName, 10),
-    isCandy
-      ? Promise.resolve({ row: null as IndexCoverage | null, ok: true })
-      : sectionRowResult<IndexCoverage>("player index coverage", "get_topshot_rookie_index_coverage", { p_player_name: playerName }),
-    // Top Shot 2026 class only (the helper checks the class); null = nothing to show.
-    isCandy ? Promise.resolve(null) : fetchRookieCutLines(playerName),
-  ])
-  const coverageNote = isCandy ? null : indexCoverageNote(coverage.row, coverage.ok)
-  const candyHolders = isCandy ? ((collectors[0] as CandyCollector | undefined)?.total_holders ?? null) : null
-  // ⚠ Rendering nothing is CORRECT for a genuine zero — the index is
-  // rookie-scoped, so most players legitimately have none and an empty block
-  // would be noise. It is only wrong when we could not look.
-  if (collectors.length === 0) {
-    if (ok) return null
-    return (
-      <Section title="Top Collectors">
-        <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12 }}>
-          {sectionEmptyCopy(false, "Top collectors", "")}
-        </div>
-      </Section>
-    )
-  }
+// The year-end cut lines (Top Shot 2026 rookie class only; null = nothing to show). Their own section since
+// 2026-11-27 evening, when the walked-wallet Top Collectors ranking they sat under was retired in favour of the
+// Top Collector Leaderboard (which ranks only from a full census of every holder).
+async function RookieCutLinesSection({ playerName }: { playerName: string }) {
+  const cutLines = await fetchRookieCutLines(playerName)
+  if (!cutLines) return null
   return (
-    <Section title="Top Collectors">
-      <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
-        {isCandy
-          ? <>Every Candy card on chain, from the daily wallet census{candyHolders != null ? <> · {fmtCount(candyHolders)} collectors hold this player</> : null} · ranked by FMV of this player&apos;s cards held · Candy&apos;s unsold stock and Magic Eden&apos;s listing escrow left out</>
-          : <>Based on the indexed on-chain ownership graph · ranked by estimated value of this player&apos;s moments held</>}
-      </div>
-      {coverageNote && (
-        <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
-          {coverageNote}
-        </div>
-      )}
-      {cutLines && <RookieCutLinesStrip cut={cutLines} />}
-      <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {collectors.map(c => {
-          // Same fabrication as Top Sales above — latent here only because
-          // Candy has no rows in the ownership graph yet, which is a reason to
-          // fix it now rather than a reason it is fine.
-          // ⚠ AND IT WAS NOT ONLY THE LABEL: the row's `href` below used the same
-          // mangled value, so a Candy collector's row linked to `/share/0x…` — a
-          // share page for an address that does not exist. `tsc` caught this one
-          // (the deleted `lower` was still referenced); the grep did not, because
-          // the variable was defined 15 lines above its second use.
-          const shown = displayAddress(c.wallet_address) ?? c.wallet_address
-          const label = c.username ? `@${c.username}` : truncateAddressForDisplay(c.wallet_address)
-          const inner = (
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
-              <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: c.rnk <= 3 ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>#{c.rnk}</span>
-              <span style={{ fontFamily: c.username ? "var(--font-display)" : "var(--font-mono)", fontWeight: c.username ? 700 : 400, fontSize: c.username ? 14 : 12, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-              <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", textAlign: "right" }}>{fmtCount(c.moments_held)} <span style={{ color: "var(--rpc-text-muted)" }}>held</span></span>
-              <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(c.est_value_usd)}</span>
-            </div>
-          )
-          return (
-            <Link key={c.wallet_address} href={`/share/${encodeURIComponent(shown)}`} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
-          )
-        })}
-      </div>
-    </Section>
-  )
-}
-
-// Disney Pinnacle character (2026-10-26, Top Shot parity pass 2): current owners of this
-// character's pins from mv_pinnacle_render_owners (mints since the Dec 2025 spork floor; owner =
-// latest sale buyer when newer than the owner map). Only part of an older character's pins can be
-// attributed, so the section always states how many copies it can see — never a "complete" list.
-interface PinnacleCharacterCollectors {
-  renders: number
-  total_minted: number | null
-  seen_copies: number
-  holders: number
-  collectors: { wallet: string; username: string | null; copies: number; pins: number; fmv_held_usd: number | null }[]
-}
-
-async function PinnacleTopCollectorsSection({ characterName }: { characterName: string }) {
-  const { row, ok } = await sectionRowResult<PinnacleCharacterCollectors>(
-    "pinnacle character top collectors",
-    "get_pinnacle_character_top_collectors",
-    { p_character: characterName, p_limit: 10 },
-  )
-  if (!ok) {
-    return (
-      <Section title="Top Collectors">
-        <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12 }}>
-          {sectionEmptyCopy(false, "Top collectors", "")}
-        </div>
-      </Section>
-    )
-  }
-  // A genuine "nobody RPC can see" renders nothing, like the Top Shot rookie section.
-  if (!row || row.collectors.length === 0) return null
-  // ⚠ 2026-11-14: an UNKNOWN mint total is not zero. `total_minted` is a sum over the pins whose
-  // mint count is known, so it is NULL when none is, and can be SMALLER than the copies seen when
-  // only some are. It printed "Covers 140 of 0 copies (0%)" and could print X of Y with X > Y.
-  // No ratio unless the denominator is known and covers what was seen.
-  const minted = row.total_minted != null && row.total_minted > 0 ? row.total_minted : null
-  const share = minted != null && row.seen_copies <= minted ? row.seen_copies / minted : null
-  return (
-    <Section title="Top Collectors">
-      <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
-        From RPC&apos;s on-chain owner map · ranked by FMV of this character&apos;s pins held · Disney Pinnacle&apos;s own accounts (unsold stock, locked pins) left out
-      </div>
-      <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
-        {share == null
-          ? <>Covers {fmtCount(row.seen_copies)} copies · {fmtCount(row.holders)} collectors — this character&apos;s total mint count isn&apos;t known for every pin, so no coverage share is shown.</>
-          : share >= 0.95
-            ? <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted!)} copies · {fmtCount(row.holders)} collectors</>
-            : <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted!)} copies ({Math.round(share * 100)}%) — pins minted before December 2025 are not attributed yet, so holders of older pins may rank higher than shown.</>}
-      </div>
-      <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {row.collectors.map((c, i) => {
-          const shown = displayAddress(c.wallet) ?? c.wallet
-          const label = c.username ? `@${c.username}` : truncateAddressForDisplay(c.wallet)
-          return (
-            <Link key={c.wallet} href={`/disney-pinnacle/collection?wallet=${encodeURIComponent(shown)}`} rel="nofollow" className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
-                <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: i < 3 ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>#{i + 1}</span>
-                <span style={{ fontFamily: c.username ? "var(--font-display)" : "var(--font-mono)", fontWeight: c.username ? 700 : 400, fontSize: c.username ? 14 : 12, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", textAlign: "right" }}>{fmtCount(c.copies)} <span style={{ color: "var(--rpc-text-muted)" }}>held</span></span>
-                <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(c.fmv_held_usd)}</span>
-              </div>
-            </Link>
-          )
-        })}
-      </div>
+    <Section title="Rookie Cut Lines">
+      <RookieCutLinesStrip cut={cutLines} />
     </Section>
   )
 }
@@ -818,26 +669,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         )}
       </Section>
 
-      {/* ── Top collectors (rookie ownership index) ──────────────────────── */}
-      {/* ⛔ TOP SHOT ONLY (2026-09-27). get_topshot_rookie_collectors takes a player
-          NAME and no collection, over a Top Shot index — on any other collection a
-          same-named player would be shown Top Shot wallets (substitution). */}
+      {/* ── Rookie cut lines (Top Shot 2026 class). The old walked-wallet Top Collectors rankings for Top
+          Shot, Candy and Pinnacle were retired 2026-11-27: Trevor — "We need to have this for every possible
+          wallet, not just the ones we've captured." The Top Collector Leaderboard below is the one ranking. */}
       {collection === "nba-top-shot" && (
         <Suspense fallback={null}>
-          <TopCollectorsSection playerName={detail.name} />
-        </Suspense>
-      )}
-      {/* Candy (2026-10-26): its own census read, keyed by THIS player's id in Candy. */}
-      {collection === "candy-mlb" && (
-        <Suspense fallback={null}>
-          <TopCollectorsSection playerName={detail.name} candyPlayerId={detail.id} />
-        </Suspense>
-      )}
-
-      {/* Disney Pinnacle character (2026-10-26): its own owner map, keyed on the characters trait. */}
-      {collection === "disney-pinnacle" && isCharacter && (
-        <Suspense fallback={null}>
-          <PinnacleTopCollectorsSection characterName={detail.name} />
+          <RookieCutLinesSection playerName={detail.name} />
         </Suspense>
       )}
 

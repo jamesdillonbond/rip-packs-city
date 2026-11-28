@@ -69,8 +69,11 @@ describe("rookie player page — cut lines strip", () => {
   const page = stripComments(readFileSync("app/(collections)/[collection]/player/[slug]/page.tsx", "utf8"))
   const lib = stripComments(readFileSync("lib/topshot/rookie-cut-lines.ts", "utf8"))
 
-  it("reads the thresholds only on the Top Shot branch (Candy gets null)", () => {
-    expect(page).toMatch(/isCandy \? Promise\.resolve\(null\) : fetchRookieCutLines\(playerName\)/)
+  it("reads the thresholds only in the Top Shot-only section (no other collection reads a name-keyed Top Shot board)", () => {
+    // Since 2026-11-27 the strip has its own section (the walked-wallet Top Collectors panel it sat in is retired).
+    expect(page.match(/fetchRookieCutLines\(/g)?.length).toBe(1)
+    expect(page).toMatch(/async function RookieCutLinesSection\(\{ playerName \}: \{ playerName: string \}\) \{\s*const cutLines = await fetchRookieCutLines\(playerName\)/)
+    expect(page).toContain('{collection === "nba-top-shot" && (\n        <Suspense fallback={null}>\n          <RookieCutLinesSection playerName={detail.name} />')
   })
 
   it("renders an open line as words, never a formatted zero", () => {

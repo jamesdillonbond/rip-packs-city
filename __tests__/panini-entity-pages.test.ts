@@ -214,8 +214,14 @@ describe("the player and set pages' Panini arms (source facts)", () => {
     expect(player).toContain("{!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL}")
     expect(player).toMatch(/\{isPanini \? \(\s*<Section title="Sales">/)
   })
-  it("player: Top Collectors (a Top Shot index keyed by NAME alone) renders on Top Shot only", () => {
-    expect(player).toContain('{collection === "nba-top-shot" && (\n        <Suspense fallback={null}>\n          <TopCollectorsSection')
+  it("player: the rookie cut lines (a Top Shot read keyed by NAME alone) render on Top Shot only", () => {
+    expect(player).toContain('{collection === "nba-top-shot" && (\n        <Suspense fallback={null}>\n          <RookieCutLinesSection')
+  })
+  it("player: no walked-wallet collector ranking — the Top Collector Leaderboard is the only one (2026-11-27)", () => {
+    for (const rpc of ["get_topshot_rookie_collectors", "get_candy_player_top_collectors", "get_pinnacle_character_top_collectors"]) {
+      expect(player).not.toContain(rpc)
+    }
+    expect(player).not.toContain('<Section title="Top Collectors">')
   })
   it("set: no sales read and no FMV-restated Recent-Low on Panini", () => {
     expect(set).toContain("const wantsActivity = !isPinnacleUrlSlug(collection) && !isPanini")
