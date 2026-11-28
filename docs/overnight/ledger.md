@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 8:32 AM PT — 🚀 CODE (social script) — X drafts: "Candy" not "Candy MLB"; Saturday week-in-numbers tags each collection
+- `scripts/social/x-draft.mjs`: `NAMES`/`ATLAS_NAMES` say "Candy"; Saturday lines use each collection's official handle (`BRAND`), header "7-day sales: $N", and overflow becomes a numbered `thread[]` instead of `fit()` silently dropping the last collection (tagged text measured 301 on the old header). Trevor, 11-28. Calendar Sat row updated. No site code touched.
+- **Revert:** find the commit by message "x-draft: Candy label + tagged week-in-numbers" and `git revert` it.
+
 ### 2026-11-28 · 8:31 AM PT — 📝 DOCS — which pg_cron jobs the 120 s cap binds (by owner); near-cap sweep found nothing else to fix
 - `docs/reference/cron-and-schedulers.md`: the cap binds only `postgres`-owned jobs without a `SET statement_timeout` prefix (`cron_heavy` runs at 600 s; a function's own proconfig timeout is inert). Sweep after `20261128162818`: jobid 926 (declares 300 s, max 116 s) is `cron_heavy`-owned so safe; 886 / 913 are self-budgeted at 90 s; nothing else near the cap.
 - **Revert:** docs only.
