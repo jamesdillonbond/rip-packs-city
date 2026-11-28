@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 9:35 AM PT — 🗄 APPLIED `20261128170025` + 🚀 code — Fast Break track record: the model's nightly pick, stored before tipoff and scored from box scores
+- **What:** Trevor: "Keep going". `fast_break_predictions` (RLS on, service_role only) + `/api/cron/fast-break-predictions` (vercel.json, hourly :41): before each night's first tipoff it stores the whole-slate best 5 + Captain + bench and its predicted chance for every active `thresholds` run (Classic and Pro); after games are final with box scores it scores them (Captain 1.5×, bench for a starter who sat). The Fast Break page states "cleared X of Y nights; it had given those nights Z% on average" once a night is scored. Terminal `pipeline_runs` row 'fast-break-predictions'. First prediction: tonight (11-28); first score: tomorrow's 12:41 AM PT tick at the earliest.
+- **Revert:** code — `git revert` this commit (removes the cron entry); DB — `drop table public.fast_break_predictions;`
+
 ### 2026-11-28 · 9:11 AM PT — 📝 DOCS — non-inlined SQL functions and `plan_cache_mode`: the lock-check case and two controls that did not benefit
 - `docs/reference/database.md`: why `get_lock_check_batch` gained 40× from `force_custom_plan`, and that `get_top_accumulators` / `get_collection_stats` (same function class) read identical buffers with it — so it is a per-function measurement, not a blanket setting.
 - **Revert:** docs only.

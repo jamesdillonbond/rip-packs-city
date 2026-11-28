@@ -59,6 +59,12 @@ Backtest on the 10 completed nights of the Nov 16–29 run, whole slate, no owne
 - **Schedule:** a twice-daily scheduled task in Trevor's Chrome runs the reader on Classic then Pro (see the ledger entry of 11-28 for its name). Other collectors run the bookmarklet themselves.
 - An unmapped objective clause parses to `{}` → the night reads `targets_unknown`, never a guessed target. Add the phrase to `fast_break_parse_targets`.
 
+## Track record (11-28) — is the model right?
+
+- `/api/cron/fast-break-predictions` (vercel.json, hourly at :41) writes `fast_break_predictions` for each active `thresholds` run: the best 5 + Captain + bench from the WHOLE slate (no ownership) and the chance it gave of clearing every target. Re-written each hour until the night's first tipoff, never after — the projection blend folds finished games into the season line, so a later write would know the answer. No known tipoff → written once.
+- The same route scores past nights from `nba_player_game_stats` (`lib/fast-break/track-record.ts`): Captain 1.5×, the bench replaces the first starter who sat (at 1× — Top Shot does not say a sub inherits the Captain bonus), a pick with no row in a final, box-scored game did not play. `cleared` stays NULL until every pick's game is final **and** has box rows.
+- Shown on the page as "This run, the best lineup RPC picked from the whole slate cleared X of Y nights; it had given those nights a Z% chance on average" — the gap between the two numbers is the calibration read. Telemetry: `pipeline_runs` 'fast-break-predictions' (`extra.scored / predicted / locked / still_pending`).
+
 ## Owed / next
 
 1. Captain-variance and correlated targets (3PM with 3PA) are modelled simply; revisit with a season of saved lineups.
