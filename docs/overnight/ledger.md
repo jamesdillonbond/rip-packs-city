@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 9:11 AM PT — 📝 DOCS — non-inlined SQL functions and `plan_cache_mode`: the lock-check case and two controls that did not benefit
+- `docs/reference/database.md`: why `get_lock_check_batch` gained 40× from `force_custom_plan`, and that `get_top_accumulators` / `get_collection_stats` (same function class) read identical buffers with it — so it is a per-function measurement, not a blanket setting.
+- **Revert:** docs only.
+
 ### 2026-11-28 · 9:09 AM PT — 🗄 APPLIED `20261128170903` — lock-check candidate picker runs on custom plans (Pinnacle 26 s → 0.6 s)
 - **What:** `ALTER FUNCTION get_lock_check_batch(text, integer, integer) SET plan_cache_mode = force_custom_plan`. Body untouched (md5 `7f0dfdc5…`, the 20260929235000 definition), so the same rows come back.
 - **Why:** the #1 non-cron PostgREST reader in the last 24 h of pg_stat_statements (93 calls, 33.7 s / 39,037 blocks read each). A SQL function with SET clauses is not inlined and runs on a plan built for unknown arguments; `(p_collection_slug IS NULL OR c.slug = p_collection_slug)` then plans for every collection. Measured, same body: Pinnacle 26,396 ms / 36,218 read → **556 ms / 22 read** (live, after apply); Top Shot 56,292 ms → **32,789 ms** (copy). A predicate rewrite was tried first and was no better — the plan was the cost.
