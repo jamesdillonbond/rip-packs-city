@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent, within } from "@testing-library/react"
 
-// components/entity/TopFansTable.tsx (Top Fans, 2026-11-27). It shipped without a
+// components/entity/TopFansTable.tsx (Top Collector Leaderboard, né Top Fans, 2026-11-27). It shipped without a
 // render test, which put the component coverage gate under its threshold. Pinned:
 //   · the three per-panel states stay apart — FAILED says "couldn't load", a
 //     measured-empty panel says no collector holds it, rows render a table;
