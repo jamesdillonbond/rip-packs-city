@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   rpc: {} as Record<string, (args: Record<string, unknown>) => { data: unknown; error: { message: string } | null }>,
   rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
   deletes: [] as Array<{ table: string; col: string; val: unknown }>,
+  lastRun: { data: null, error: null } as { data: unknown; error: { message: string } | null },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -23,7 +24,10 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
 vi.mock("@/lib/pipeline/heartbeat", () => ({ writeInvocationHeartbeat: vi.fn(async () => undefined) }))
-vi.mock("@/lib/dune/budget", () => ({ recordDuneUsage: vi.fn(async () => undefined) }))
+vi.mock("@/lib/dune/budget", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/dune/budget")>()),
+  recordDuneUsage: vi.fn(async () => undefined),
+}))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (name: string, args: Record<string, unknown>) => {
@@ -32,6 +36,7 @@ vi.mock("@/lib/supabase", () => ({
       return h ? h(args) : { data: null, error: null }
     },
     from: (table: string) => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => state.lastRun }) }),
       delete: () => ({
         eq: async (col: string, val: unknown) => {
           state.deletes.push({ table, col, val })
@@ -119,6 +124,14 @@ async function runDeferred() {
 
 const logArgs = () => state.rpcCalls.find((c) => c.name === "log_pipeline_run")?.args as { p_ok: boolean; p_rows_found: number; p_rows_written: number; p_error: string | null; p_extra: Record<string, unknown> }
 
+// The shared Dune budget, as dune_budget_status returns it. The datapoint meter is deliberately 0: it is the
+// retired Free-plan meter and the census must NOT gate on it (only paused / lane enabled / credits).
+const BUDGET_OK = {
+  configured: true, paused: false, pipeline_enabled: true, can_start: false,
+  datapoints_allowed_now: 0, rows_allowed_now: 250000, min_start_datapoints: 0, credits_est_left: 4000,
+  cycle_start: "2026-12-14T00:00:00+00:00",
+}
+
 function happyRpcs() {
   state.rpc.top_collector_census_map_csv = () => ({ data: MAP_CSV, error: null })
   state.rpc.stage_top_collector_census = (a) => ({ data: (a.p_rows as unknown[]).length, error: null })
@@ -131,9 +144,10 @@ beforeEach(() => {
   process.env.DUNE_PROXY_URL = "https://dune-proxy.example/"
   process.env.DUNE_PROXY_SECRET = "s"
   state.afterCbs.length = 0
-  state.rpc = {}
+  state.rpc = { dune_budget_status: () => ({ data: BUDGET_OK, error: null }) }
   state.rpcCalls = []
   state.deletes = []
+  state.lastRun = { data: { source: "wallet_moments_cache+topshot_ownership", refreshed_at: "2026-12-14T10:45:00Z" }, error: null }
   vi.useFakeTimers()
 })
 afterEach(() => {
@@ -170,6 +184,77 @@ describe("top-collector-census-dune — gates", () => {
   it("503s when the query-id override is not numeric", async () => {
     process.env.TOP_COLLECTOR_CENSUS_QUERY_TOPSHOT = "abc"
     expect((await mod.POST(req("?collection=nba-top-shot"))).status).toBe(503)
+  })
+})
+
+describe("top-collector-census-dune — spend gate", () => {
+  const stopCase = (name: string, status: unknown, error: { message: string } | null, reason: RegExp, ok: boolean) =>
+    it(name, async () => {
+      state.rpc.dune_budget_status = () => ({ data: status, error })
+      const calls = stubProxy({})
+      const res = await mod.POST(req("?collection=nba-top-shot"))
+      expect(res.status).toBe(202)
+      const body = await res.json()
+      expect(body.skipped).toBe("budget")
+      expect(body.reason).toMatch(reason)
+      expect(state.afterCbs).toHaveLength(0)
+      expect(calls).toHaveLength(0)
+      expect(state.rpcCalls.some((c) => c.name === "top_collector_census_map_csv")).toBe(false)
+      const log = logArgs()
+      expect(log.p_ok).toBe(ok)
+      expect(log.p_extra.budget_stopped).toBe(true)
+    })
+  stopCase("stops when the budget is paused", { ...BUDGET_OK, paused: true }, null, /paused/, true)
+  stopCase("stops when the lane is disabled", { ...BUDGET_OK, pipeline_enabled: false }, null, /lane disabled/, true)
+  stopCase("stops when the credit meter is spent", { ...BUDGET_OK, credits_est_left: 0 }, null, /credit meter/, true)
+  stopCase("fails closed (ok:false) when the budget is unreadable", null, { message: "boom" }, /budget/, false)
+
+  it("does not gate on the retired datapoint meter (datapoints_allowed_now 0 still walks)", async () => {
+    happyRpcs()
+    stubProxy({ results: [{ json: { execution_id: "EX1", result: { rows: [row()], metadata: { total_row_count: 1 } } } }] })
+    const res = await mod.POST(req("?collection=nba-top-shot"))
+    expect(res.status).toBe(202)
+    await runDeferred()
+    expect(logArgs().p_ok).toBe(true)
+  })
+})
+
+describe("top-collector-census-dune — once per billing cycle", () => {
+  it("skips (no spend) a collection whose census already landed this cycle", async () => {
+    state.lastRun = { data: { source: "dune_census", refreshed_at: "2026-12-15T12:40:00Z" }, error: null }
+    const calls = stubProxy({})
+    const res = await mod.POST(req("?collection=nba-top-shot"))
+    const body = await res.json()
+    expect(body.skipped).toBe("censused_this_cycle")
+    expect(state.afterCbs).toHaveLength(0)
+    expect(calls).toHaveLength(0)
+    expect(logArgs().p_ok).toBe(true)
+  })
+  it("buys a new census when the last one predates the cycle", async () => {
+    state.lastRun = { data: { source: "dune_census", refreshed_at: "2026-12-13T12:40:00Z" }, error: null }
+    stubProxy({})
+    await mod.POST(req("?collection=nba-top-shot"))
+    expect(state.afterCbs).toHaveLength(1)
+  })
+  it("a walked-wallet set this cycle is not a census — it still runs", async () => {
+    stubProxy({})
+    await mod.POST(req("?collection=nba-top-shot"))
+    expect(state.afterCbs).toHaveLength(1)
+  })
+  it("fails closed when the last census cannot be read", async () => {
+    state.lastRun = { data: null, error: { message: "timeout" } }
+    const calls = stubProxy({})
+    const res = await mod.POST(req("?collection=nba-top-shot"))
+    expect((await res.json()).reason).toMatch(/last census unreadable: timeout/)
+    expect(calls).toHaveLength(0)
+    expect(logArgs().p_ok).toBe(false)
+  })
+  it("fails closed when the budget carries no cycle_start", async () => {
+    state.rpc.dune_budget_status = () => ({ data: { ...BUDGET_OK, cycle_start: null }, error: null })
+    stubProxy({})
+    const res = await mod.POST(req("?collection=nba-top-shot"))
+    expect((await res.json()).reason).toMatch(/cycle_start missing/)
+    expect(state.afterCbs).toHaveLength(0)
   })
 })
 

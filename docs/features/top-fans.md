@@ -70,7 +70,8 @@ Trevor 5:09 PM PT: "Keep going. We're going to wait" (for the 12/14 Dune cycle r
 | saved Dune queries (public) | Top Shot **9205180** · All Day **9205183** · Golazos **9205184** · Pinnacle **9205185** — SQL identical to the generator (checked 11-27); ⚠ never executed yet |
 | upload | `dune-proxy` `POST /upload_csv` — only `rpc_census_map_(topshot\|allday\|golazos\|pinnacle)`; query allowlist gained the four ids |
 | route | `/api/cron/top-collector-census-dune?collection=<slug>` (resume: `&execution_id=`) — pipeline `top-collector-census-dune`; ok only if every result row was keyed and staged |
-| schedule | `.github/workflows/top-collector-census.yml`, Mondays 12:23 UTC (4:23 AM PT), first 12/15; dispatch for one collection |
+| schedule | `.github/workflows/top-collector-census.yml`, Mondays 12:23 UTC (4:23 AM PT); dispatch for one collection. ⚠ **At most one successful census per collection per Dune billing cycle** — the route skips a collection whose `dune_census` landed since `dune_budget_status().cycle_start` (`skipped: censused_this_cycle`, no spend), so later Mondays are free retries for a failed run |
+| spend gate | the route calls `readDuneBudget('top-collector-census-dune')` before any spend and stops (logged `budget_stopped`, ok:true) on `dune_budget_state.paused`, its `dune_budget_allocation` row `enabled = false`, or `credits_est_left = 0`; an unreadable budget fails closed (ok:false). It does **not** gate on the datapoint caps (retired Free-plan meter; Analyst bills credits). |
 | DB | migration `20261128020000_audit_20261127_top_collector_census` (applied 11-27 ~6:05 PM PT through the dashboard SQL editor; the first draft never left its session, this one was rebuilt from the route + generator). Adds `top_collector_census_map(_csv)` (Top Shot `ek` = `set:play:sub`, 0 = Standard), `entity_top_fans_census_stage`, `stage_/finalize_top_collector_census` (finalize refuses an empty or short stage, then queues usernames for the new owners), the refresh skip for a `dune_census` collection, and `census_complete` in the reader. |
 
 How it decides an owner: the latest `<C>.Deposit` or Cadence-1 `NonFungibleToken.Deposited` (type `<C>.NFT`) per NFT id, unless a later `Withdraw` / `Withdrawn` / burn / `NFT.ResourceDestroyed` means it is in nobody's collection. System accounts (`flowty_excluded_addresses`) ride in the map as `kind='exclude'`.
@@ -79,9 +80,22 @@ How it decides an owner: the latest `<C>.Deposit` or Cadence-1 `NonFungibleToken
 
 The page needs nothing else: `get_entity_top_fans.census_complete` flips to true when a collection's run source is `dune_census`, and the server stops sending a partial ranking before that (`rankingIsCensus`).
 
-## Overlap left in place
+## First run after the 12/14 reset — the controlled order
 
-The older "Top Collectors" panels on the player page (Top Shot rookie index with its coverage note, Candy census, Pinnacle owner map) still render above Top Fans. They rank the same people by value; retiring them is a follow-up (tests pin them: `panini-entity-pages`, `pinnacle-top-collectors-unknown-mint-is-not-zero`).
+Two switches are OFF on 11-27 and both must be on before anything spends:
+
+1. `dune_budget_state.paused = true` (since 11-15, when the cycle was spent). Un-pausing re-arms every Dune lane, not just this one; the scheduled task Trevor set up on 11-15 for #190 is due to do it on 12-13 (see below). Nothing in this lane touches it.
+2. `dune_budget_allocation` row `top-collector-census-dune` `enabled = false` (added 11-27 ~7:30 PM PT). Enabling it is the go-ahead for the census lane only — also **Trevor's** call: `UPDATE public.dune_budget_allocation SET enabled = true, updated_at = now() WHERE pipeline = 'top-collector-census-dune';`
+
+The global pause is due to be lifted by the scheduled task "RPC #190 — resume Top Shot transfer-hop after Dune credit reset" (12-13, 5 PM PT). The pack-contents load and UFC Aptos wallet-link tasks spend from the same cycle on 12-14 (10:23 AM PT). **Scheduled task "RPC: Top Collector census — first Dune run check (12-15)"** (Mon 12-15, 11:13 AM PT, trig_012coXRHzigxGYSMt2gQQhz9) reads both switches and the credits left. If either switch is off it tells Trevor and stops; it never flips them. If both are on and ≥ 1,500 credits remain, it runs the order below and records the measured costs here.
+
+Cost (dated calibration, `docs/reference/apis-and-cadence.md`): one full-history `TopShot.Deposit` scan ≈ 80 credits; result reads ≈ 2 credits per 1,000 rows. Entities to rank (11-27): Top Shot 1,515 · All Day 1,507 · Pinnacle 859 · Golazos 388, up to 45 owner rows each. Expected: low hundreds of credits per collection; unmeasured until the first run.
+
+Order: (1) with both switches on, dispatch `top-collector-census.yml` with `collection=laliga-golazos` (smallest); (2) read the execution's cost (`pipeline_runs` extra.execution_id → Dune `getExecutionResults` `executionCostCredits`, and `getUsage` before/after); (3) if Golazos cost × the size ratios fits the cycle with room for other Dune work, run disney-pinnacle, nfl-all-day, nba-top-shot one at a time, reading cost after each; (4) the first-run checks above per collection. If the 12/15 Monday tick fires first, it hits the gate and logs `budget_stopped` — expected.
+
+## Overlap — resolved 11-27
+
+The older walked-wallet "Top Collectors" panels were retired the same evening (section below).
 
 ## Revert
 

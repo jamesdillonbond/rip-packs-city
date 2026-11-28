@@ -4,9 +4,15 @@ name: Top Collector census (Dune)
 # /api/cron/top-collector-census-dune, which uploads RPC's edition map to Dune, runs the saved census query,
 # and swaps the ranking in (lib/dune/top-collector-census.ts, docs/features/top-fans.md).
 #
-# Weekly — a census is a full scan of flow.cadence_events from contract launch, billed in Dune credits, and
-# a collector's rank does not move hour to hour. The first scheduled run (Mon 2026-12-15) is the first one
-# after the Dune credit cycle resets on 12/14; workflow_dispatch runs one collection on demand.
+# Weekly tick, but AT MOST ONE SUCCESSFUL CENSUS PER COLLECTION PER DUNE BILLING CYCLE (2026-11-27): the route
+# skips a collection whose census already landed since the cycle started (dune_budget_status.cycle_start), so
+# the Mondays after a success cost nothing and a failed run is retried the next Monday. A census is a
+# full-history scan of flow.cadence_events per collection, billed in Dune credits (calibration: ~80 credits per
+# full-history TopShot.Deposit scan, ~2 credits per 1,000 result rows) out of the Analyst plan's 4,000 a cycle.
+# The route also stops at the shared spend gate (dune_budget_state.paused, its dune_budget_allocation row
+# 'top-collector-census-dune' enabled=false, or credits spent) and logs that as a configured stop. The lane is
+# DISABLED until a controlled first run (Golazos first, cost read back) — see docs/features/top-fans.md.
+# workflow_dispatch runs one collection on demand (?force=1 is not offered: re-buying a census is a decision).
 # Each call returns 202 and does its work in the route's after(); the run's outcome is the
 # `top-collector-census-dune` row in pipeline_runs, not this job's status.
 

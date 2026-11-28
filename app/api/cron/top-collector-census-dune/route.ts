@@ -19,14 +19,15 @@
 // ⚠ Resume: ?execution_id=<id> skips 1–3 and pages an execution that already finished (the status poll is
 // bounded at STATUS_BUDGET_MS; a long Dune run that outlives it is logged with its id).
 // ⚠ Cost: an execution scans flow.cadence_events from contract launch; export is billed per MB, which is
-// why the query returns only the top rows per entity. Runs are logged in dune_api_usage.
+// why the query returns only the top rows per entity. Runs are logged in dune_api_usage. Monthly, and only
+// past the spend gate below (paused / lane enabled / credits) — see docs/features/top-fans.md.
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server"
 import { randomUUID } from "node:crypto"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { recordDuneUsage } from "@/lib/dune/budget"
+import { readDuneBudget, logDuneBudgetStop, recordDuneUsage } from "@/lib/dune/budget"
 import { censusConfigBySlug, censusQueryId, mapTableName, normalizeCensusRow, type CensusRow } from "@/lib/dune/top-collector-census"
 
 export const dynamic = "force-dynamic"
@@ -88,6 +89,43 @@ async function run(req: NextRequest) {
     await logRun(startedAt, false, 0, 0, "dune not configured", cfg.urlSlug, { skipped: "dune_not_configured" })
     return NextResponse.json({ ok: false, error: "dune_not_configured" }, { status: 503 })
   }
+  // Spend gate (2026-11-27). The census is the most expensive Dune work RPC runs (a full-history scan per
+  // collection), so it asks the shared budget first and stops on: an unreadable budget (fails closed),
+  // dune_budget_state.paused, its dune_budget_allocation row disabled, or the credit meter spent. It does NOT
+  // gate on the datapoint caps — those are the retired Free-plan meter (dune_budget_state note, 11-14); the
+  // Analyst plan bills credits. A stop is logged ok:true with budget_stopped (a configured stop, not a failure).
+  const budget = await readDuneBudget(PIPELINE)
+  const raw = (budget.raw ?? {}) as Record<string, unknown>
+  const stopReason =
+    budget.read !== "ok" ? (budget.reason ?? "budget unreadable")
+    : budget.paused ? "dune_budget_state.paused"
+    : raw.pipeline_enabled === false ? "lane disabled in dune_budget_allocation"
+    : Number(raw.credits_est_left) === 0 ? "credit meter spent (est)"
+    : null
+  if (stopReason) {
+    await logDuneBudgetStop({ pipeline: PIPELINE, startedAt, budget: { ...budget, reason: stopReason }, extra: { collection: cfg.urlSlug } })
+    return NextResponse.json({ ok: budget.read === "ok", skipped: "budget", reason: stopReason, collection: cfg.urlSlug }, { status: 202 })
+  }
+
+  // Once per billing cycle: a census that already landed since the cycle started is not bought again (the
+  // weekly tick is a retry for a failed run, not a refresh). Unreadable → stop (fail closed, ok:false).
+  const cycleStart = typeof raw.cycle_start === "string" ? raw.cycle_start : null
+  const { data: lastRun, error: lastErr } = await supabaseAdmin
+    .from("entity_top_fans_runs")
+    .select("source, refreshed_at")
+    .eq("collection_id", cfg.collectionId)
+    .maybeSingle()
+  if (lastErr || !cycleStart) {
+    const why = lastErr ? `last census unreadable: ${lastErr.message}` : "cycle_start missing from dune_budget_status"
+    await logRun(startedAt, false, 0, 0, why, cfg.urlSlug, { budget_stopped: true, budget_reason: why })
+    return NextResponse.json({ ok: false, skipped: "budget", reason: why, collection: cfg.urlSlug }, { status: 202 })
+  }
+  const last = lastRun as { source?: string; refreshed_at?: string } | null
+  if (last?.source === "dune_census" && last.refreshed_at && Date.parse(last.refreshed_at) >= Date.parse(cycleStart)) {
+    await logRun(startedAt, true, 0, 0, null, cfg.urlSlug, { skipped: "censused_this_cycle", last_census: last.refreshed_at, cycle_start: cycleStart })
+    return NextResponse.json({ ok: true, skipped: "censused_this_cycle", last_census: last.refreshed_at, collection: cfg.urlSlug }, { status: 202 })
+  }
+
   const proxy = (path: string, init?: RequestInit) =>
     fetch(`${proxyUrl.replace(/\/+$/, "")}${path}`, {
       ...init,
