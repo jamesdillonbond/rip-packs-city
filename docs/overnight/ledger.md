@@ -13,6 +13,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:10 PM PT — 🗄 APPLIED `20261128010040` — Top Collector Leaderboard: full-census collections only, usernames for leaderboard owners
+
+- Trevor: rank every wallet, not only the ones RPC captured; rename to "Top Collector Leaderboard"; name the Pinnacle owners.
+- App: renamed; rankings shown only for full censuses (Panini, Candy — `TOP_COLLECTORS_FULL_CENSUS`); Top Shot / All Day / Golazos / UFC / Pinnacle say "waiting on a full on-chain count" until the Dune census (blocked: credits spent to 12/14). Doc: `docs/features/top-fans.md` § 2026-11-27 evening.
+- DB: `queue_top_collector_usernames(uuid)` + `refresh_entity_top_fans` calls it at the end (own block). One-off Atlas dispatch named 838/840 Pinnacle and 1,546/1,548 Top Shot leaderboard owners (`member_wallet_username_requests`, drained by pg_cron 650).
+- **Revert:** re-apply `refresh_entity_top_fans` from `20261128000240`; `DROP FUNCTION public.queue_top_collector_usernames(uuid);` + `git revert` "Top Collector Leaderboard: full-census collections only" (by message).
+
 ### 2026-11-27 · 4:54 PM PT — Concierge knows which identifier saves which collection, Aptos included
 
 - Follow-on to the 4:07 / 4:28 PM PT UFC Aptos ships (Trevor: "Keep going"). The concierge prompt explained saving vs following but never which identifier goes where, and did not know an Aptos address can now be saved. New "Which identifier goes where" bullet: Dapper/Top Shot username or Flow address (Flow collections, one Dapper wallet per account), Solana (Candy), Aptos 0x+64-hex (UFC Strike on Aptos — counts in totals, joins the own UFC binder), Panini username in the Panini panel; no password / connection / recovery phrase; beginners → /help/new-to-collecting.

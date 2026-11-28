@@ -1,4 +1,4 @@
-# Top Fans — top collectors of every team and player
+# Top Collector Leaderboard — top collectors of every team and player (code name: Top Fans)
 
 Shipped 2026-11-27 (Claude Code cloud). Trevor: "Each team and player should have top fans on their hubs. This should reflect on their collection-specific hubs, along with a similar table on their aggregated hubs, with those tables showing filters/toggle-able for each of the supported collections. These tables should show top collectors by Moment/Pin/Card count, FMV, and special serial count owned (only count each Moment/pin/card once, if they have multiple special serials on it like a 1/1 that is both #1 and perfect)."
 
@@ -50,6 +50,16 @@ SELECT cron.schedule('rpc-entity-top-fans-rest', '56 10 * * *',
   $$SELECT public.refresh_entity_top_fans('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid), public.refresh_entity_top_fans('06248cc4-b85f-47cd-af67-1855d14acd75'::uuid), public.refresh_entity_top_fans('9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid), public.refresh_entity_top_fans('7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid)$$);
 RESET ROLE;
 ```
+
+## 2026-11-27 evening — leaderboard only from a FULL census; renamed
+
+Trevor (4:51 PM PT): "We need to have this for every possible wallet, not just the ones we've captured. I don't think I should be the top collector for blazers." Then: "Call it top collector leaderboard, not top fan leaderboard."
+
+- **Renamed** to "Top Collector Leaderboard" (section title, column "Collector").
+- **Ranked only where the owner source is a full census** — `TOP_COLLECTORS_FULL_CENSUS` in `lib/entity/top-fans-format.ts`: Panini (every serial) and Candy (daily wallet census). Every other collection renders "waiting on a full on-chain count of every wallet" and is not read. Why, measured 11-27: Top Shot walked/indexed wallets = 12,063 owners of ~50.5 M minted Moments (the id→edition map covers 5.36 M ids); All Day / Golazos / UFC = wallets looked up on RPC only; Pinnacle's owner map sees 477 k of 1.62 M minted pins (it starts at the Dec 2025 spork).
+- **The full census source is Dune** (`flow.cadence_events` from 2020: `<Contract>.MomentMinted` / `Deposit` / `Withdraw`, latest Deposit per id = owner — the shape of query 7899011). Plan: one Dune query per collection that aggregates on Dune's side to (entity, owner) using an inlined VALUES map of our editions (set/play[/sub] → player key, team key, FMV, circulation, jersey), keeps the top 25 per metric and the per-entity totals, and is paged into `entity_top_fans` by a route on the `dune-proxy` worker (as `sync-topshot-ownership-dune`). ⛔ **Blocked:** the Analyst plan's 4,000 credits for the cycle are spent (11-14/15 acquisition staging); the cycle resets **12/14**. Extra credits are $1.875 / 100 once the team's "Limit extra credits" is raised above $0 (Team settings → Plan) — Trevor's call.
+- **Usernames** (Trevor: "figure out usernames for those pinnacle users"): leaderboard owners came from mint/ownership maps that no username lane read (679 of 840 Pinnacle owners unnamed). One-off Atlas dispatch 4:38 PM PT → 838 / 840 named; standing: `queue_top_collector_usernames()` (migration 20261128010040) runs at the end of every refresh and queues Atlas lookups into `member_wallet_username_requests`, drained by pg_cron 650.
+- Daily schedule still not applied (the approval check refused `cron.schedule` twice, including without the role switch). SQL above.
 
 ## Overlap left in place
 
