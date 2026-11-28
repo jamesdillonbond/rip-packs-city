@@ -1,4 +1,4 @@
-# Inbox index — 712 live filings
+# Inbox index — 713 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -33,6 +33,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-11-28 — 1 filing
+
+- [nba-espn-projections (new Fast Break box-score lane, shipped 11-27 ~9:45 PM PT) failed a whole run on ONE ESPN gamesummary HTTP 404 — box-score drain should skip the 404'd game and finish ok; 1/24 runs in 14h, self-recovered, no data lost — rpc-daytime-monitor, LOW](2026-11-28T0713Z-rpc-daytime-monitor-nba-espn-projections-boxscore-404-fails-run.md)
 
 ## 2026-11-27 — 4 filings
 - [pg_net_http_401 — 2 HTTP 401 on flowscan /flow/v1/transaction, not attributable to the three Atlas lanes; nil blast radius (all Flow freshness current, stalled/pg_cron clean); night pass: attribute (edge-fn gate vs self-probe) — rpc-daytime-monitor, LOW](2026-11-27T2213Z-rpc-daytime-monitor-pgnet-401-flowscan-transaction.md)
