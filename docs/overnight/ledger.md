@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:58 PM PT — 📝 DOCS — overnight load steer: add the 4:33 PM Candy edition-holders MV timeout
+
+- No code or DB change. `rpc-refresh-candy-edition-holders` hit its 120 s statement timeout at 4:33 PM PT (2 of the last 25 runs, both busy afternoons; healthy 22–59 s). Added to the 4:25 PM focus.md load steer for the overnight pass.
+- Revert: `git revert` this commit.
+
 ### 2026-11-27 · 4:50 PM PT — /insights/whales: table headers carry scope, the wide grid fits a 320px phone (CI red on d8c3d82)
 
 - **What:** `d8c3d82` reddened two tree-walk guards: `table-headers-carry-scope` (7 `<th>` without `scope`) and `responsive-grid-minimum-fits-a-phone` (`minmax(320px, 1fr)` not wrapped in `min(…, 100%)`). Both are fixed in `WhalesBoardClient.tsx`; no data change.
