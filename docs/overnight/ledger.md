@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:05 PM PT — 🗄 APPLIED `20261127235852` — dropped the unused `purge_fmv_snapshots_today_except(uuid[], timestamptz, uuid[])`
+
+- Trevor: "You do it" (answering "the old 3-argument purge function is unused now — drop it whenever you like"). Replaced at 3:20 PM PT by `purge_fmv_snapshots_today_except_before` (`20261127231105`). Checked first: the deployed route calls only the `_before` sibling; 0 pg_cron commands, 0 SQL functions and no code path name the old one. Live after: `purge_fmv_snapshots_today` (untouched sibling) and `purge_fmv_snapshots_today_except_before`.
+- Repo: migration file (renamed to the assigned version), old pin `supabase/tests/purge_fmv_snapshots_today_except.sql` removed with its `db-invariants-drift-guard` entry. Preflight green (322 DB files).
+- **Revert:** re-apply `20261023151316` (function, revokes, service_role grant) and restore the pin + drift-guard entry from git (by message).
+
 ### 2026-11-27 · 3:55 PM PT — 🗄 APPLIED `20261127233707` + `20261127234102` + `20261127234213` — Sold-tab pack lanes made cheap, All Day covered, the Dune loader names rows it already has
 - **233707:** `sold_pack_open_tx_reads` is now keyed by (collection, pack), because a PackNFT id is only unique within one contract. A new due-list table, `sold_pack_work`, replaces rebuilding the full 40k-pack set every tick. The dispatch, collect and seed steps read from it, and All Day (AllDay.Deposit and PackNFT.Deposit) is covered too. The file was amended after apply with `SET LOCAL lock_timeout` and a restated REVOKE/GRANT on `run_sold_container_open_search`, to satisfy the lock and anon-exec guards; production permissions were already correct (anon and authenticated have no EXECUTE).
 - **234102:** the seed batch is now 1,000. Retries back off to 6 h, 30 d once a pack has rows, and 7 d otherwise. Seeding takes 28 s cold and 4 s warm, down from timing out at the cap.
