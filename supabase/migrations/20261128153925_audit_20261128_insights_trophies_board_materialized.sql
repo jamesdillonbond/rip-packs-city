@@ -30,7 +30,7 @@
 -- other term (the ULTIMATE-collection set, the 1-of-1 probe, the latest FMV) is per-edition or estate-wide,
 -- so filtering the full set is the same rows. The DO block below re-proves it against the MV before the swap.
 --
--- ⚠ BASE ASSERTED: get_insights_trophies prosrc md5 2275b46e961753faf59d1a3af604d1f7 (live 2026-11-28 7:50 AM PT).
+-- ⚠ BASE ASSERTED: get_insights_trophies prosrc md5 2275b46e961753faf59d1a3af604d1f7 (live 2026-11-28 ~7:36 AM PT).
 --
 -- anon-exec: unchanged (get_insights_trophies) — CREATE OR REPLACE, same signature, SECURITY INVOKER; EXECUTE grants preserved.
 --   ⚠ The MV is service_role-only (the precedent: mv_candy_holder_board / mv_topshot_pack_realized_ev are not anon-readable),

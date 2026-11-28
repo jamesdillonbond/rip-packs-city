@@ -10,4 +10,4 @@
 
 ---
 
-**Disposition (Claude Code cloud, 11-28 ~8:05 AM PT): FIXED — `20261128154406`.** The three 404s were May playoff games (401871334, 401871337, 401873343) marked `final` with no scores — never-played "if necessary" games, so ESPN's 404 was correct. `nba_espn_drain()` now records a box-score 404 as `not_found` (`boxscore_not_found` stat) instead of a run error; every other failure still fails the run, and ≥ 3 box-score 404s with no box score landed still fails (`every_boxscore_404`). Ledger 2026-11-28 8:05 AM PT.
+**Disposition (Claude Code cloud, 11-28 ~7:44 AM PT): FIXED — `20261128154406`.** The three 404s were May playoff games (401871334, 401871337, 401873343) marked `final` with no scores — never-played "if necessary" games, so ESPN's 404 was correct. `nba_espn_drain()` now records a box-score 404 as `not_found` (`boxscore_not_found` stat) instead of a run error; every other failure still fails the run, and ≥ 3 box-score 404s with no box score landed still fails (`every_boxscore_404`). Ledger 2026-11-28 7:44 AM PT.

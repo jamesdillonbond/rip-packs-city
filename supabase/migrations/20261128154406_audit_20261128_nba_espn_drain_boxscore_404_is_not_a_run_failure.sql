@@ -15,7 +15,7 @@
 -- game would have failed a run every hour for 3 days under `v_ok := v_errs = 0`.
 --
 -- HOW. md5-asserted splice of the LIVE body (prosrc 69b3cd9df6dfd2479b8eb6cf835157cb, read 2026-11-28
--- ~8:00 AM PT). The committed 20261128050912 copy does NOT match live (md5 0015260d…), so the body is edited
+-- ~7:42 AM PT). The committed 20261128050912 copy does NOT match live (md5 0015260d…), so the body is edited
 -- in place rather than re-declared from that file; each target string is asserted to occur exactly as often
 -- as expected. No test pins this function. Header (plpgsql, volatile, invoker, search_path pg_catalog, public)
 -- and grants (service_role, postgres) are carried over by ALTER-free CREATE OR REPLACE with the same header.

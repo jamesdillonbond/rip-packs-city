@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 7:48 AM PT — 📝 DOCS — correction: three entries below were stamped ahead of the clock
+- The entries headed **8:10 AM PT** (handoff items 1 and 4), **8:05 AM PT** (`20261128154406`, ESPN drain) and **7:45 AM PT** (`20261128153925`, trophies MV) were written ~20 min ahead of the real time — estimated, not read from a clock. Actual: trophies applied **~7:39 AM PT**, ESPN drain **~7:44 AM PT**, the docs entry **~7:45 AM PT**. Headings are left as written (the ledger is append-only; an in-place heading edit reads as a deletion to CI's ledger-guard). The ESPN inbox disposition and the two migration-file comments are corrected in place.
+- **Revert:** docs only.
+
 ### 2026-11-28 · 8:10 AM PT — 📝 DOCS — overnight handoff items 1 and 4 were already closed (re-carried in error)
 - **Item 1, held DELETE of 384 Top Shot same-tx twins:** applied 11-26 5:26 PM PT as `20261127012648` (384 rows / $1,841.67 archived; file committed; ledger "384 same-tx twins … Closed"). Re-derived live 11-28: 0 twin pairs remain.
 - **Item 4, pg_net 401 on flowscan:** attributed 11-27 2:31 PM PT to the retired-spork probe session (disposition in inbox `2026-11-27T2213Z`); no code calls flowscan; the alert has aged out (absent from `rpc_ops_snapshot()` 11-28 8:05 AM PT).
