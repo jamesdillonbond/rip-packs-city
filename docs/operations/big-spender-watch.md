@@ -10,6 +10,8 @@ Follow-up `20261128013007` (same evening, "Keep going"): every leader and move c
 
 Follow-up `20261128015710`: every move carries `link_key`, so the bought item links to its page through `whaleItemHref()`. That is the edition page (`editionRouteHref`, which sends Pinnacle to `/pinnacle/moment/<render id>`), or for a pack its detail page `/<collection>/pack/dist/<dist id>` (never the simulator). Candy packs have no page and stay plain text. One live sample of each kind returned 200 with its real title on 2026-11-27. /insights/top-sales now links to Whale Watch from its "What this board is" note.
 
+**Naming unnamed whales** (`20261128021720`): 66 of 404 Flow whales had no username and had never been asked about. `run_big_spender_usernames()` (pg_cron **958**, every 10 min) sends up to 25 of them per run, biggest spenders first, to Atlas through the shared `member_wallet_username_requests` lane. It waits whenever that lane has a request in flight, so the lane's request rate never doubles. Job 650 (`resolve_member_wallet_usernames_via_atlas`) writes the answers to `wallet_usernames`, and the next run copies them into `big_spender_wallets`. Solana (Candy) wallets have no username source and stay shortened.
+
 ## What counts as a top sale
 
 One of a collection's **25 highest sales in its Pacific-time calendar month**, **$100 minimum**. Items (Moments / Cards / Pins) and packs are ranked separately. Rank rather than a dollar bar because "big" differs by an order of magnitude between collections. 90-day p99.9 on 2026-11-27: Top Shot ~$305, All Day ~$100, Panini ~$1,234, Candy ~$1,380.
