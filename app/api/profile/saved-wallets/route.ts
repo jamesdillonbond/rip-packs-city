@@ -19,6 +19,7 @@ import { warmWalletDeep } from "@/lib/profile/warm-wallet";
 // saved wallet then renders empty, which reads as "RPC has no Candy data" and is
 // false. normalizeAddress lowercases Cadence/EVM and leaves base58 alone.
 import { normalizeAddress, isValidAddressForChain } from "@/lib/address";
+import { isAptosAccountAddress } from "@/lib/ufc-aptos";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -214,7 +215,11 @@ export async function POST(req: NextRequest) {
   // collection. Unmapped/unknown chains fall back to "any supported address",
   // so this can't block a legitimate wallet on a collection we haven't mapped.
   const targetCollection = getCollectionByUuid(resolvedCollectionId);
-  if (targetCollection && !isValidAddressForChain(walletAddr, targetCollection.dbChain)) {
+  // 2026-11-27 (Trevor: yes to saving an Aptos wallet): UFC Strike lives on Flow AND Aptos, and its
+  // registry dbChain stays "flow" (every Flow path dispatches on it). An Aptos account (0x + 64 hex) is
+  // accepted for UFC Strike ONLY — no other collection can hold anything on Aptos.
+  const aptosForUfc = targetCollection?.id === "ufc" && isAptosAccountAddress(walletAddr);
+  if (targetCollection && !aptosForUfc && !isValidAddressForChain(walletAddr, targetCollection.dbChain)) {
     return NextResponse.json(
       {
         error: "address_chain_mismatch",
@@ -367,7 +372,9 @@ export async function POST(req: NextRequest) {
     // 2026-07-20, no allow_list row) got a saved_wallets row and an empty
     // wallet_moments_cache. Fire-and-forget via after(): the orchestrator 202s
     // immediately and walks in its own background task.
-    if (isNewWallet) {
+    // An Aptos account has nothing for the Flow warm or the wallet-cache stamp to do: its UFC holdings
+    // are read live from the Aptos indexer (/api/ufc/aptos-holdings?aptos=) wherever they are shown.
+    if (isNewWallet && !aptosForUfc) {
       after(async () => {
         await warmWalletDeep(
           siteUrl(),

@@ -135,7 +135,7 @@ const ROWS: Row[] = [
     chain: "Flow and Aptos",
     wallet: "Older Moments may still be in your Dapper Wallet; migrated and new ones live in an Aptos wallet",
     pay: "On UFC Strike's own site and the Aptos marketplaces it uses",
-    rpc: "Your Dapper username or Flow address, or search an Aptos address on the UFC Collection tab",
+    rpc: "Your Dapper username or Flow address, and your Aptos address — save both on your dashboard",
     home: { href: "https://ufcstrike.com", label: "ufcstrike.com" },
   },
   {
@@ -362,7 +362,7 @@ export default function NewToCollectingPage() {
             </li>
             <li>
               <strong>Make a free account</strong> (<Link href="/login?intent=signup" style={LINK}>sign up with your email</Link>, no
-              password) and save your Dapper username, Solana address and Panini username on your{" "}
+              password) and save your Dapper username, Solana address (Candy), Aptos address (UFC Strike) and Panini username on your{" "}
               <Link href="/dashboard" style={LINK}>dashboard</Link>. Your binder then totals everything you own across every
               collection, and you can set alerts, watchlists and trophy cases.
             </li>

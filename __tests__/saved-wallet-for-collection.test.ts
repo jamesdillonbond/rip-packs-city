@@ -34,6 +34,16 @@ describe("fetchSavedWalletForCollection", () => {
     expect(seenUrl).toContain("95f28a17-224a-4025-96ad-adf8a4c63bfd")
   })
 
+  // 2026-11-27: UFC Strike can carry a saved Aptos account beside the Dapper wallet; the binder opens on
+  // the Flow wallet when both exist, and on the Aptos account when it is the only one.
+  it("prefers the Flow wallet over an Aptos account; an Aptos-only list returns the Aptos account", async () => {
+    const aptos = "0x" + "ab".repeat(32)
+    stubFetch(() => ({ ok: true, json: async () => ({ wallets: [{ wallet_addr: aptos }, { wallet_addr: "0xabcdef0123456789" }] }) }))
+    expect(await fetchSavedWalletForCollection("ufc")).toBe("0xabcdef0123456789")
+    stubFetch(() => ({ ok: true, json: async () => ({ wallets: [{ wallet_addr: aptos }] }) }))
+    expect(await fetchSavedWalletForCollection("ufc")).toBe(aptos)
+  })
+
   it("returns null on a non-ok response", async () => {
     stubFetch(() => ({ ok: false, json: async () => ({}) }))
     expect(await fetchSavedWalletForCollection("nfl-all-day")).toBeNull()

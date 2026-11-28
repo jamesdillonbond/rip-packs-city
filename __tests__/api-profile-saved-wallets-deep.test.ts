@@ -456,6 +456,32 @@ describe("POST /api/profile/saved-wallets — deep cross-collection warm", () =>
     expect((await res.json()).error).toBe("address_chain_mismatch")
   })
 
+  // 2026-11-27 (Trevor): a UFC Strike Aptos account (0x + 64 hex) saves under UFC Strike only, and
+  // schedules no Flow warm / cache stamp (its holdings are read live from the Aptos indexer).
+  const UFC = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
+  const APTOS = "0x" + "ab".repeat(32)
+  it("saves an Aptos account under UFC Strike and schedules no Flow warm", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: [{ wallet_addr: "0xabcdef0123456789" }], error: null }, // a Dapper wallet already saved
+        { count: 0, error: null },
+        { data: { id: "w2", wallet_addr: APTOS }, error: null },
+      ],
+    })
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: APTOS.toUpperCase().replace("0X", "0x"), collectionId: UFC }))
+    expect(res.status).toBe(200)
+    expect(captured.fn).toBeNull()
+  })
+
+  it("400s an Aptos account under any collection but UFC Strike", async () => {
+    state.user = { id: "u1" }
+    install({ saved_wallets: [{ data: [], error: null }] })
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: APTOS }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("address_chain_mismatch")
+  })
+
   // 2026-10-10: an unknown UUID skipped the chain gate (no collection → no
   // check) and was stored; the profile LOAD link then sent it to Top Shot.
   it("400s a present but unknown collectionId instead of storing it", async () => {

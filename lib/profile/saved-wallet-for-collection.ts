@@ -33,7 +33,11 @@ export async function fetchSavedWalletForCollection(
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
     const wallets: Array<{ wallet_addr?: string }> | undefined = json?.wallets;
-    const addr = wallets?.[0]?.wallet_addr;
+    // 2026-11-27: UFC Strike can now carry a saved Aptos account beside the Dapper wallet. The binder
+    // opens on the Flow wallet when there is one (it reads that wallet's linked Aptos holdings too);
+    // an Aptos-only collector opens on the Aptos account.
+    const flow = wallets?.find((w) => typeof w?.wallet_addr === "string" && /^0x[0-9a-fA-F]{16}$/.test(w.wallet_addr.trim()));
+    const addr = (flow ?? wallets?.[0])?.wallet_addr;
     return typeof addr === "string" && addr.trim() ? addr.trim() : null;
   } catch {
     return null;

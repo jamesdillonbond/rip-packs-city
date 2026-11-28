@@ -21,6 +21,7 @@ import { paniniCaption, sumPaniniIdentities } from "@/lib/dashboard/panini-total
 import LeagueSplitLine from "@/components/dashboard/LeagueSplitLine";
 import { publishedCollections, getPublishedCollection } from "@/lib/collections";
 import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress, truncateAddressForDisplay } from "@/lib/address";
+import { isAptosAccountAddress } from "@/lib/ufc-aptos";
 import FollowedWalletsList from "@/components/profile/FollowedWalletsList";
 import {
   fmtUsd,
@@ -521,6 +522,42 @@ function ProfilePageInner() {
     await Promise.all(
       addrs.map(async (addr) => {
         try {
+          // 2026-11-27: a saved Aptos account holds UFC Strike only, and nothing about it is in the
+          // wallet cache that collection-stats reads — that read would answer a confident zero. Its
+          // holdings come live from the Aptos indexer instead, shaped as the one UFC Strike stats
+          // row, so the totals, the Collections count and the wallet card's tile all count it. A
+          // failed read is a failed wallet (headline "—" + retry), never a zero.
+          if (isAptosAccountAddress(addr)) {
+            const ufc = getPublishedCollection("ufc");
+            const aUrl = "/api/ufc/aptos-holdings?aptos=" + encodeURIComponent(addr.toLowerCase());
+            let ar = await fetch(aUrl, { cache: "no-store" });
+            if (!ar.ok) {
+              await new Promise((r) => setTimeout(r, 800));
+              ar = await fetch(aUrl, { cache: "no-store" });
+            }
+            if (!ar.ok || !ufc?.supabaseCollectionId) {
+              failed.push(addr);
+              return;
+            }
+            const j = await ar.json();
+            const moments: Array<{ fmv_usd?: number | null }> = Array.isArray(j?.moments) ? j.moments : [];
+            const priced = moments.filter((m) => typeof m.fmv_usd === "number" && (m.fmv_usd as number) > 0);
+            meta[addr] = { source: "live", cacheUpdatedAt: null, covered: [ufc.supabaseCollectionId] };
+            out[addr] = moments.length === 0 ? [] : [{
+              collection_id: ufc.supabaseCollectionId,
+              collection_slug: "ufc",
+              collection_label: ufc.label,
+              moment_count: moments.length,
+              fmv_total: priced.reduce((t, m) => t + (m.fmv_usd as number), 0),
+              fmv_stale_total: 0,
+              stale_count: 0,
+              fmv_max: priced.reduce((t, m) => Math.max(t, m.fmv_usd as number), 0),
+              priced_count: priced.length,
+              locked_count: 0,
+              top_tier: null,
+            }];
+            return;
+          }
           const url =
             "/api/profile/collection-stats?wallet_addr=" + encodeURIComponent(addr);
           let res = await fetch(url, { cache: "no-store" });
@@ -799,6 +836,28 @@ function ProfilePageInner() {
     setUsernameSaving(true);
     setUsernameError(null);
     try {
+      // 2026-11-27 (Trevor): an Aptos account (0x + 64 hex) is a UFC Strike wallet — UFC is the only
+      // collection RPC covers on Aptos. One saved_wallets row under UFC; no Flow warm (the save route
+      // skips it), the holdings are read live.
+      if (isAptosAccountAddress(raw)) {
+        const ufc = getPublishedCollection("ufc");
+        if (!ufc?.supabaseCollectionId) {
+          throw new Error("That looks like an Aptos address — UFC Strike isn't available yet.");
+        }
+        const address = raw.trim().toLowerCase();
+        const saveRes = await fetch("/api/profile/saved-wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddr: address, collectionId: ufc.supabaseCollectionId }),
+        });
+        const saveData = await saveRes.json().catch(() => ({}));
+        if (!saveRes.ok) throw new Error(saveData.error === "address_chain_mismatch" ? saveData.message : (saveData.message || saveData.error || `HTTP ${saveRes.status}`));
+        pushToast(`Loaded UFC Strike Aptos wallet ${truncateAddress(address)}`, "success");
+        setUsernameInput("");
+        setShowAddWallet(false);
+        await refresh();
+        return;
+      }
       if (chain === "solana") {
         if (!candy?.supabaseCollectionId) {
           throw new Error("That looks like a Solana address — Candy isn't available yet.");
@@ -974,8 +1033,19 @@ function ProfilePageInner() {
   const hasDapperWallet = groupedWallets.some((g) => isCadenceAddress(g.addr));
   const hasSolanaWallet = groupedWallets.some((g) => isSolanaAddress(g.addr));
   const candyPublished = publishedCollections().some((c) => c.dbChain === "solana");
-  const canAddWallet = !hasDapperWallet || (candyPublished && !hasSolanaWallet);
-  const addWalletLabel = hasDapperWallet ? "+ Add a Candy (Solana) wallet" : "+ Add another wallet";
+  // 2026-11-27: a UFC Strike Aptos account is the third chain a collector can add.
+  const hasAptosWallet = groupedWallets.some((g) => isAptosAccountAddress(g.addr));
+  const ufcPublished = !!getPublishedCollection("ufc");
+  const canAddCandy = candyPublished && !hasSolanaWallet;
+  const canAddAptos = ufcPublished && !hasAptosWallet;
+  const canAddWallet = !hasDapperWallet || canAddCandy || canAddAptos;
+  const addWalletLabel = !hasDapperWallet
+    ? "+ Add another wallet"
+    : canAddCandy && canAddAptos
+      ? "+ Add a Candy (Solana) or UFC Strike (Aptos) wallet"
+      : canAddCandy
+        ? "+ Add a Candy (Solana) wallet"
+        : "+ Add a UFC Strike (Aptos) wallet";
   // The hero's own add-wallet form (SignInBanner) renders exactly when the
   // wallets read succeeded and returned nothing — the same condition the hero
   // branch below uses, so the two cannot drift.
@@ -1278,8 +1348,8 @@ function ProfilePageInner() {
           <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
             {hasDapperWallet
-              ? "Your Dapper wallet is saved (one per account). Enter a Solana address to add your Candy collection."
-              : "Add YOUR wallet by entering your Dapper username or a wallet address you own (to watch a friend\u2019s, look it up and press Follow instead) — we\u2019ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB."}
+              ? `Your Dapper wallet is saved (one per account). ${[canAddCandy ? "Enter a Solana address to add your Candy collection" : null, canAddAptos ? "an Aptos address to add UFC Strike Moments held on Aptos" : null].filter(Boolean).join(", or ")}.`
+              : "Add YOUR wallet by entering your Dapper username or a wallet address you own (to watch a friend\u2019s, look it up and press Follow instead) — we\u2019ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, a Solana address with Candy MLB, and an Aptos address with UFC Strike."}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1299,7 +1369,7 @@ function ProfilePageInner() {
               // page: this field said "Dapper username" and the copy above it
               // named five Flow collections. The capability shipped; the way in
               // did not.
-              placeholder={hasDapperWallet ? "Solana wallet address" : "Dapper username or wallet address"}
+              placeholder={hasDapperWallet ? [canAddCandy ? "Solana" : null, canAddAptos ? "Aptos" : null].filter(Boolean).join(" or ") + " wallet address" : "Dapper username or wallet address"}
               style={{ flex: 1, minWidth: 220, padding: "10px 12px", background: "var(--rpc-surface)", border: `1px solid ${ACCENT_RED}66`, borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 13 }}
             />
             <button onClick={resolveAndAssociate} disabled={usernameSaving} style={primaryBtnStyle}>
@@ -1340,7 +1410,7 @@ function ProfilePageInner() {
                   /* 2026-11-25 (Trevor: "add ways for panini and candy to be added to these
                      graphics"): the account's Panini and Candy tiles ride on the FIRST Flow
                      wallet card — the one card every collector sees. */
-                  extraTiles={gi === groupedWallets.findIndex((x) => detectAddressChain(x.addr) !== "solana") ? (
+                  extraTiles={gi === (groupedWallets.some((x) => isCadenceAddress(x.addr)) ? groupedWallets.findIndex((x) => isCadenceAddress(x.addr)) : groupedWallets.findIndex((x) => detectAddressChain(x.addr) !== "solana")) ? (
                     <>
                       <PaniniTiles ids={paniniIds} />
                       {canAddWallet && hasDapperWallet && !hasSolanaWallet && candyPublished ? (
@@ -1690,6 +1760,7 @@ function SignInBanner({
     "your Dapper wallet address (0x…)",
     "your Top Shot username",
     candyLive ? "your Candy wallet address" : null,
+    getPublishedCollection("ufc") ? "your UFC Strike Aptos address" : null,
   ].filter(Boolean) as string[];
 
   const placeholder = candyLive
@@ -2477,7 +2548,7 @@ function WalletGroupCard({
 }) {
   const verified = !!group.verifiedAt;
   // Verify-by-listing lists a Top Shot Moment, so it exists for Flow wallets only.
-  const canVerify = !!onVerify && detectAddressChain(group.addr) !== "solana";
+  const canVerify = !!onVerify && detectAddressChain(group.addr) !== "solana" && !isAptosAccountAddress(group.addr);
   // No answer yet, or no answer at all. Either way every per-collection figure
   // below is unknown — and an unknown must not render as a measured zero.
   const cardUnknown = !!failed || !!loading;
@@ -2581,7 +2652,8 @@ function WalletGroupCard({
             (published that day) has dbChain null — no wallet concept at all —
             and the default made every Flow wallet grow a Panini "0 moments"
             tile. A collection with no chain matches no wallet. */}
-        {publishedCollections().filter((c) => c.dbChain != null && c.dbChain === (detectAddressChain(group.addr) === "solana" ? "solana" : "flow")).map((col) => {
+        {/* 2026-11-27: an Aptos account holds UFC Strike only — one tile, never seven Flow zeros. */}
+        {publishedCollections().filter((c) => isAptosAccountAddress(group.addr) ? c.id === "ufc" : c.dbChain != null && c.dbChain === (detectAddressChain(group.addr) === "solana" ? "solana" : "flow")).map((col) => {
           const stat = stats.find(
             (s) => s.collection_id === col.supabaseCollectionId || s.collection_slug === col.id.replace(/-/g, "_")
           );

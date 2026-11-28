@@ -367,6 +367,41 @@ describe("DashboardClient — per-wallet collection stats", () => {
     expect(calls.length).toBeLessThan(3)
   })
 
+  // 2026-11-27 (Trevor): a saved UFC Strike Aptos account. Its holdings are not in the wallet cache, so
+  // collection-stats must not be asked (it would answer a confident zero); the live Aptos read fills the
+  // card's ONE UFC tile, and a failed Aptos read is a failed wallet, never $0.
+  it("reads a saved Aptos account live from the Aptos holdings route and shows one UFC Strike tile", async () => {
+    const aptos = "0x" + "ab".repeat(32)
+    routes["/api/profile/saved-wallets"] = () =>
+      json(200, { wallets: [WALLET({ id: "w-a", wallet_addr: aptos, collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", username: null, verified_at: null })] })
+    routes["/api/ufc/aptos-holdings"] = () =>
+      json(200, { linked: true, moments: [{ token_data_id: "t1", fmv_usd: 12.5 }, { token_data_id: "t2", fmv_usd: null }] })
+    render(<DashboardClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ufc/aptos-holdings?aptos=" + aptos))).toBe(true))
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("collection-stats?wallet_addr=" + encodeURIComponent(aptos)))).toBe(false)
+    const card = await waitFor(() => {
+      const el = document.querySelector(".rpc-wallet-card") as HTMLElement | null
+      expect(el?.textContent).toMatch(/\$12\.50/)
+      return el!
+    })
+    // The next/link mock drops className, so the per-collection tiles are found by their target: every
+    // one links /<collection>/collection?q=<wallet> or /<collection>/overview.
+    const tiles = Array.from(card.querySelectorAll("a")).filter((x) => /\/(collection\?q=|overview$)/.test(x.getAttribute("href") ?? ""))
+    expect(tiles.length).toBe(1)
+    expect(tiles[0].textContent).toMatch(/Strike/)
+    expect(tiles[0].getAttribute("href")).toContain("/ufc/collection?q=" + encodeURIComponent(aptos))
+  })
+
+  it("a failed Aptos holdings read never renders a $0 portfolio", async () => {
+    const aptos = "0x" + "cd".repeat(32)
+    routes["/api/profile/saved-wallets"] = () =>
+      json(200, { wallets: [WALLET({ id: "w-a", wallet_addr: aptos, collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", username: null, verified_at: null })] })
+    routes["/api/ufc/aptos-holdings"] = () => json(503, {})
+    render(<DashboardClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("/api/ufc/aptos-holdings")).length).toBeGreaterThanOrEqual(2))
+    await waitFor(() => expect(document.body.textContent).not.toMatch(/\$0\.00/))
+  })
+
   it("does not publish a confident $0 when a stats read fails", async () => {
     // ⚠ The 2026-08-05 incident: `get_wallet_collection_stats` crossed its
     // statement timeout, the 503 left `statsByWallet[addr]` unset, and the sum
@@ -1643,13 +1678,14 @@ describe("DashboardClient — one Dapper wallet per account", () => {
     expect(screen.queryByPlaceholderText("Nickname (optional)")).toBeNull()
   })
 
-  it("with a Dapper wallet saved and no Candy wallet: no '+ Add another wallet', only a Candy add", async () => {
+  it("with a Dapper wallet saved and no Candy wallet: no '+ Add another wallet', only a Candy / UFC Aptos add", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ wallet_addr: DAPPER })] })
     render(<DashboardClient />)
-    const candy = await screen.findByRole("button", { name: /Add a Candy \(Solana\) wallet/ })
+    // 2026-11-27: a UFC Strike Aptos account is the other wallet a Dapper collector can add.
+    const candy = await screen.findByRole("button", { name: /Add a Candy \(Solana\) or UFC Strike \(Aptos\) wallet/ })
     expect(screen.queryByRole("button", { name: "+ Add another wallet" })).toBeNull()
     fireEvent.click(candy)
-    const box = await screen.findByPlaceholderText("Solana wallet address")
+    const box = await screen.findByPlaceholderText("Solana or Aptos wallet address")
     expect(box).toBeTruthy()
     expect(document.body.textContent).toMatch(/one per account/)
   })

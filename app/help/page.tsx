@@ -97,7 +97,8 @@ const FAQS: Faq[] = [
         <Link href="/nba-top-shot/collection" style={LINK}>NBA Top Shot</Link>) and paste your wallet address or username.
         To save it, <Link href="/login" style={LINK}>sign in</Link> and add it on your{" "}
         <Link href="/dashboard" style={LINK}>dashboard</Link>: a Dapper / Top Shot username or Flow address for the Flow
-        collections, a Solana address for Candy MLB, and your Panini username for Panini. RPC only ever needs the
+        collections, a Solana address for Candy MLB, an Aptos address for UFC Strike Moments held on Aptos, and your
+        Panini username for Panini. RPC only ever needs the
         identifier — never a password or a wallet connection.
       </>
     ),
