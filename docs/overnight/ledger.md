@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:54 PM PT — Concierge knows which identifier saves which collection, Aptos included
+
+- Follow-on to the 4:07 / 4:28 PM PT UFC Aptos ships (Trevor: "Keep going"). The concierge prompt explained saving vs following but never which identifier goes where, and did not know an Aptos address can now be saved. New "Which identifier goes where" bullet: Dapper/Top Shot username or Flow address (Flow collections, one Dapper wallet per account), Solana (Candy), Aptos 0x+64-hex (UFC Strike on Aptos — counts in totals, joins the own UFC binder), Panini username in the Panini panel; no password / connection / recovery phrase; beginners → /help/new-to-collecting.
+- 85 concierge / support-chat test files green.
+- **Revert:** `git revert` this commit (by message).
+
 ### 2026-11-27 · 4:58 PM PT — 📝 DOCS — overnight load steer: add the 4:33 PM Candy edition-holders MV timeout
 
 - No code or DB change. `rpc-refresh-candy-edition-holders` hit its 120 s statement timeout at 4:33 PM PT (2 of the last 25 runs, both busy afternoons; healthy 22–59 s). Added to the 4:25 PM focus.md load steer for the overnight pass.
