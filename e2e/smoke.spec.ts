@@ -95,6 +95,7 @@ const PAGES: PageCheck[] = [
   { path: "/insights/market-pulse", name: "insights · market pulse" },
   { path: "/insights/drops", name: "insights · pack drops this week" },
   { path: "/insights/new-collectors", name: "insights · new collectors" },
+  { path: "/insights/whales", name: "insights · whale watch" },
   { path: "/insights/offer-spread", name: "insights · offer spread" },
   { path: "/insights/pack-drops", name: "insights · pack drops" },
   { path: "/insights/pack-reality", name: "insights · pack reality" },

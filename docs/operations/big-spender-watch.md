@@ -2,7 +2,9 @@
 
 Trevor, 2026-11-27: *"We should start tracking any wallet that has hit any of our top sales. If someone is spending big money on any of the collections, we should be keeping an eye out for them."* Then: *"We don't need to put this user-facing. We just need to gather intel from this."*
 
-**Internal only.** No route, page, OG card or concierge answer reads these objects. Every table is RLS-on with no anon/authenticated grant, and every function is SECURITY DEFINER with EXECUTE for `postgres` / `service_role` only (verified with `has_function_privilege` on 2026-11-27). Keep it that way unless Trevor asks for a surface.
+**Public surface: `/insights/whales` (Whale Watch), added the same afternoon** (Trevor: "Maybe we should have a page that has this. Like a whale watcher page" → "this page can be user-facing"). The page, `/api/public/insights/whales` and `/api/og/insights/whales` read ONE precomputed row, `whale_watch_board`, through the service role (`lib/whale-watch-board.ts`). Every table here stays RLS-on with no anon/authenticated grant, and every function is SECURITY DEFINER with EXECUTE for `postgres` / `service_role` only (verified with `has_function_privilege` on 2026-11-27).
+
+The board snapshot is precomputed because reading the activity live costs ~32 s over 30 days. `refresh_whale_watch_board()` (pg_cron **954** `rpc-whale-watch-board`, hourly at :27, ~16 s; migration `20261127234801`) writes 25 leaders for each of 7d and 30d, whale buys ≥ $250 in the last 7 days, and the 30 days' 15 biggest buys. It counts **buys only** and leaves out trades between a reciprocal pair (two wallets that have each bought a top sale from the other). Public names: the username, or a shortened wallet marked "…" (`whaleName`). The internal `reciprocal_flag` is never shown.
 
 ## What counts as a top sale
 
@@ -57,6 +59,12 @@ Refer to wallets by `username` in anything written for Trevor. 393 of 573 had on
 ## Revert
 
 ```sql
+-- the public board first
+select cron.unschedule('rpc-whale-watch-board');
+delete from pipeline_cadence_watchlist where pipeline = 'whale_watch_board';
+drop function public.refresh_whale_watch_board();
+drop table public.whale_watch_board;
+-- then the tracker
 select cron.unschedule('rpc-big-spender-refresh');
 delete from pipeline_cadence_watchlist where pipeline = 'big_spender_refresh';
 drop function public.get_big_spender_summary(integer);

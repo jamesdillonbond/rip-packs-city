@@ -274,7 +274,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 108 → 109 on 2026-11-26: /ufc/sniper (UFC's sniper returned as a board of live Aptos asks).
     // 109 → 110 on 2026-11-26: /leagues (the coverage map).
     // 110 → 111 on 2026-11-27: /help/new-to-collecting (the beginner's guide).
-    expect(s).toHaveLength(111)
+    // 111 → 112 the same afternoon: /insights/whales (Whale Watch).
+    expect(s).toHaveLength(112)
+    expect(s.find((x) => x.url === `${BASE}/insights/whales`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/candy-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/candy-serial-premiums`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/pinnacle-squeeze`)).toBeTruthy()

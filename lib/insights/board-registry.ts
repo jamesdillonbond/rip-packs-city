@@ -224,6 +224,14 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "whales",
+    kind: "dataset",
+    name: "Whale Watch — Biggest Spenders Across Collections",
+    description:
+      "Tracks the collectors behind each collection's biggest monthly sales across NBA Top Shot, NFL All Day, Panini, Candy MLB, Disney Pinnacle, LaLiga Golazos and UFC Strike — their 7- and 30-day purchase spend, latest big buys and largest single purchases.",
+    publicApi: true,
+  },
+  {
     slug: "offer-spread",
     kind: "dataset",
     name: "Bid vs Floor — Top Shot Offer/Ask Spread",

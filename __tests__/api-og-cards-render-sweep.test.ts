@@ -83,6 +83,7 @@ const CARDS: Array<{ path: string; query?: string; params?: Record<string, strin
   { path: "app/api/og/insights/market/route" },
   { path: "app/api/og/insights/market-pulse/route" },
   { path: "app/api/og/insights/new-collectors/route" },
+  { path: "app/api/og/insights/whales/route" },
   { path: "app/api/og/insights/offer-spread/route" },
   { path: "app/api/og/insights/pack-drops/route" },
   { path: "app/api/og/insights/pack-reality/route" },

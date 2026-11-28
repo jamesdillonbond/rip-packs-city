@@ -28,6 +28,7 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/autographs — Autographed Moments. Every signed NBA Top Shot and NFL All Day edition, with its lowest live ask, recent sales, and the unsigned printing's price.
 - /insights/trophies — The Trophy Room. The rarest Top Shot and All Day editions — every 1-of-1 and Ultimate-tier moment — ranked by FMV.
 - /insights/top-sales — Top Sales — Whale Watch. The biggest recent Top Shot and All Day sales, with buyer and seller resolved to Top Shot handles.
+- /insights/whales — Whale Watch. The collectors behind each collection's biggest sales — their 7- and 30-day purchase spend, latest big buys and largest single purchases, across every collection RPC tracks.
 - /insights/first-mint — Top Shot First-Mint Trophy Tracker. Every serial #1 sale of the last 90 days with its multiplier vs the average-serial price.
 - /insights/rookies — 2025 NBA Rookie Class Index. Per-player 30-day GMV, lock rate and first-mint trophy presence for the 2025 rookie class.
 - /insights/rookie-board — Rookie Board — 2025 Class. Every 2025 rookie edition broken out by parallel with FMV, circulation, ask, burn and lock rates.

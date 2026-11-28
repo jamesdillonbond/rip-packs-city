@@ -354,10 +354,19 @@ const CARDS: Card[] = [
   {
     slug: "/insights/top-sales",
     eyebrow: "Live",
-    title: "Top Sales — Whale Watch",
+    title: "Top Sales",
     blurb:
       "The biggest sales of the week across every collection we track, ranked by price — with who bought and who sold each one. Top Shot's activity feed shows the trade; we name the whales on both sides.",
     cta: "Open top sales",
+    available: true,
+  },
+  {
+    slug: "/insights/whales",
+    eyebrow: "Live",
+    title: "Whale Watch",
+    blurb:
+      "The collectors behind the biggest sales on every collection we track — who spent the most this week and this month, their latest big buys, and the largest single purchases. Follow the money, not just the sale.",
+    cta: "Open whale watch",
     available: true,
   },
   {

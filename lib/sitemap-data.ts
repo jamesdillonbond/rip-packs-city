@@ -1059,6 +1059,7 @@ export const INSIGHT_ROUTES: readonly string[] = [
   'market-pulse',
   'drops',
   'new-collectors',
+  'whales',
   'set-completers',
   'market-cap',
   'underpriced-serials',
