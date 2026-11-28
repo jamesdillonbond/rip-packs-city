@@ -2394,13 +2394,13 @@ const PINS = [
     // 2026-11-22: All Day reads the bid its trigger holds a cut at, so a held row is not re-cut (20261122214417).
     fn: "fmv_apply_thin_sale_haircut",
     test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
-    migration: "supabase/migrations/20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql",
+    migration: "supabase/migrations/20261128045155_audit_20261127_candy_fmv_haircut_exempt.sql",
   },
   {
     // 2026-11-04 evening: the inline twin fmv-recalc step 8 calls — pinned for the first time with the bid stop.
     fn: "fmv_apply_thin_sale_haircut_for_editions",
     test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
-    migration: "supabase/migrations/20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql",
+    migration: "supabase/migrations/20261128045155_audit_20261127_candy_fmv_haircut_exempt.sql",
   },
   {
     fn: "check_triggered_fmv_alerts",

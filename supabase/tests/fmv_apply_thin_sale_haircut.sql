@@ -12,7 +12,8 @@
 -- the same counts but writes NOTHING — the operator preview).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql — All Day reads the bid its trigger holds a cut at, so a held row is not
+-- (supabase/migrations/20261128045155_audit_20261127_candy_fmv_haircut_exempt.sql — Candy MLB is never cut (its sales clear at or
+-- above the ask); before that 20261122214417_audit_20261122_allday_haircut_stops_recutting_rows_its_bid_floor_holds.sql — All Day reads the bid its trigger holds a cut at, so a held row is not
 -- re-cut; before that 20261105050000_audit_20261104_allday_low_haircut_075.sql — All Day LOW unknown depth 0.75 too; before that
 -- 20261105044500_audit_20261104_fmv_haircut_stops_at_the_live_bid.sql — both writers, the Top
 -- Shot cut stops at the best open edition offer; before that 20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql;
@@ -69,6 +70,8 @@ BEGIN
       l.edition_id,
       l.fmv_usd AS old_fmv,
       CASE
+        -- 2026-11-27: Candy MLB is never cut — its sales clear AT or ABOVE the ask (60 d: cut rows 0.32x the sale, 0 % within ±25 %).
+        WHEN l.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
@@ -132,6 +135,8 @@ BEGIN
       l.edition_id,
       l.fmv_usd AS old_fmv,
       CASE
+        -- 2026-11-27: Candy MLB is never cut — its sales clear AT or ABOVE the ask (60 d: cut rows 0.32x the sale, 0 % within ±25 %).
+        WHEN l.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
@@ -221,6 +226,8 @@ BEGIN
       l.edition_id,
       l.fmv_usd AS old_fmv,
       CASE
+        -- 2026-11-27: Candy MLB is never cut — its sales clear AT or ABOVE the ask (60 d: cut rows 0.32x the sale, 0 % within ±25 %).
+        WHEN l.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
@@ -289,6 +296,8 @@ BEGIN
       l.edition_id,
       l.fmv_usd AS old_fmv,
       CASE
+        -- 2026-11-27: Candy MLB is never cut — its sales clear AT or ABOVE the ask (60 d: cut rows 0.32x the sale, 0 % within ±25 %).
+        WHEN l.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
@@ -513,6 +522,26 @@ SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|
 -- a second live run changes nothing on the held rows (the loop this closes)
 SELECT _assert_eq((SELECT rows_haircut::text FROM fmv_apply_thin_sale_haircut('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, false)), '0',
   'second All Day run: nothing re-cut');
+
+-- 2026-11-27: Candy MLB is EXEMPT — counted as examined, never cut, in both writers. Its sales clear at or above the ask
+-- (60 d: cut rows 0.32x the sale, 0 % within ±25 %), and its listing_count is NULL on every row, so it always took 0.55.
+--   k1 Candy LOW, depth NULL      -> examined, not cut
+--   k2 Candy ASK_ONLY, 5 sellers  -> examined, not cut
+--   k3 Candy LOW with a sale      -> examined, not cut (the 0.85 sale arm does not reach Candy either)
+--   k4 OTHER collection LOW, depth NULL -> still 0.55 (the exemption is Candy only)
+DELETE FROM fmv_snapshots; DELETE FROM offers;
+INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, floor_price_usd, sales_count_30d, listing_count, confidence, computed_at, algo_version) VALUES
+  ('00000000-0000-0000-0000-0000000000a1','209ade70-32c5-4470-bc7c-4793d660f713', 100,100, 0,NULL,'LOW',      now(), 'cy'),
+  ('00000000-0000-0000-0000-0000000000a2','209ade70-32c5-4470-bc7c-4793d660f713', 100,100, 0,5,   'ASK_ONLY', now(), 'cy'),
+  ('00000000-0000-0000-0000-0000000000a3','209ade70-32c5-4470-bc7c-4793d660f713', 100,100, 1,NULL,'LOW',      now(), 'cy'),
+  ('00000000-0000-0000-0000-0000000000a4','00000000-0000-0000-0000-00000000cccc', 100,100, 0,NULL,'LOW',      now(), 'cy');
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut||'|'||total_dollars_removed FROM fmv_apply_thin_sale_haircut('209ade70-32c5-4470-bc7c-4793d660f713'::uuid, false)),
+  '3|0|0', 'Candy: 3 examined, 0 cut, $0 removed');
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut FROM fmv_apply_thin_sale_haircut_for_editions(
+    ARRAY['00000000-0000-0000-0000-0000000000a1','00000000-0000-0000-0000-0000000000a2','00000000-0000-0000-0000-0000000000a3','00000000-0000-0000-0000-0000000000a4']::uuid[], false)),
+  '4|1', 'twin: the three Candy rows are examined and not cut; the other collection is');
+SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|'||algo_version, ' ' ORDER BY edition_id) FROM fmv_snapshots),
+  'a1=100|cy a2=100|cy a3=100|cy a4=55.00|cy_haircut', 'Candy prices and algo_version untouched by both writers; other collection still cut 0.55');
 
 SELECT '✓ fmv_apply_thin_sale_haircut invariants pass' AS result;
 ROLLBACK;
