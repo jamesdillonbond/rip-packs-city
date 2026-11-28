@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:55 PM PT — 🗄 APPLIED `20261128025030` — Candy whale usernames from candy.io
+
+- **What:** Trevor: "Use chrome and find them on the candy site". For each of the 59 unnamed Solana whales, fetched candy.io/collectibles/<mint> for up to three cards it bought and never resold and read "Owned by @…". Saved a name only when two cards agree: **30 of 59** (e.g. tadtweets, thekandyman, kgarz31, 69_superman_69, rormac). Nine showed a name on one card only (left NULL); twenty showed none. Several usernames own two wallets; both are labelled. Board refreshed: Candy 30d leaders now 6 of 10 named. Names survive the refresh (upsert coalesces; no wallet_usernames row for Solana keys).
+- **Revert:** `UPDATE big_spender_wallets SET username = NULL WHERE chain = 'solana' AND wallet_key IN (…keys in the migration…);` then `select refresh_whale_watch_board();`.
+
 ### 2026-11-27 · 6:45 PM PT — 🗄 APPLIED `20261128024418` — big-spender watch: one wallet key per wallet
 
 - **What:** Trevor: "Keep going and apply the fix". Some `pinnacle_sales` rows store the buyer as a bare 16-hex Flow address (no `0x`), so 23 Disney Pinnacle whales were tracked under that bare key, labelled Solana, linked to the Candy wallet page and never sent to Atlas for a name. New `big_spender_key(text)` (lower-cases a 0x key, prefixes 0x to a bare 16-hex key, leaves Solana base58 untouched; anon EXECUTE false) now wraps every key read in `refresh_big_spender_wallets`, `get_big_spender_activity` and `refresh_whale_watch_board`. Ledger keys rewritten in place; the 23 rows deleted and rebuilt by a 365-day refresh (19 merged into their existing 0x wallet, 4 new). After: 0 bare-hex keys in either table, board 25/25 leaders, 42 moves, 11 Flow whales still unnamed (Atlas queue 958 picks them up). Live prosrc md5 = file bodies for all four functions.
