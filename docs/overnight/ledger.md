@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:28 PM PT — UFC binder adds the collector's saved Aptos account to their own Flow binder
+
+- Follow-on to the 4:07 PM PT Aptos-save ship (Trevor: "Keep going"). A collector who saved BOTH a Dapper wallet and a UFC Strike Aptos account saw only the migration-LINKED Aptos holdings in their UFC binder; the saved account (often not linked) was missing there while the dashboard counted it.
+- `CollectionTabClient`: on the signed-in collector's OWN saved Flow wallet (session user, not degraded, wallet on screen = the saved one), the binder also reads `/api/ufc/aptos-holdings?aptos=<saved account>` (new `fetchSavedUfcAptosAccount`). A looked-up wallet never borrows the viewer's account. Either read failing → the Aptos half is "not included", never a partial total.
+- New pure `mergeUfcAptosAnswers` (lib/ufc-aptos.ts): one row per token_data_id across both answers, totals from the merged list (the saved account is often the linked one — adding the two totals would double it), route's pricing rule ($0 FMV is priced, no FMV is counted not valued, nothing priced → null, cents rounding). The dashboard's Aptos row uses the same rule.
+- Tests: merge (overlap, unpriced, $0, unlinked, capped), the own-binder gate at the source, `fetchSavedUfcAptosAccount`. tsc clean, ESLint ratchet at baseline (150), 56 related test files green.
+- **Revert:** `git revert` this commit (by message); no DB change.
+
 ### 2026-11-27 · 4:30 PM PT — 📝 DOCS — social post ideas list (`docs/social/post-ideas.md`), first entry the rookie cut lines
 
 Trevor: keep ideas in a list for the coming calendar revamp. Also corrected the time on the 4:22 PM entry below. Revert: delete the file. No code or DB change.
