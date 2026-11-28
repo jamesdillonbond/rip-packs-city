@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:35 PM PT — 📝 DOCS — X draft: the 2026 rookie year-end cut lines (`docs/social/posts/2026-11-27/cut-lines-draft.md`)
+
+A post draft for Trevor built on the cut-lines strip shipped earlier today. It is not on the X calendar yet. Revert: delete the file. No code or DB change.
+
 ### 2026-11-27 · 4:25 PM PT — focus steer: read whether the afternoon pg_cron load (~2× the morning) is gone overnight
 
 - Docs only (`docs/overnight/focus.md`, under the 11-27 offer-pull steer). Measured: pg_cron ~5,000 s/h in the morning vs 7,300–9,700 from noon; broad 2× slowdown plus the new Sold-tab lanes and pull seeding; `fmv-recalc` p50 40 → 99 s; a few lane timeouts; no user-facing errors. Night-pass read + the lever (945/946 + pull seed to hourly) written in the steer.
