@@ -48,13 +48,19 @@ Backtest on the 10 completed nights of the Nov 16–29 run, whole slate, no owne
 
 ## Surfaces
 
-- `/nba-top-shot/fast-break` (un-parked 11-27) → `ThresholdLineupClient` when the active run's objective is `thresholds`.
-- `POST /api/fast-break/tonight` → targets, lineup + Captain + bench, odds per target, the whole-slate best and who the wallet lacks.
+- `/nba-top-shot/fast-break` (un-parked 11-27) → `ThresholdLineupClient` when the active run's objective is `thresholds`. **Classic / Pro tabs** (`?mode=pro`, 11-28) — each mode has its own active run (`fast_break_runs.mode`, `fetchActiveRun(db, mode)`).
+- `POST /api/fast-break/tonight` → targets, lineup + Captain + bench, odds per target, the whole-slate best and who the wallet lacks. When synced Top Shot cards exist for (user, run, night) their plays left override RPC's count. **Pro night:** picks only from the synced card list (Pro restricts Moments; RPC cannot derive which); no synced list → `pro_eligibility_unknown`, never "no eligible players"; the whole-slate comparison is omitted (it would ignore the restriction).
 - `POST /api/fast-break/lineup` → saving counts plays against `get_fb_eligible_players_v3` uses (this user only) on a `thresholds` run (unlimited stored as 99).
+
+## Sync from Top Shot (11-28) — the run/night/plays-left writer
+
+- **Reader:** `TOPSHOT_READER_SOURCE` in `lib/fast-break/topshot-sync.ts` (one copy; offered as a bookmarklet by `TopShotSyncCard`). Runs on the collector's own signed-in `nbatopshot.com/fastbreak?mode=classic|pro`: clicks each date chip to read its objective and contest id, reads every player card's `title` ("N of M plays left" / "Unlimited plays"), then sends the tab to `rippackscity.com/nba-top-shot/fast-break?mode=…#topshot-sync=<payload>`. The payload rides in the URL **fragment** — never sent to a server by the browser.
+- **Receiver:** `TopShotSyncReceiver` (page) POSTs it to `POST /api/fast-break/topshot-sync` (session user + pinned wallet, never the body's) → `fast_break_ingest_topshot(jsonb)`: run keyed by the contest-id prefix (`contest-run-nba-<mode>-<runStart>`; the suffix is the NIGHT date), end = last night, one active run per mode, nights + `fast_break_parse_targets()` targets, `fast_break_topshot_cards`, and `fast_break_player_uses` synced to Top Shot's count.
+- **Schedule:** a twice-daily scheduled task in Trevor's Chrome runs the reader on Classic then Pro (see the ledger entry of 11-28 for its name). Other collectors run the bookmarklet themselves.
+- An unmapped objective clause parses to `{}` → the night reads `targets_unknown`, never a guessed target. Add the phrase to `fast_break_parse_targets`.
 
 ## Owed / next
 
-1. **Each new run and its nights must be recorded by hand** until a writer exists (contest id is in the page URL). Next run starts ~11-30.
-2. Uses already played on Top Shot reach RPC only by saving lineups here, or by reading the page's "N of M plays left" cards (done once for Trevor 11-28: 9 players). A writer that reads them is open.
-3. Captain-variance and correlated targets (3PM with 3PA) are modelled simply; revisit with a season of saved lineups.
-4. Hardcourt.io support and an X "tonight's targets" post are open ideas (areas/hardcourt-io-support).
+1. Captain-variance and correlated targets (3PM with 3PA) are modelled simply; revisit with a season of saved lineups.
+2. Historic mode (350 roster points, ownership discounts) is not modelled.
+3. Hardcourt.io support and an X "tonight's targets" post are open ideas (areas/hardcourt-io-support).
