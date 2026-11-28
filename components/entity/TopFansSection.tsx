@@ -12,7 +12,7 @@
 // see, and a block of "none" on every page is noise, not information. If every panel is measured
 // empty, the section renders nothing. That is only correct because the failed state is kept.
 
-import { fetchTopFans, hasFullCollectorCensus, unitsFor, type TopFansPanel } from "@/lib/entity/top-fans"
+import { fetchTopFans, rankingIsCensus, unitsFor, type TopFansPanel } from "@/lib/entity/top-fans"
 import type { TopFansTargetSpec } from "@/lib/entity/top-fans-targets"
 import TopFansTable from "@/components/entity/TopFansTable"
 
@@ -22,14 +22,15 @@ export async function loadTopFansPanels(targets: TopFansTarget[]): Promise<TopFa
   const panels = await Promise.all(
     targets.map(async (t): Promise<TopFansPanel> => {
       const base = { collectionId: t.collection.id, urlSlug: t.collection.urlSlug, label: t.collection.displayName, units: unitsFor(t.collection.urlSlug) }
-      // No full census → no ranking (a partial one named the wrong #1). Not even read.
-      if (!hasFullCollectorCensus(t.collection.urlSlug)) return { ...base, ok: true, data: null, pending: true }
       try {
         const { ok, data } = await fetchTopFans({ collectionId: t.collection.id, kind: t.kind, key: t.key, name: t.name ?? null })
-        return { collectionId: t.collection.id, urlSlug: t.collection.urlSlug, label: t.collection.displayName, units: unitsFor(t.collection.urlSlug), ok, data }
+        // No census of EVERY holder → no ranking (a partial one named the wrong #1, 11-27). The rows are
+        // dropped here, server-side, so a partial ranking never reaches the client at all.
+        if (ok && data && !rankingIsCensus(t.collection.urlSlug, data)) return { ...base, ok: true, data: null, pending: true }
+        return { ...base, ok, data }
       } catch (e) {
         console.error(`[top-fans] ${t.collection.dbSlug} ${t.kind}:${t.key}`, e instanceof Error ? e.message : e)
-        return { collectionId: t.collection.id, urlSlug: t.collection.urlSlug, label: t.collection.displayName, units: unitsFor(t.collection.urlSlug), ok: false, data: null }
+        return { ...base, ok: false, data: null }
       }
     }),
   )

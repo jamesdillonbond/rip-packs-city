@@ -61,6 +61,25 @@ Trevor (4:51 PM PT): "We need to have this for every possible wallet, not just t
 - **Usernames** (Trevor: "figure out usernames for those pinnacle users"): leaderboard owners came from mint/ownership maps that no username lane read (679 of 840 Pinnacle owners unnamed). One-off Atlas dispatch 4:38 PM PT → 838 / 840 named; standing: `queue_top_collector_usernames()` (migration 20261128010040) runs at the end of every refresh and queues Atlas lookups into `member_wallet_username_requests`, drained by pg_cron 650.
 - Daily schedule still not applied (the approval check refused `cron.schedule` twice, including without the role switch). SQL above.
 
+## Full census pipeline (built 2026-11-27 evening; first run after the Dune credit reset)
+
+Trevor 5:09 PM PT: "Keep going. We're going to wait" (for the 12/14 Dune cycle rather than buying extra credits).
+
+| piece | where |
+|---|---|
+| SQL generator + per-collection config | `lib/dune/top-collector-census.ts` (`censusSql`, `TOP_N` = 15) · print: `npx tsx scripts/print-top-collector-census-sql.mjs <topshot\|allday\|golazos\|pinnacle>` |
+| saved Dune queries (public) | Top Shot **9205180** · All Day **9205183** · Golazos **9205184** · Pinnacle **9205185** — SQL identical to the generator (checked 11-27); ⚠ never executed yet |
+| upload | `dune-proxy` `POST /upload_csv` — only `rpc_census_map_(topshot\|allday\|golazos\|pinnacle)`; query allowlist gained the four ids |
+| route | `/api/cron/top-collector-census-dune?collection=<slug>` (resume: `&execution_id=`) — pipeline `top-collector-census-dune`; ok only if every result row was keyed and staged |
+| schedule | `.github/workflows/top-collector-census.yml`, Mondays 12:23 UTC (4:23 AM PT), first 12/15; dispatch for one collection |
+| DB | migration `audit_20261127_top_collector_census` — **⚠ NOT APPLIED**: the Supabase approval question timed out unanswered 11-27 ~5:40 PM PT. File held out of the repo until applied (draft: this session; apply, then commit under the registered version). Adds `top_collector_census_map(_csv)`, `entity_top_fans_census_stage`, `stage_/finalize_top_collector_census`, the refresh skip, and `census_complete` in the reader. |
+
+How it decides an owner: the latest `<C>.Deposit` or Cadence-1 `NonFungibleToken.Deposited` (type `<C>.NFT`) per NFT id, unless a later `Withdraw` / `Withdrawn` / burn / `NFT.ResourceDestroyed` means it is in nobody's collection. System accounts (`flowty_excluded_addresses`) ride in the map as `kind='exclude'`.
+
+**First-run checks (12/15):** credits per execution and per MB exported (`getUsage` before/after) · `NonFungibleToken.Deposited` `$.type` really is the `A.<addr>.<C>.NFT` string in Dune's `data` · `$.to` comes back `0x`-prefixed hex · Top Shot holders/items for one team vs the old partial numbers (expect far more owners) · `rows_unkeyed = 0` · the Blazers Top Shot #1 is no longer only the wallets RPC walked. UFC is not in the census (its editions key on a name slug, not the on-chain set) — it stays "waiting".
+
+The page needs nothing else: `get_entity_top_fans.census_complete` flips to true when a collection's run source is `dune_census`, and the server stops sending a partial ranking before that (`rankingIsCensus`).
+
 ## Overlap left in place
 
 The older "Top Collectors" panels on the player page (Top Shot rookie index with its coverage note, Candy census, Pinnacle owner map) still render above Top Fans. They rank the same people by value; retiring them is a follow-up (tests pin them: `panini-entity-pages`, `pinnacle-top-collectors-unknown-mint-is-not-zero`).

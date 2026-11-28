@@ -22,6 +22,12 @@ export interface TopFansData {
   refreshed_at: string
   source: string
   special_tracked: boolean
+  /**
+   * The owner source is a census of EVERY holder (Panini serials, Candy's census, or the Dune census).
+   * null = the reader predates the flag (migration audit_20261127_top_collector_census not applied yet);
+   * the page then falls back to TOP_COLLECTORS_FULL_CENSUS.
+   */
+  census_complete: boolean | null
   /** Owners seen holding this entity; null when it spans several labels (an owner may be under each). */
   holders: number | null
   items: number
@@ -46,7 +52,7 @@ export interface TopFansPanel {
 export const TOP_FANS_LIMIT = 10
 
 /**
- * Collections whose owner source is a FULL census of every holder (Trevor, 2026-11-27: "We need to
+ * FALLBACK (used only when the reader returns no census_complete flag): collections whose owner source is a FULL census of every holder (Trevor, 2026-11-27: "We need to
  * have this for every possible wallet, not just the ones we've captured"). Every other collection's
  * ranking is built from the wallets RPC happens to know, so it can name the wrong #1 — it renders as
  * "full count in progress" until the on-chain census (Dune, every Deposit since 2020) lands.
@@ -59,6 +65,15 @@ export const TOP_COLLECTORS_FULL_CENSUS: ReadonlySet<string> = new Set(["panini-
 
 export function hasFullCollectorCensus(urlSlug: string): boolean {
   return TOP_COLLECTORS_FULL_CENSUS.has(urlSlug)
+}
+
+/**
+ * Whether a read may be shown as a ranking. The reader's own census_complete decides (it flips to true when
+ * the Dune census lands, source 'dune_census'); a reader without the flag falls back to the static set.
+ */
+export function rankingIsCensus(urlSlug: string, data: Pick<TopFansData, "census_complete"> | null): boolean {
+  if (!data) return false
+  return data.census_complete ?? hasFullCollectorCensus(urlSlug)
 }
 
 function num(v: unknown): number | null {
@@ -75,6 +90,7 @@ export function normalizeTopFans(raw: unknown): TopFansData | null {
     refreshed_at: String(r.refreshed_at ?? ""),
     source: String(r.source ?? ""),
     special_tracked: r.special_tracked !== false,
+    census_complete: r.census_complete === true ? true : r.census_complete === false ? false : null,
     holders: num(r.holders),
     items: num(r.items) ?? 0,
     rows: rows

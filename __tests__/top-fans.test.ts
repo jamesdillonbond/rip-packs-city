@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { hasFullCollectorCensus, normalizeTopFans, rankTopFans, topFanHref, topFansUpdatedLabel, type TopFanRow } from "@/lib/entity/top-fans-format"
+import { hasFullCollectorCensus, normalizeTopFans, rankingIsCensus, rankTopFans, topFanHref, topFansUpdatedLabel, type TopFanRow } from "@/lib/entity/top-fans-format"
 import { franchiseHubTopFansTargets, paniniFranchiseKey, playerHubTopFansTargets, PANINI_COLLECTION_ID } from "@/lib/entity/top-fans-targets"
 import { getCollectionByUrlSlug, getCollectionByUuid } from "@/lib/collection-slug"
 import { stripSqlComments } from "../scripts/lib/strip-sql-comments.mjs"
@@ -114,10 +114,62 @@ describe("a ranking is shown only from a FULL holder census (Trevor 11-27: every
       expect(hasFullCollectorCensus(s)).toBe(false)
     }
   })
-  it("the section never reads a ranking for a collection without one", () => {
+  it("the reader's census_complete decides; without the flag the static set does", () => {
+    expect(rankingIsCensus("nba-top-shot", { census_complete: true })).toBe(true)
+    expect(rankingIsCensus("panini-blockchain", { census_complete: false })).toBe(false)
+    expect(rankingIsCensus("nba-top-shot", { census_complete: null })).toBe(false)
+    expect(rankingIsCensus("panini-blockchain", { census_complete: null })).toBe(true)
+    expect(rankingIsCensus("panini-blockchain", null)).toBe(false)
+  })
+  it("a non-census read is turned into 'pending' server-side, before any row reaches the client", () => {
     const src = readFileSync("components/entity/TopFansSection.tsx", "utf8")
-    const gate = src.indexOf("if (!hasFullCollectorCensus(")
-    expect(gate).toBeGreaterThan(-1)
-    expect(gate).toBeLessThan(src.indexOf("await fetchTopFans("))
+    expect(src).toMatch(/if \(ok && data && !rankingIsCensus\(t\.collection\.urlSlug, data\)\) return \{ \.\.\.base, ok: true, data: null, pending: true \}/)
+  })
+})
+
+import { CENSUS_CONFIGS, censusSql, normalizeCensusRow, mapTableName, censusConfigBySlug } from "@/lib/dune/top-collector-census"
+
+describe("the Dune census (every holder, not the wallets RPC walked)", () => {
+  it("each collection reads its own map table, its mint event, and BOTH deposit forms", () => {
+    for (const cfg of Object.values(CENSUS_CONFIGS)) {
+      const sql = censusSql(cfg)
+      expect(sql).toContain(`dataset_${mapTableName(cfg)}`)
+      expect(sql).toContain(`'A.${cfg.address}.${cfg.contract}.${cfg.mintEvent}'`)
+      expect(sql).toContain(`'A.${cfg.address}.${cfg.contract}.Deposit'`)
+      expect(sql).toContain("'A.1d7e57aa55817448.NonFungibleToken.Deposited'")
+      expect(sql).toContain(`json_extract_scalar(data, '$.type') = 'A.${cfg.address}.${cfg.contract}.NFT'`)
+      expect(sql).toContain(`'A.${cfg.address}.${cfg.contract}.NFT.ResourceDestroyed'`)
+      expect(sql).toContain("WHERE c.owner NOT IN (SELECT addr FROM excl)")
+      expect(cfg.queryId).toMatch(/^\d+$/)
+    }
+  })
+  it("a withdraw, burn or destroy as the LAST event leaves the NFT in nobody's collection", () => {
+    const sql = censusSql(CENSUS_CONFIGS.topshot)
+    expect(sql).toMatch(/CAST\(NULL AS varchar\), block_height, log_index\s+FROM raw WHERE topic IN \('A\.0b2a3299cc857e29\.TopShot\.Withdraw', 'A\.0b2a3299cc857e29\.TopShot\.MomentDestroyed'/)
+    expect(sql).toContain("WHERE rn = 1 AND owner IS NOT NULL")
+  })
+  it("a special serial is counted once per NFT (one count_if with OR)", () => {
+    expect(censusSql(CENSUS_CONFIGS.allday)).toContain("count_if(h.serial = 1 OR h.serial = i.circ OR h.serial = i.jersey) AS special_items")
+  })
+  it("Top Shot keys parallels by subedition, 0 = Standard", () => {
+    expect(censusSql(CENSUS_CONFIGS.topshot)).toContain("concat(m.ek, ':', CAST(coalesce(m.sub, s.sub, 0) AS varchar))")
+  })
+  it("rows that cannot be keyed are rejected, never written", () => {
+    const ok = { entity_kind: "team", entity_key: "portland-trail-blazers", owner: "0xBD94CADE097E50AC", items: 3, special_items: 1, fmv_usd: 5, fmv_items: 3, holders: 9, entity_items: 40, entity_special: 2 }
+    expect(normalizeCensusRow(ok)?.owner).toBe("0xbd94cade097e50ac")
+    expect(normalizeCensusRow({ ...ok, owner: "not-an-address" })).toBeNull()
+    expect(normalizeCensusRow({ ...ok, entity_kind: "franchise" })).toBeNull()
+    expect(normalizeCensusRow({ ...ok, items: null })).toBeNull()
+  })
+  it("the route refuses an unknown collection rather than defaulting (no substitution)", () => {
+    expect(censusConfigBySlug("candy-mlb")).toBeNull()
+    expect(censusConfigBySlug("")).toBeNull()
+    const src = readFileSync("app/api/cron/top-collector-census-dune/route.ts", "utf8")
+    expect(src).toMatch(/if \(!cfg\) return NextResponse\.json\(\{ error:/)
+  })
+  it("the worker may only upload the four census map tables", () => {
+    const w = readFileSync("workers/dune-proxy/index.ts", "utf8")
+    expect(w).toContain("const UPLOAD_TABLE_RE = /^rpc_census_map_(topshot|allday|golazos|pinnacle)$/;")
+    for (const cfg of Object.values(CENSUS_CONFIGS)) expect(w).toContain(`"${cfg.queryId}"`)
   })
 })

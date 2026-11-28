@@ -1,0 +1,49 @@
+name: Top Collector census (Dune)
+
+# The full holder census behind the Top Collector Leaderboard (2026-11-27): one call per collection to
+# /api/cron/top-collector-census-dune, which uploads RPC's edition map to Dune, runs the saved census query,
+# and swaps the ranking in (lib/dune/top-collector-census.ts, docs/features/top-fans.md).
+#
+# Weekly — a census is a full scan of flow.cadence_events from contract launch, billed in Dune credits, and
+# a collector's rank does not move hour to hour. The first scheduled run (Mon 2026-12-15) is the first one
+# after the Dune credit cycle resets on 12/14; workflow_dispatch runs one collection on demand.
+# Each call returns 202 and does its work in the route's after(); the run's outcome is the
+# `top-collector-census-dune` row in pipeline_runs, not this job's status.
+
+on:
+  schedule:
+    - cron: "23 12 * * 1"
+  workflow_dispatch:
+    inputs:
+      collection:
+        description: "nba-top-shot | nfl-all-day | laliga-golazos | disney-pinnacle | all"
+        required: false
+        default: "all"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: top-collector-census
+  cancel-in-progress: false
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      max-parallel: 1
+      matrix:
+        collection: [nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Census — ${{ matrix.collection }}
+        if: ${{ (github.event.inputs.collection || 'all') == 'all' || github.event.inputs.collection == matrix.collection }}
+        uses: ./.github/actions/rpc-call
+        with:
+          url: "https://www.rippackscity.com/api/cron/top-collector-census-dune?collection=${{ matrix.collection }}"
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: Top Collector census ${{ matrix.collection }}
+          method: POST
+          accept: "202"
+          max-time: "60"

@@ -20,6 +20,8 @@
 //        → https://api.dune.com/api/v1/execution/<id>/status
 //        Poll target: state QUERY_STATE_COMPLETED means /results is now fresh.
 //
+//   POST /upload_csv → https://api.dune.com/api/v1/uploads/csv (Top Collector census map tables only)
+//
 //   GET /health → { ok: true } (no upstream; for a wrangler-deploy smoke).
 //
 // Auth: Authorization: Bearer <env.DUNE_PROXY_SECRET>.
@@ -76,7 +78,9 @@ function authOk(request: Request, env: Env): boolean {
 // Adding a query means adding its id here or
 // setting the DUNE_ALLOWED_QUERY_IDS var (comma list), which REPLACES this list.
 // 9129456 / 9129489 = the #190 stage + wallet-scoped provenance queries (private temp; 2026-11-14).
-const DEFAULT_ALLOWED_QUERY_IDS = ["7899011", "8027085", "8030177", "9129456", "9129294", "9129489", "9129613"];
+//   9205180 / 9205183 / 9205184 / 9205185 — Top Collector census: Top Shot / All Day / Golazos / Pinnacle
+//            (top-collector-census-dune, 2026-11-27; SQL in lib/dune/top-collector-census.ts)
+const DEFAULT_ALLOWED_QUERY_IDS = ["7899011", "8027085", "8030177", "9129456", "9129294", "9129489", "9129613", "9205180", "9205183", "9205184", "9205185"];
 
 function allowedQueryIds(env: Env): Set<string> {
   const raw = (env.DUNE_ALLOWED_QUERY_IDS ?? "").trim();
@@ -181,6 +185,38 @@ async function handleStatus(url: URL, env: Env): Promise<Response> {
   return passthrough(text, res.status);
 }
 
+// POST /upload_csv  { table_name, data, description? }
+//   → POST https://api.dune.com/api/v1/uploads/csv (public table; uploads are public on non-Enterprise plans)
+// The Top Collector census uploads RPC's edition map (edition → player / team, FMV, mint count, jersey) so the
+// census query can rank by FMV inside Dune. ONLY the four census map tables may be written — a holder of the
+// proxy secret cannot create or overwrite any other table on our team (same reasoning as the query allowlist).
+const UPLOAD_TABLE_RE = /^rpc_census_map_(topshot|allday|golazos|pinnacle)$/;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+async function handleUploadCsv(request: Request, env: Env): Promise<Response> {
+  if (!env.DUNE_API_KEY) return jsonResponse({ error: "dune_api_key_unset" }, 500);
+  let parsed: Record<string, unknown>;
+  try {
+    const raw = await request.text();
+    if (raw.length > MAX_UPLOAD_BYTES) return jsonResponse({ error: "upload_too_large" }, 413);
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return jsonResponse({ error: "invalid_json" }, 400);
+  }
+  const tableName = typeof parsed.table_name === "string" ? parsed.table_name : "";
+  const data = typeof parsed.data === "string" ? parsed.data : "";
+  if (!UPLOAD_TABLE_RE.test(tableName)) return jsonResponse({ error: "table_name_not_allowed" }, 403);
+  if (!data) return jsonResponse({ error: "data required" }, 400);
+  const description = typeof parsed.description === "string" ? parsed.description.slice(0, 500) : "RPC Top Collector census map";
+  const res = await fetch(`${DUNE_API}/uploads/csv`, {
+    method: "POST",
+    headers: { "X-Dune-API-Key": env.DUNE_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ table_name: tableName, data, description, is_private: false }),
+  });
+  const text = await res.text();
+  return passthrough(text, res.status);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -194,6 +230,7 @@ export default {
     if (path === "/results" && method === "GET") return handleResults(url, env);
     if (path === "/execute" && method === "POST") return handleExecute(request, url, env);
     if (path === "/status" && method === "GET") return handleStatus(url, env);
+    if (path === "/upload_csv" && method === "POST") return handleUploadCsv(request, env);
 
     return jsonResponse({ error: "route_not_found", path, method }, 404);
   },
