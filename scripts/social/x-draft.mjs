@@ -34,7 +34,7 @@ const NAMES = {
   laliga_golazos: "Golazos",
   disney_pinnacle: "Pinnacle",
   panini_blockchain: "Panini",
-  candy_mlb: "Candy MLB",
+  candy_mlb: "Candy", // Trevor, 11-28: "We should only refer to it as Candy"
   ufc_strike: "UFC Strike",
 }
 // Friday rotates one board a week (ISO week number mod length). Every entry has a public API,
@@ -557,12 +557,20 @@ async function weekNumbers() {
     .sort((a, b) => b.volume_7d - a.volume_7d)
   if (!rows.length) return { skip_reason: "no collection had sales in 7d", link }
   const total = rows.reduce((s, r) => s + Number(r.volume_7d), 0)
-  const lines = rows.map((r) => `${coll(r.slug)}: ${usd(r.volume_7d)} · ${int(r.sales_7d)} sales`)
+  // Each collection is TAGGED by its official X account (Trevor, 11-28: "let's tag each of these
+  // collections instead of just naming them"). The tags are longer than the names, so the header is
+  // short, and a week that still overflows becomes a numbered thread — never fit()'s silent line drop.
+  const lines = rows.map((r) => `${BRAND[r.slug]?.handle ?? coll(r.slug)}: ${usd(r.volume_7d)} · ${int(r.sales_7d)} sales`)
+  const head = `7-day sales: ${usd(total)}\n`
+  const tail = `\n${link}`
+  const one = [head, ...lines, tail].join("\n")
+  const posts = xLength(one) <= 280 ? null : thread(lines, head, tail)
   return {
     title: "Week in numbers",
     link,
     facts: { total_volume_7d: total, rows },
-    draft: fit(lines, `The week in numbers (last 7 days): ${usd(total)} in sales.\n`, `\n${link}`),
+    draft: posts ? posts[0] : one,
+    ...(posts ? { thread: posts.map((text, i, all) => ({ n: i + 1, of: all.length, text, len: xLength(text) })) } : {}),
   }
 }
 
@@ -616,9 +624,9 @@ async function pageLive(href) {
 }
 // Drops come from every source the calendar reads: the Atlas pack book (Top Shot, All Day, Golazos,
 // Pinnacle), Pinnacle Open Editions minting now (pinnacle_mint_events), Panini's own store
-// (panini_pack_drops) and Candy MLB's blog announcements. A source with
+// (panini_pack_drops) and Candy's blog announcements. A source with
 // no as-of is UNREAD: its drops are missing, so the post must not read as the whole week.
-const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle", panini: "Panini", candy: "Candy MLB", pinnacle_oe: "Pinnacle Open Editions" }
+const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle", panini: "Panini", candy: "Candy", pinnacle_oe: "Pinnacle Open Editions" }
 let calendarMeta = null
 let calendarAnnouncements = []
 async function calendar() {
@@ -676,7 +684,7 @@ async function drops() {
   const carried = byPrice.filter((x) => !isNew(x))
   if (!fresh.length && !calendarAnnouncements.length) return { skip_reason: `no NEW drop this week (still on sale from earlier reports: ${carried.map((x) => x.title).join(", ") || "none"})`, link: `${SITE}/insights/drops` }
   const lines = fresh.map(reportLine)
-  // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
+  // Candy has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
   for (const a of calendarAnnouncements) lines.push(`${BRAND.candy_mlb.emoji} ${BRAND.candy_mlb.handle}: ${a.title}`)
   // Trevor, 11-15: "We need to pull the pinnacle drop since we already covered it last week and it's not
   // a new drop" — a drop already on sale was on an earlier report, so the post leaves it out entirely.
