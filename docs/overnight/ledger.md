@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:15 PM PT — 🗄 APPLIED `20261128021000` — Top Collector census map: text keys (fix to `20261128020000`)
+
+- **What:** the first call of `top_collector_census_map` on Top Shot raised 42804 (`editions.external_id` is varchar, the function returns text). Explicit `::text` casts, logic unchanged. Found by the post-apply check, before anything called it.
+- **Revert:** re-apply `top_collector_census_map` from `20261128020000`.
+
 ### 2026-11-27 · 6:05 PM PT — 🗄 APPLIED `20261128020000` — Top Collector census: the database half
 
 - **What:** the census migration the Dune route needs (`docs/features/top-fans.md`): `top_collector_census_map(_csv)`, `entity_top_fans_census_stage`, `stage_top_collector_census`, `finalize_top_collector_census` (refuses an empty or short stage; the previous set stays), `refresh_entity_top_fans` skips a collection whose set is `dune_census`, and `get_entity_top_fans` returns `census_complete`. Rebuilt from the shipped route and generator (the first draft never left its session); both CREATE OR REPLACE bodies were based on the live `prosrc` (md5 `7c33dbb2…` / `4c29b22c…`). Applied through the dashboard SQL editor after two MCP approval prompts timed out. Nothing runs it before the first Dune cycle (12/15); the page is unchanged (Panini and Candy read complete, the rest stay "waiting").
