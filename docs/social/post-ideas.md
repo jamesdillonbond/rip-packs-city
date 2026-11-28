@@ -6,6 +6,13 @@ House rules still apply to every idea: no collector named or tagged without cons
 
 ## Ideas
 
+### Whale Watch launch (added 11-27)
+
+- **What:** announce /insights/whales: the collectors behind each collection's biggest sales, what they spent this week and month, and their latest big buys.
+- **Data:** `whale_watch_board` (refreshed hourly); the share card at `/api/og/insights/whales` is the image.
+- **Caveats to carry:** totals only, no collector named (house rule). Don't headline the single biggest Panini buy; the top Panini accounts trade big cards back and forth.
+- **First draft:** `docs/social/posts/2026-11-27/whale-watch-launch-draft.md` (not posted). Re-read the numbers on the day.
+
 ### 2026 rookie year-end cut lines (added 11-27)
 
 - **What:** what it takes today to make a 2026 rookie's top 26 (Rookie Yearbook) and top 3 (Blue Chip, All-Rookie players only) on Top Shot. One line per rookie: Moments held and RPC value at that rank.
