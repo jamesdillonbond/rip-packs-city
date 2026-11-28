@@ -128,6 +128,7 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
                       onClick={() => setWin(w.val)}
                       style={{
                         padding: "6px 12px",
+                        minHeight: 44,
                         borderRadius: 4,
                         border: "1px solid rgba(255,255,255,0.15)",
                         background: w.val === win ? "var(--rpc-red-fill)" : "transparent",
@@ -245,8 +246,8 @@ const td: React.CSSProperties = { padding: "10px 8px", verticalAlign: "top" }
 
 function chip(on: boolean): React.CSSProperties {
   return {
-    padding: "5px 10px",
-    minHeight: 32,
+    padding: "5px 12px",
+    minHeight: 44,
     borderRadius: 999,
     border: "1px solid rgba(255,255,255,0.15)",
     background: on ? "rgba(255,255,255,0.12)" : "transparent",
