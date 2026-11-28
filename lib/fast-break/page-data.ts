@@ -43,6 +43,7 @@ export interface ActiveRun {
   end_date: string | null
   /** 'thresholds' = regular-season nightly stat targets (2026-27); 'max_points' = playoff format. */
   objective?: "max_points" | "thresholds" | null
+  mode?: "classic" | "pro" | "historic" | null
 }
 
 export interface SlateGame {
@@ -63,6 +64,8 @@ export interface SlateGame {
 export async function fetchActiveRun(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
+  /** Classic and Pro runs are active side by side (2026-27) — one active run per mode. */
+  mode: "classic" | "pro" = "classic",
 ): Promise<{ run: ActiveRun | null; ok: boolean }> {
   let data: unknown
   let error: { message: string } | null = null
@@ -74,8 +77,9 @@ export async function fetchActiveRun(
       Promise.resolve(
         db
           .from("fast_break_runs")
-          .select("id, name, lineup_size, has_captain, start_date, end_date, objective")
+          .select("id, name, lineup_size, has_captain, start_date, end_date, objective, mode")
           .eq("is_active", true)
+          .eq("mode", mode)
           .maybeSingle(),
       ),
       "active-run",

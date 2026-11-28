@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: run, error: runErr } = await supabase
       .from("fast_break_runs")
-      .select("id, name, lineup_size, has_captain, start_date, end_date, objective")
+      .select("id, name, lineup_size, has_captain, start_date, end_date, objective, mode")
       .eq("id", runId)
       .maybeSingle()
     if (runErr) {
@@ -150,21 +150,55 @@ export async function POST(req: NextRequest) {
       console.error("[fast-break-tonight] get_fb_eligible_players_v3:", eligErr.message)
       return fail("eligible_rpc_failed")
     }
-    const eligible = (eligibleRaw ?? []) as any[]
+    let eligible = (eligibleRaw ?? []) as any[]
+
+    // Top Shot's own player cards for this night, synced from nbatopshot.com/fastbreak
+    // (fast_break_topshot_cards). When present they are the authority on plays left;
+    // on a Pro night they are also the ONLY source of which players are eligible —
+    // Pro restricts Moments and RPC cannot derive the restriction itself.
+    const isPro = run.mode === "pro"
+    const { data: cardRows, error: cardsErr } = await supabase
+      .from("fast_break_topshot_cards")
+      .select("nba_player_id, plays_left, plays_total")
+      .eq("user_id", user.id)
+      .eq("run_id", runId)
+      .eq("game_date", gameDate)
+    if (cardsErr) {
+      console.error("[fast-break-tonight] topshot cards:", cardsErr.message)
+      return fail("topshot_cards_lookup_failed")
+    }
+    const cards = (cardRows ?? []) as Array<{ nba_player_id: string | null; plays_left: number | null; plays_total: number | null }>
+    const cardById = new Map(cards.filter(c => c.nba_player_id).map(c => [c.nba_player_id as string, c]))
+    const haveSnapshot = cards.length > 0
+    if (haveSnapshot) {
+      if (isPro) eligible = eligible.filter(e => cardById.has(e.nba_player_id))
+      eligible = eligible.map(e => {
+        const c = cardById.get(e.nba_player_id)
+        if (!c) return e
+        // plays_total null = Top Shot shows "Unlimited plays".
+        return c.plays_total == null
+          ? { ...e, total_allowed: null, remaining_uses: null }
+          : { ...e, total_allowed: c.plays_total, remaining_uses: c.plays_left }
+      })
+    }
 
     const runLiveToday = run.start_date <= gameDate && gameDate <= run.end_date
     let feedAnsweredRecently = true
     if (gameIds.length === 0 && runLiveToday) {
       feedAnsweredRecently = await nbaFeedAnsweredRecently(supabase, "[fast-break-tonight]")
     }
-    const dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" | "targets_unknown" =
+    const dataStatus:
+      | "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" | "targets_unknown" | "pro_eligibility_unknown" =
       gameIds.length === 0
         ? runLiveToday && !feedAnsweredRecently ? "slate_unavailable" : "no_games"
         : projRows.length === 0
           ? "projections_unavailable"
           : !night
             ? "targets_unknown"
-            : "ok"
+            : isPro && !haveSnapshot
+              // Not "none of your players are eligible": we have not read the list.
+              ? "pro_eligibility_unknown"
+              : "ok"
 
     const toPlayer = (e: any, proj: any): ThresholdPlayer => {
       const game = gameById.get(proj.game_id)
@@ -207,7 +241,9 @@ export async function POST(req: NextRequest) {
     // The same night with no ownership limit: what the best possible lineup's odds are,
     // and which of its players this wallet lacks or has no plays left for.
     let slateBest: { winProbability: number; missing: Array<{ nbaPlayerId: string; fullName: string | null; teamAbbr: string | null; reason: "not_owned" | "no_uses_left" }> } | null = null
-    if (dataStatus === "ok") {
+    // On Pro nights the whole-slate comparison would ignore Pro's Moment restriction,
+    // so it would claim odds no lineup can reach. Leave it out rather than mislead.
+    if (dataStatus === "ok" && !isPro) {
       const ownedById = new Map(onSlate.map(p => [p.nbaPlayerId, p]))
       const everyone: ThresholdPlayer[] = projRows.map(r => {
         const owned = ownedById.get(r.nba_player_id)
@@ -253,6 +289,8 @@ export async function POST(req: NextRequest) {
         walletAddr,
         runId,
         runName: run.name,
+        mode: isPro ? "pro" : "classic",
+        playsSyncedFromTopShot: haveSnapshot,
         gameDate,
         dataStatus,
         objective: night?.objective ?? null,

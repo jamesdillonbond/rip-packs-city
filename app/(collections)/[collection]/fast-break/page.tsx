@@ -14,6 +14,7 @@ import { fetchActiveRun, fetchSlate } from "@/lib/fast-break/page-data"
 import { fetchPinnedWallet } from "@/lib/wallet/pinned-wallet"
 import FastBreakClient from "@/components/fast-break/FastBreakClient"
 import ThresholdLineupClient from "@/components/fast-break/ThresholdLineupClient"
+import { TopShotSyncCard, TopShotSyncReceiver } from "@/components/fast-break/TopShotSync"
 import SlateRow from "@/components/fast-break/SlateRow"
 
 export const dynamic = "force-dynamic"
@@ -58,9 +59,12 @@ const CARD_STYLE: React.CSSProperties = {
 
 export default async function FastBreakPage(props: {
   params: Promise<{ collection: string }>
+  searchParams?: Promise<{ mode?: string }>
 }) {
   const params = await props.params
   const collectionId = params.collection
+  // Classic and Pro run side by side (2026-27); ?mode=pro picks the Pro run.
+  const mode: "classic" | "pro" = (await props.searchParams)?.mode === "pro" ? "pro" : "classic"
 
   // 1. Collection gate — Top Shot only for now.
   if (collectionId !== "nba-top-shot") {
@@ -104,7 +108,7 @@ export default async function FastBreakPage(props: {
   // there's no extra HTTP hop on the server-rendering path.
   const gameDate = todayInET()
   const [{ run, ok: runOk }, { games, ok: slateOk }] = await Promise.all([
-    fetchActiveRun(),
+    fetchActiveRun(undefined, mode),
     fetchSlate(gameDate),
   ])
 
@@ -132,7 +136,32 @@ export default async function FastBreakPage(props: {
       <div style={{ marginBottom: 24 }}>
         <h1 style={PAGE_HEADER_STYLE}>Fast Break Optimizer</h1>
         <div style={SUBTITLE_STYLE}>{subtitle}</div>
+        <nav aria-label="Fast Break mode" style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          {(["classic", "pro"] as const).map(m => (
+            <Link
+              key={m}
+              href={m === "pro" ? "/nba-top-shot/fast-break?mode=pro" : "/nba-top-shot/fast-break"}
+              aria-current={m === mode ? "page" : undefined}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 999,
+                border: "1px solid var(--rpc-border)",
+                background: m === mode ? "var(--rpc-red-fill)" : "transparent",
+                color: m === mode ? "#fff" : "var(--rpc-text-secondary)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                textDecoration: "none",
+              }}
+            >
+              {m === "pro" ? "Pro" : "Classic"}
+            </Link>
+          ))}
+        </nav>
       </div>
+      {user && <TopShotSyncReceiver />}
 
       {!user ? (
         <SignInCard />
@@ -148,7 +177,10 @@ export default async function FastBreakPage(props: {
            were one — the strongest possible form of this false claim. */
         <UnavailableCard what="tonight's Fast Break run" />
       ) : !run ? (
-        <NoRunCard />
+        <>
+          <NoRunCard />
+          <TopShotSyncCard />
+        </>
       ) : (
         <>
           {slateOk ? (
@@ -164,7 +196,10 @@ export default async function FastBreakPage(props: {
           )}
           {run.objective === "thresholds" ? (
             /* Regular season (2026-27): nightly combined-stat targets. */
-            <ThresholdLineupClient walletAddr={topShotWallet} runId={run.id} gameDate={gameDate} />
+            <>
+              <ThresholdLineupClient walletAddr={topShotWallet} runId={run.id} gameDate={gameDate} mode={mode} />
+              <TopShotSyncCard />
+            </>
           ) : (
             <FastBreakClient
               walletAddr={topShotWallet}
@@ -239,11 +274,11 @@ export default async function FastBreakPage(props: {
           No active Fast Break run
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
-          {/* 2026-10-18: this line promised "We'll surface the next run here as soon as
-              Top Shot opens it". Nothing does: fast_break_runs has no writer (2 rows,
-              inserted by hand 2026-05-05), so a run Top Shot opens never appears on
-              its own. Say what is true instead of promising an automation. */}
-          Runs are added to RPC by hand, so one Top Shot has just opened may not be listed here yet.
+          {/* 2026-11-28: the run's writer is the Top Shot page sync
+              (fast_break_ingest_topshot), run from a signed-in collector's browser. It
+              is not a background job, so a run Top Shot has just opened appears only
+              after someone syncs it — say that, and offer the sync right here. */}
+          RPC learns about a run when it is synced from Top Shot, so one that has just opened may not be listed yet.
         </div>
       </div>
     )

@@ -26,7 +26,7 @@ interface TonightLineup {
 interface TonightResponse {
   runName: string
   gameDate: string
-  dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" | "targets_unknown"
+  dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" | "targets_unknown" | "pro_eligibility_unknown"
   objective: string | null
   targets: Partial<Record<StatKey, number>>
   lineupSize: number
@@ -44,6 +44,8 @@ interface Props {
   walletAddr: string
   runId: string
   gameDate: string
+  /** Classic or Pro run (they run side by side); only changes the label here. */
+  mode?: "classic" | "pro"
 }
 
 const CARD: React.CSSProperties = {
@@ -148,7 +150,7 @@ function PlayerRow({ p, captain, keys }: { p: ThresholdPlayer; captain: boolean;
   )
 }
 
-export default function ThresholdLineupClient({ walletAddr, runId, gameDate }: Props) {
+export default function ThresholdLineupClient({ walletAddr, runId, gameDate, mode = "classic" }: Props) {
   const [toast, setToast] = useState<{ kind: "success" | "idle" | "error"; text: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const key = useMemo(() => `fb-tonight:${walletAddr}:${runId}:${gameDate}`, [walletAddr, runId, gameDate])
@@ -215,12 +217,14 @@ export default function ThresholdLineupClient({ walletAddr, runId, gameDate }: P
     slate_unavailable: "Tonight's NBA schedule couldn't be loaded. This is our data, not your roster.",
     projections_unavailable: "Tonight's projections aren't in yet. This is our data, not your roster.",
     targets_unknown: "Tonight's Fast Break targets haven't been recorded on RPC yet. Check back shortly.",
+    pro_eligibility_unknown:
+      "Pro nights only allow some Moments, and RPC hasn't read tonight's eligible list from Top Shot yet. Use the Sync from Top Shot button below while signed in to Top Shot.",
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={CARD}>
-        <div style={LABEL}>Tonight · {data.gameDate}</div>
+        <div style={LABEL}>{mode === "pro" ? "Pro · " : ""}Tonight · {data.gameDate}</div>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, color: "var(--rpc-text-primary)", margin: "6px 0 14px", letterSpacing: "0.02em" }}>
           {data.objective ?? "Targets not recorded yet"}
         </div>

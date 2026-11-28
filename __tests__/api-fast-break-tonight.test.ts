@@ -135,4 +135,60 @@ describe("POST /api/fast-break/tonight", () => {
     expect(body.lineup.targets.map((t: any) => t.stat).sort()).toEqual(["fg3a", "fg3m"])
     expect(body.lineup.winProbability).toBeGreaterThan(0)
   })
+
+  function readyNight(s: ReturnType<typeof slate>, run: any = RUN) {
+    state.tables.fast_break_runs = { single: { data: run, error: null } }
+    state.tables.fast_break_nights = {
+      single: { data: { objective: "Combine for 18 3-Pointers Made", targets: { fg3m: 18 } }, error: null },
+    }
+    state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL" }], error: null } }
+    state.tables.nba_player_projections = { list: { data: s.proj, error: null } }
+    state.rpc.get_fb_eligible_players_v3 = { data: s.eligible, error: null }
+  }
+  const PRO_RUN = { ...RUN, name: "Pro Run — Nov 16–29", mode: "pro" }
+
+  it("500s when the synced Top Shot cards read fails — never a lineup built without them", async () => {
+    readyNight(slate(7))
+    state.tables.fast_break_topshot_cards = { list: { data: null, error: { message: "boom" } } }
+    const res = await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("topshot_cards_lookup_failed")
+  })
+
+  it("on a Pro night with no synced eligible list says pro_eligibility_unknown, not 'no eligible players'", async () => {
+    readyNight(slate(7), PRO_RUN)
+    const body = await (await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))).json()
+    expect(body.dataStatus).toBe("pro_eligibility_unknown")
+    expect(body.mode).toBe("pro")
+    expect(body.lineup).toBeNull()
+  })
+
+  it("on a Pro night picks only from the players Top Shot lists and drops the whole-slate comparison", async () => {
+    const s = slate(8)
+    readyNight(s, PRO_RUN)
+    const allowed = s.eligible.slice(0, 6).map(e => e.nba_player_id)
+    state.tables.fast_break_topshot_cards = {
+      list: { data: allowed.map(id => ({ nba_player_id: id, plays_left: 1, plays_total: 2 })), error: null },
+    }
+    const body = await (await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))).json()
+    expect(body.dataStatus).toBe("ok")
+    expect(body.playsSyncedFromTopShot).toBe(true)
+    const picked = [...body.lineup.players.map((p: any) => p.nbaPlayerId), body.lineup.bench?.nbaPlayerId].filter(Boolean)
+    for (const id of picked) expect(allowed).toContain(id)
+    expect(body.slateBest).toBeNull()
+  })
+
+  it("takes plays left from the synced Top Shot cards over RPC's own count", async () => {
+    const s = slate(7)
+    readyNight(s)
+    // RPC thinks everyone has 2 left; Top Shot says player 6 (the best projection) has none.
+    const best = s.eligible[6].nba_player_id
+    state.tables.fast_break_topshot_cards = {
+      list: { data: [{ nba_player_id: best, plays_left: 0, plays_total: 2 }], error: null },
+    }
+    const body = await (await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))).json()
+    expect(body.dataStatus).toBe("ok")
+    expect(body.lineup.players.map((p: any) => p.nbaPlayerId)).not.toContain(best)
+    expect(body.lineup.bench?.nbaPlayerId).not.toBe(best)
+  })
 })
