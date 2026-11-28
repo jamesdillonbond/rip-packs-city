@@ -1321,12 +1321,6 @@ const PINS = [
     migration: "supabase/migrations/20260713020000_audit_20260713_purge_fmv_snapshots_today_lock_timeout.sql",
   },
   {
-    fn: "purge_fmv_snapshots_today_except",
-    test: "supabase/tests/purge_fmv_snapshots_today_except.sql",
-    migration:
-      "supabase/migrations/20261023151316_audit_20261023_fmv_recalc_replace_delete_keeps_what_it_did_not_write.sql",
-  },
-  {
     // Added 2026-11-27. fmv-recalc's purge since then: also spares rows written after the run started, so two runs
     // on one page cannot delete each other's fresh rows.
     fn: "purge_fmv_snapshots_today_except_before",
