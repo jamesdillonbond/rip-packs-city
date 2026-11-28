@@ -541,7 +541,7 @@ function ProfilePageInner() {
             }
             const j = await ar.json();
             const moments: Array<{ fmv_usd?: number | null }> = Array.isArray(j?.moments) ? j.moments : [];
-            const priced = moments.filter((m) => typeof m.fmv_usd === "number" && (m.fmv_usd as number) > 0);
+            const priced = moments.filter((m) => typeof m.fmv_usd === "number"); // same rule as the route: a $0 FMV is priced
             meta[addr] = { source: "live", cacheUpdatedAt: null, covered: [ufc.supabaseCollectionId] };
             out[addr] = moments.length === 0 ? [] : [{
               collection_id: ufc.supabaseCollectionId,

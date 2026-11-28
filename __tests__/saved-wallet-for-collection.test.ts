@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
+import { fetchSavedWalletForCollection, fetchSavedUfcAptosAccount } from "@/lib/profile/saved-wallet-for-collection"
 
 // Client-side helper resolving the signed-in user's saved wallet for a collection
 // slug. Returns null for an unknown slug (no UUID mapped), a non-ok response, a
@@ -85,5 +85,23 @@ describe("fetchSavedWalletForCollection", () => {
   it("returns null when fetch throws", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down") }))
     expect(await fetchSavedWalletForCollection("nba-top-shot")).toBeNull()
+  })
+})
+
+// 2026-11-27: the UFC binder adds the signed-in collector's saved Aptos account to their own Flow binder.
+describe("fetchSavedUfcAptosAccount", () => {
+  it("returns the saved Aptos account (lowercased) and never a Flow wallet", async () => {
+    const aptos = "0x" + "AB".repeat(32)
+    stubFetch(() => ({ ok: true, json: async () => ({ wallets: [{ wallet_addr: "0xabcdef0123456789" }, { wallet_addr: aptos }] }) }))
+    expect(await fetchSavedUfcAptosAccount()).toBe(aptos.toLowerCase())
+    stubFetch(() => ({ ok: true, json: async () => ({ wallets: [{ wallet_addr: "0xabcdef0123456789" }] }) }))
+    expect(await fetchSavedUfcAptosAccount()).toBeNull()
+  })
+
+  it("returns null on a failed or thrown read", async () => {
+    stubFetch(() => ({ ok: false, json: async () => ({}) }))
+    expect(await fetchSavedUfcAptosAccount()).toBeNull()
+    stubFetch(() => { throw new Error("down") })
+    expect(await fetchSavedUfcAptosAccount()).toBeNull()
   })
 })

@@ -162,3 +162,46 @@ export function ufcBinderEmptyCopy(aptos: UfcAptosState["status"], direct = fals
   if (aptos === "loading") return "No UFC Strike Moments found on Flow for this wallet. Checking Aptos…"
   return "No UFC Strike Moments found for this wallet on Flow or on any Aptos account RPC has linked to it."
 }
+
+/** One /api/ufc/aptos-holdings answer, as the binder reads it. */
+export interface UfcAptosHoldingsAnswer {
+  linked?: boolean
+  capped?: boolean
+  moments?: UfcAptosHolding[]
+}
+
+/**
+ * Merge one or more aptos-holdings answers into the binder's Aptos state (2026-11-27). A collector's own Flow
+ * binder reads the wallet's LINKED Aptos accounts and their separately SAVED Aptos account — often the same
+ * account, so a Moment is kept once (by token_data_id) and the totals are computed from the merged list, never
+ * by adding the two answers' totals. Same pricing rule as the route: a Moment with an FMV (even $0) is priced, one
+ * without is counted but not valued, and nothing priced means no total (null), never $0.
+ */
+export function mergeUfcAptosAnswers(
+  answers: readonly UfcAptosHoldingsAnswer[],
+  direct: boolean,
+): { state: UfcAptosState; moments: UfcAptosHolding[] } {
+  const seen = new Set<string>()
+  const moments: UfcAptosHolding[] = []
+  for (const j of answers) {
+    if (!j.linked) continue
+    for (const m of Array.isArray(j.moments) ? j.moments : []) {
+      if (seen.has(m.token_data_id)) continue
+      seen.add(m.token_data_id)
+      moments.push(m)
+    }
+  }
+  if (moments.length === 0) return { state: { status: "none", direct }, moments }
+  const priced = moments.filter((m) => typeof m.fmv_usd === "number")
+  return {
+    state: {
+      status: "ok",
+      count: moments.length,
+      totalFmv: priced.length ? Math.round(priced.reduce((t, m) => t + (m.fmv_usd as number), 0) * 100) / 100 : null,
+      unpriced: moments.length - priced.length,
+      capped: answers.some((j) => !!j.capped),
+      direct,
+    },
+    moments,
+  }
+}

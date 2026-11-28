@@ -43,3 +43,24 @@ export async function fetchSavedWalletForCollection(
     return null;
   }
 }
+
+/**
+ * The signed-in collector's saved UFC Strike Aptos account (0x + 64 hex), or null — none saved,
+ * signed out, or the read failed (2026-11-27). The UFC binder adds this account's holdings to the
+ * collector's OWN Flow binder; a separately saved Aptos account is not linked to the Flow wallet by
+ * migration, so the linked read alone never shows it.
+ */
+export async function fetchSavedUfcAptosAccount(): Promise<string | null> {
+  const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, "ufc");
+  if (!uuid) return null;
+  try {
+    const res = await fetch("/api/profile/saved-wallets?collectionId=" + encodeURIComponent(uuid), { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null);
+    const wallets: Array<{ wallet_addr?: string }> | undefined = json?.wallets;
+    const hit = wallets?.find((w) => typeof w?.wallet_addr === "string" && /^0x[0-9a-fA-F]{64}$/.test(w.wallet_addr.trim()));
+    return hit?.wallet_addr ? hit.wallet_addr.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}

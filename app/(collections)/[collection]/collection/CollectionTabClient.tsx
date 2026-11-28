@@ -27,10 +27,10 @@ import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
-import { isUfcAptosBinder, isAptosAccountAddress, aptosHoldingToRow, type UfcAptosState, type UfcAptosHolding } from "@/lib/ufc-aptos"
+import { isUfcAptosBinder, isAptosAccountAddress, aptosHoldingToRow, mergeUfcAptosAnswers, type UfcAptosState, type UfcAptosHoldingsAnswer } from "@/lib/ufc-aptos"
 import AutoSearchReader, { type AutoSearchSource } from "@/components/collection/AutoSearchReader"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
-import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
+import { fetchSavedWalletForCollection, fetchSavedUfcAptosAccount } from "@/lib/profile/saved-wallet-for-collection"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
 import WalletFollowButton from "@/components/profile/WalletFollowButton"
@@ -1442,24 +1442,44 @@ function WalletMomentsBody() {
   const ufcAptosWallet = isUfcAptosBinder(collectionSlug) && hasSearched
     ? (ufcAptosDirect ? activeWallet.toLowerCase() : FLOW_ADDRESS_RE.test(resolvedAddress) ? resolvedAddress : FLOW_ADDRESS_RE.test(activeWallet) ? activeWallet : "")
     : ""
+  // 2026-11-27: a collector who saved BOTH a Dapper wallet and a UFC Strike Aptos account (dashboard) gets the
+  // saved account's holdings in their OWN Flow binder too — a saved Aptos account is not linked to the Flow wallet
+  // by migration, so the linked read alone never showed it. Only on the signed-in collector's own saved Flow
+  // wallet; a looked-up wallet never borrows the viewer's Aptos account.
+  const ownFlowBinder = isUfcAptosBinder(collectionSlug) && !ufcAptosDirect && !!sessionOwner.userId && !sessionOwner.degraded &&
+    !!savedWalletLoaded && !!activeWallet && activeWallet.toLowerCase() === savedWalletLoaded.toLowerCase()
+  const [savedUfcAptos, setSavedUfcAptos] = useState<string | null>(null)
+  useEffect(() => {
+    if (!ownFlowBinder) { setSavedUfcAptos(null); return }
+    let live = true
+    fetchSavedUfcAptosAccount().then(function(a) { if (live) setSavedUfcAptos(a) })
+    return function() { live = false }
+  }, [ownFlowBinder])
+  const ufcAptosExtra = ownFlowBinder && savedUfcAptos ? savedUfcAptos : ""
+  const ufcAptosKey = ufcAptosWallet ? ufcAptosWallet + (ufcAptosExtra ? "|" + ufcAptosExtra : "") : ""
   useEffect(() => {
     if (!ufcAptosWallet) return
     let live = true
-    fetch("/api/ufc/aptos-holdings?" + (isAptosAccountAddress(ufcAptosWallet) ? "aptos=" : "wallet=") + encodeURIComponent(ufcAptosWallet))
-      .then(async function(r) {
+    const key = ufcAptosKey
+    const direct = isAptosAccountAddress(ufcAptosWallet)
+    const read = function(q: string): Promise<UfcAptosHoldingsAnswer> {
+      return fetch("/api/ufc/aptos-holdings?" + q).then(async function(r) {
         if (!r.ok) throw new Error("aptos holdings " + r.status)
-        const j = await r.json() as { linked?: boolean; count?: number; capped?: boolean; unpriced?: number; total_fmv?: number | null; moments?: UfcAptosHolding[] }
-        const moments = Array.isArray(j.moments) ? j.moments : []
-        const direct = isAptosAccountAddress(ufcAptosWallet)
-        const state: UfcAptosState = !j.linked || moments.length === 0
-          ? { status: "none", direct }
-          : { status: "ok", count: moments.length, totalFmv: typeof j.total_fmv === "number" ? j.total_fmv : null, unpriced: Number(j.unpriced) || 0, capped: !!j.capped, direct }
-        if (live) setUfcAptos({ wallet: ufcAptosWallet, state, rows: moments.map(aptosHoldingToRow) })
+        return await r.json() as UfcAptosHoldingsAnswer
       })
-      .catch(function() { if (live) setUfcAptos({ wallet: ufcAptosWallet, state: { status: "failed" }, rows: [] }) })
+    }
+    const reads = [read((direct ? "aptos=" : "wallet=") + encodeURIComponent(ufcAptosWallet))]
+    if (ufcAptosExtra && ufcAptosExtra !== ufcAptosWallet.toLowerCase()) reads.push(read("aptos=" + encodeURIComponent(ufcAptosExtra)))
+    Promise.all(reads)
+      .then(function(answers) {
+        const { state, moments } = mergeUfcAptosAnswers(answers, direct)
+        if (live) setUfcAptos({ wallet: key, state, rows: moments.map(aptosHoldingToRow) })
+      })
+      // Either read failing makes the Aptos half unknown — shown as not included, never as a partial total.
+      .catch(function() { if (live) setUfcAptos({ wallet: key, state: { status: "failed" }, rows: [] }) })
     return function() { live = false }
-  }, [ufcAptosWallet])
-  const ufcAptosCurrent = ufcAptos && ufcAptos.wallet === ufcAptosWallet ? ufcAptos : null
+  }, [ufcAptosWallet, ufcAptosExtra, ufcAptosKey])
+  const ufcAptosCurrent = ufcAptos && ufcAptos.wallet === ufcAptosKey ? ufcAptos : null
   const ufcAptosState: UfcAptosState | null = ufcAptosWallet ? (ufcAptosCurrent?.state ?? { status: "loading" }) : null
   const allRows = useMemo(function() {
     if (!isUfcAptosBinder(collectionSlug)) return rows
