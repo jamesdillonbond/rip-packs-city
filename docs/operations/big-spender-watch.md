@@ -37,6 +37,10 @@ Excluded buyers: `flowty_excluded_addresses` (the system-account registry) plus 
 - `get_big_spender_summary(p_days int default 7)`: one row per active tracked wallet with buys, spend, sells, sold, net, biggest buy, collections and last seen.
 - `big_spender_item_label(...)`: Top Shot labels carry the series first ("S1 Metallic Gold LE", "2025-26 Rookie Revelation") via `series_display_label()`.
 - pg_cron **953** `rpc-big-spender-refresh`, `23 1,7,13,19 * * *` UTC. Cadence-watched (`pipeline_cadence_watchlist`, 720 / 1440 min).
+- `big_spender_key(text)`: the one wallet-key spelling (0x Flow lower-cased, bare 16-hex Flow given 0x, Solana untouched). Every key read goes through it.
+- **Usernames, two lanes, both pg_cron, both cadence-watched (60 / 180 min):**
+  - **958** `rpc-big-spender-usernames`, `4-54/10`: Flow whales via Atlas `SearchUserProfiles` (`run_big_spender_usernames()`).
+  - **959** `rpc-big-spender-candy-usernames`, `2-52/10`: Solana whales via candy.io card pages (`run_big_spender_candy_usernames()`, checks in `big_spender_candy_owner_checks`). Up to 12 unresold cards per wallet, 12 requests per run; a name is written only when two cards show the same owner and no other owner ties. Responses are deleted from `net._http_response` after parsing. Panini whales are already keyed by username.
 
 ## Reading it
 
@@ -57,7 +61,7 @@ Refer to wallets by `username` in anything written for Trevor. 393 of 573 had on
 - **Panini six-figure prints are largely circular.** spinotron, redwolf66sports, MrFourToEight, RaspySlabs, Adlcards and others trade the same cards with each other at $100k–$210k. They dominate any dollar ranking; read `reciprocal_flag` before calling any of it demand.
 - The ledger re-ranks the open window, so a sale can drop out of a month's top 25 when bigger ones arrive; its buyer stays tracked.
 - **Wallet keys go through `big_spender_key()`** (2026-11-27, `20261128024418`). Some `pinnacle_sales` rows store a Flow address without `0x`; before the fix 23 Pinnacle whales were tracked under that bare key and labelled Solana. Any new source added to the three functions must wrap its buyer and seller in `big_spender_key()`. Never lower-case a Solana key; the helper leaves base58 untouched.
-- **Candy (Solana) usernames come from candy.io, not Atlas.** `https://candy.io/collectibles/<mint>` server-renders "Owned by @username" for an unlisted card. Read two cards the wallet bought and never resold; save only when they agree (`20261128025030`: 30 of 59). Names are written straight to `big_spender_wallets.username` and kept by the refresh. Re-run the same way for new Solana whales.
+- **Candy (Solana) usernames come from candy.io, not Atlas.** `https://candy.io/collectibles/<mint>` server-renders "Owned by @username" for an unlisted card. Read two cards the wallet bought and never resold; save only when they agree (`20261128025030`: 30 of 59). Names are written straight to `big_spender_wallets.username` and kept by the refresh. Since `20261128025619` pg_cron 959 does this on its own for every new unnamed Solana whale.
 - `get_whale_watch_7d` is a different, older instrument: a rolling 7-day volume read over Flow sales only, with nothing persisted. This watch does not replace it.
 
 ## First fill (2026-11-27 ~3:30 PM PT)
@@ -67,6 +71,13 @@ Refer to wallets by `username` in anything written for Trevor. 393 of 573 had on
 ## Revert
 
 ```sql
+-- the username lanes
+select cron.unschedule('rpc-big-spender-candy-usernames');
+select cron.unschedule('rpc-big-spender-usernames');
+delete from pipeline_cadence_watchlist where pipeline in ('big_spender_candy_usernames', 'big_spender_usernames');
+drop function public.run_big_spender_candy_usernames();
+drop table public.big_spender_candy_owner_checks;
+drop function public.run_big_spender_usernames();
 -- the public board first
 select cron.unschedule('rpc-whale-watch-board');
 delete from pipeline_cadence_watchlist where pipeline = 'whale_watch_board';
@@ -81,4 +92,5 @@ drop function public.refresh_big_spender_wallets(integer);
 drop function public.big_spender_item_label(uuid, integer, text, text, integer);
 drop table public.big_spender_top_sales;
 drop table public.big_spender_wallets;
+drop function public.big_spender_key(text);
 ```
