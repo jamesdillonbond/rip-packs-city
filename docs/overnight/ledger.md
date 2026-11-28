@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:50 PM PT — Player page: older walked-wallet "Top Collectors" panels retired; rookie cut lines get their own section
+
+- **What:** Trevor: "Keep going" (after "We need to have this for every possible wallet, not just the ones we've captured"). The player page still showed three pre-leaderboard rankings (Top Shot rookie ownership index, Pinnacle owner map, Candy census) beside the new Top Collector Leaderboard, two of them over partial owner sets. Removed all three; the leaderboard is the one ranking. The year-end rookie cut lines moved into their own Top Shot-only "Rookie Cut Lines" section. Deleted the now-uncalled `lib/entity/index-coverage-note.ts` + test; re-pinned three tests as absences. DB untouched. Pre-flight for 12/15 also done: all four census maps build (Top Shot 2.09 MB, All Day 0.77 MB, Pinnacle 0.35 MB, Golazos 0.07 MB) with keys in the mint-event spelling (Top Shot 15,163 editions all `set:play:sub`).
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 6:20 PM PT — 🗄 APPLIED `20261128021720` + pg_cron 958 — ask Atlas for unnamed Flow whales' usernames
 
 - **What:** 66 of 404 Flow whales had no username and had never been asked about, so Whale Watch showed them as shortened wallets. `run_big_spender_usernames()` uses the `run_sold_pack_opener_names()` pattern: one Atlas batch of up to 25, only when `member_wallet_username_requests` is idle, collected by job 650, then copied in. pg_cron **958** `4-54/10 * * * *`. The first manual run asked 25. anon EXECUTE is false.
