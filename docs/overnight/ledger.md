@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:50 PM PT — /insights/whales: table headers carry scope, the wide grid fits a 320px phone (CI red on d8c3d82)
+
+- **What:** `d8c3d82` reddened two tree-walk guards: `table-headers-carry-scope` (7 `<th>` without `scope`) and `responsive-grid-minimum-fits-a-phone` (`minmax(320px, 1fr)` not wrapped in `min(…, 100%)`). Both are fixed in `WhalesBoardClient.tsx`; no data change.
+- **Revert:** `git revert` this commit (restores the two guard failures).
+
 ### 2026-11-27 · 4:40 PM PT — 🗄 APPLIED `20261128000240` — Top Fans on every team and player page and both hubs
 
 - Trevor: top fans per team / player, on the collection pages AND the aggregated hubs (collection chips there), ranked by Moment/Pin/Card count, FMV or special serials (a 1/1 that is #1 and perfect counts once).
