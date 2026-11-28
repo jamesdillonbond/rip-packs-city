@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:40 PM PT — 📝 DOCS — offer-pull thread close-out; fmv-recalc purge-fix self-heal check scheduled as its own task
+
+- No code or DB change. focus.md: Panini first-log-rows read closed (11 pulled, 0 below_bid / under_half); new bullet for the fmv-recalc purge race pointing at standalone scheduled task `trig_01Ts2fbbokgcuqpDW9fx4K4y` (Fri 11-27 8:17 PM PT) that confirms the ~490 editions missing since 2:48 PM PT regained today's rows. Session log entry. Project handoff doc rewritten CLOSED.
+- fmv-recalc 3:08 → 4:28 PM PT: 5 runs ok, 0 purge errors.
+- Revert: `git revert` this commit (docs only); delete the scheduled task in claude.ai if unwanted.
+
 ### 2026-11-27 · 4:28 PM PT — UFC binder adds the collector's saved Aptos account to their own Flow binder
 
 - Follow-on to the 4:07 PM PT Aptos-save ship (Trevor: "Keep going"). A collector who saved BOTH a Dapper wallet and a UFC Strike Aptos account saw only the migration-LINKED Aptos holdings in their UFC binder; the saved account (often not linked) was missing there while the dashboard counted it.
