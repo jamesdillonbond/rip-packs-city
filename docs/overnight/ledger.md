@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 5:50 PM PT — Top Collector census: route + helper tests (CI coverage ratchet back over its gates)
+
+- **What:** `main` was red on the coverage ratchet (functions 93.58 < 93.6, statements 91.66 < 91.8) because the new census route had no tests. Added `__tests__/api-cron-top-collector-census-dune.test.ts` (21 cases: auth, refused collection, unconfigured, the full upload→execute→page→stage→finalize walk, resume, and each failure face failing the run and dropping the stage) and `__tests__/top-fans-format-helpers.test.ts`. Removed the uncalled `mapCsv` (the CSV is built in the database). No runtime change.
+- **Revert:** `git revert` this commit.
+
 ### 2026-11-27 · 6:25 PM PT — /insights/whales: 44px tap targets on the window tabs and collection chips
 
 - **What:** The live mobile sweep (`scripts/qa/mobile-sweep.mjs`, 390 px and 320 px) found no overflow, no console errors and no broken images, and flagged 32 px-tall tabs and chips. Both are now 44 px. Layout-only.
