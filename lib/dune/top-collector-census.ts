@@ -230,14 +230,6 @@ SELECT kind AS entity_kind, key AS entity_key, owner, items, special_items, roun
 `
 }
 
-/** CSV for the Dune upload. Quotes every field (keys can hold commas, e.g. "Simba, Timon & Pumbaa"). */
-export function mapCsv(rows: Array<{ ek: string; kind: string; key: string; fmv: number | string | null; circ: number | string | null; jersey: number | string | null }>): string {
-  const q = (v: unknown) => (v === null || v === undefined || v === "" ? "" : `"${String(v).replace(/"/g, '""')}"`)
-  const lines = ["ek,kind,key,fmv,circ,jersey"]
-  for (const r of rows) lines.push([q(r.ek), q(r.kind), q(r.key), q(r.fmv), q(r.circ), q(r.jersey)].join(","))
-  return lines.join("\n") + "\n"
-}
-
 export interface CensusRow {
   entity_kind: string
   entity_key: string
