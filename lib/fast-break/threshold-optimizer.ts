@@ -218,17 +218,17 @@ export function buildThresholdLineup(
   }
 }
 
-/** Uses per run for one Moment: the higher of its price band and its tier (2026-27 rule). */
+/**
+ * Uses per run for one Moment (2026-27): the higher of its Top Shot average-sale-price band and
+ * its tier floor. Verified 2026-11-28 against every "N of M plays left" card for one wallet's
+ * 116 players on nbatopshot.com/fastbreak (116/116). A Moment with no established ASP ($0 / none)
+ * is "Hall of Fame" — unlimited — per the help center. null = unlimited.
+ * The SQL twin is get_fb_eligible_players_v3.
+ */
 export function usesForMoment(aspUsd: number | null, tier: string | null): number | null {
-  // Price bands, Top Shot help center "Fast Break" (2025-26 fatigue table).
-  let byPrice: number | null = 1
-  const p = aspUsd == null ? null : Number(aspUsd)
-  if (p != null && p > 1000) byPrice = null
-  else if (p != null && p > 300) byPrice = 4
-  else if (p != null && p > 50) byPrice = 3
-  else if (p != null && p > 10) byPrice = 2
-  // Tier floors. Rare = 2 and Ultimate = every night are stated by Top Shot (2026-27
-  // announcement); Legendary = 4 is the prior tier rule, ASSUMED until Top Shot states it.
+  const p = aspUsd == null ? 0 : Number(aspUsd)
+  const byPrice: number | null =
+    p <= 0 || p > 1000 ? null : p > 300 ? 4 : p > 50 ? 3 : p > 10 ? 2 : 1
   const t = (tier ?? "").toUpperCase()
   const byTier: number | null = t === "ULTIMATE" ? null : t === "LEGENDARY" ? 4 : t === "RARE" ? 2 : 1
   if (byPrice == null || byTier == null) return null

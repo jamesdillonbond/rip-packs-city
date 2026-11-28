@@ -9,8 +9,8 @@
 //   fast_break_nights          tonight's targets for that run — recorded by hand from
 //                              nbatopshot.com/fastbreak; a night with no row is
 //                              `targets_unknown`, never "no targets"
-//   get_fb_eligible_players_v2 the wallet's players and their uses left this run
-//                              (higher of price band and tier, 2026-27 rule)
+//   get_fb_eligible_players_v3 the wallet's players and THIS user's uses left this run
+//                              (higher of Top Shot ASP band and tier, 2026-27 rule)
 //   nba_games + nba_player_projections  tonight's slate and the blended projections
 //
 // Three states, never two (CLAUDE.md honesty rules): every failed read is a 500 with
@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { requireUser } from "@/lib/auth/supabase-server"
 import { nbaFeedAnsweredRecently } from "@/lib/fast-break/nba-feed"
 import {
   buildThresholdLineup,
@@ -63,6 +64,14 @@ function fail(error: string, status = 500) {
 }
 
 export async function POST(req: NextRequest) {
+  // Uses left are per COLLECTOR (fast_break_player_uses.user_id), so the caller must be known.
+  let user
+  try {
+    user = await requireUser()
+  } catch (res) {
+    return res as Response
+  }
+
   let raw: unknown
   try {
     raw = await req.json()
@@ -134,11 +143,11 @@ export async function POST(req: NextRequest) {
     const projByPlayer = new Map<string, any>(projRows.map(r => [r.nba_player_id, r]))
 
     const { data: eligibleRaw, error: eligErr } = await (supabase as any).rpc(
-      "get_fb_eligible_players_v2",
-      { p_wallet_addr: walletAddr, p_run_id: runId },
+      "get_fb_eligible_players_v3",
+      { p_wallet_addr: walletAddr, p_run_id: runId, p_user_id: user.id },
     )
     if (eligErr) {
-      console.error("[fast-break-tonight] get_fb_eligible_players_v2:", eligErr.message)
+      console.error("[fast-break-tonight] get_fb_eligible_players_v3:", eligErr.message)
       return fail("eligible_rpc_failed")
     }
     const eligible = (eligibleRaw ?? []) as any[]

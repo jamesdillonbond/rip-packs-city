@@ -23,6 +23,13 @@ vi.mock("@/lib/supabase", () => {
 })
 
 vi.mock("@/lib/fast-break/nba-feed", () => ({ nbaFeedAnsweredRecently: async () => true }))
+let signedIn = true
+vi.mock("@/lib/auth/supabase-server", () => ({
+  requireUser: async () => {
+    if (!signedIn) throw new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })
+    return { id: "22222222-2222-4222-8222-222222222222" }
+  },
+}))
 
 import { POST } from "@/app/api/fast-break/tonight/route"
 
@@ -60,9 +67,15 @@ function slate(n: number) {
 beforeEach(() => {
   state.tables = {}
   state.rpc = {}
+  signedIn = true
 })
 
 describe("POST /api/fast-break/tonight", () => {
+  it("401s a signed-out caller — uses left are per collector", async () => {
+    signedIn = false
+    expect((await POST(req({ walletAddr: WALLET, runId: RUN_ID }))).status).toBe(401)
+  })
+
   it("400s on malformed JSON and on a bad wallet", async () => {
     expect((await POST(req(null, { bad: true }))).status).toBe(400)
     expect((await POST(req({ walletAddr: "nope", runId: RUN_ID }))).status).toBe(400)
@@ -87,7 +100,7 @@ describe("POST /api/fast-break/tonight", () => {
     state.tables.fast_break_nights = { single: { data: { objective: "x", targets: { fg3m: 18 } }, error: null } }
     state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL" }], error: null } }
     state.tables.nba_player_projections = { list: { data: s.proj, error: null } }
-    state.rpc.get_fb_eligible_players_v2 = { data: null, error: { message: "boom" } }
+    state.rpc.get_fb_eligible_players_v3 = { data: null, error: { message: "boom" } }
     const res = await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("eligible_rpc_failed")
@@ -99,7 +112,7 @@ describe("POST /api/fast-break/tonight", () => {
     state.tables.fast_break_nights = { single: { data: null, error: null } }
     state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL" }], error: null } }
     state.tables.nba_player_projections = { list: { data: s.proj, error: null } }
-    state.rpc.get_fb_eligible_players_v2 = { data: s.eligible, error: null }
+    state.rpc.get_fb_eligible_players_v3 = { data: s.eligible, error: null }
     const body = await (await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))).json()
     expect(body.dataStatus).toBe("targets_unknown")
     expect(body.lineup).toBeNull()
@@ -113,7 +126,7 @@ describe("POST /api/fast-break/tonight", () => {
     }
     state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL" }], error: null } }
     state.tables.nba_player_projections = { list: { data: s.proj, error: null } }
-    state.rpc.get_fb_eligible_players_v2 = { data: s.eligible, error: null }
+    state.rpc.get_fb_eligible_players_v3 = { data: s.eligible, error: null }
     const body = await (await POST(req({ walletAddr: WALLET, runId: RUN_ID, gameDate: DATE }))).json()
     expect(body.dataStatus).toBe("ok")
     expect(body.lineup.players).toHaveLength(5)

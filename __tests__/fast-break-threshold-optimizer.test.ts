@@ -117,4 +117,11 @@ describe("usesForMoment (2026-27: higher of price band and tier)", () => {
   it("treats an Ultimate as unlimited", () => {
     expect(usesForMoment(1, "ULTIMATE")).toBeNull()
   })
+  it("gives a Legendary four plays — measured against Top Shot's own counts, 116/116", () => {
+    expect(usesForMoment(155, "LEGENDARY")).toBe(4)
+  })
+  it("treats a Moment with no established average sale price as unlimited (Hall of Fame)", () => {
+    expect(usesForMoment(null, "COMMON")).toBeNull()
+    expect(usesForMoment(0, "RARE")).toBeNull()
+  })
 })

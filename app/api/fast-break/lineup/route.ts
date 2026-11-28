@@ -115,11 +115,14 @@ export async function POST(req: NextRequest) {
     // the run's tier→total_allowed mapping when inserting a brand-new
     // fast_break_player_uses row for an added player.
     // Regular-season runs ('thresholds', 2026-27) count uses per Moment by price band or tier
-    // (get_fb_eligible_players_v2); playoff runs keep the tier caps of v1.
-    const eligibleFn = (run as any).objective === "thresholds" ? "get_fb_eligible_players_v2" : "get_fb_eligible_players"
+    // (get_fb_eligible_players_v3, Top Shot ASP + tier, this user's plays only); playoff runs keep v1.
+    const thresholds = (run as any).objective === "thresholds"
+    const eligibleFn = thresholds ? "get_fb_eligible_players_v3" : "get_fb_eligible_players"
     const { data: eligibleRaw, error: eligErr } = await (supabase as any).rpc(
       eligibleFn,
-      { p_wallet_addr: walletAddr, p_run_id: runId },
+      thresholds
+        ? { p_wallet_addr: walletAddr, p_run_id: runId, p_user_id: user.id }
+        : { p_wallet_addr: walletAddr, p_run_id: runId },
     )
     if (eligErr) {
       console.error(`[fast-break-lineup] ${eligibleFn}:`, eligErr.message)
