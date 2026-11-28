@@ -28,6 +28,8 @@ import {
   pastWalkCap,
   walkDeadlineMs,
   hungWalkResult,
+  thrownWalkResult,
+  abortedWalkBody,
   walkOrder,
   mergeTargets,
   operationOf,
@@ -345,5 +347,32 @@ describe("walkDeadlineMs / hungWalkResult", () => {
     expect(r.error).toMatch(/did not finish within 6\.5 min/)
     expect(r.error).toMatch(/nothing retired/)
     expect([...r.names]).toEqual([])
+  })
+})
+
+// 2026-11-27: a walk that THROWS used to escape the per-walk loop and end the whole batch with no run row
+// (walkProfile is try/finally with no catch). It is now that walk's incomplete read, and its reason names
+// the throw — the only way to see the cause off Trevor's box.
+describe("thrownWalkResult / abortedWalkBody", () => {
+  it("a thrown walk is INCOMPLETE, empty, and names the error and its first frame", () => {
+    const e = new TypeError("Cannot read properties of null (reading 'x')")
+    const r = thrownWalkResult(e)
+    expect(r.holdings).toEqual([])
+    expect(r.profileState).toBe("unknown")
+    expect(isComplete(r.holdings.length, r.total, r.error)).toBe(false)
+    expect(r.error).toMatch(/^walk threw: Cannot read properties of null/)
+    expect(r.error).toMatch(/\(at /) // the first stack frame, so the line is findable
+    expect(r.error).toMatch(/nothing retired/)
+  })
+
+  it("a non-Error throw still yields a readable reason", () => {
+    expect(thrownWalkResult("boom").error).toMatch(/^walk threw: boom; /)
+  })
+
+  it("the watchdog/fatal body is an incomplete ingest with no holdings — it cannot retire anything", () => {
+    const b = abortedWalkBody("someone", "2026-11-27T00:00:00.000Z", "WATCHDOG: x")
+    expect(b).toMatchObject({ op: "ingest", username: "someone", complete: false, profile_state: "unknown", holdings: [], error: "WATCHDOG: x" })
+    // the same shape the receiver takes from a normal walk (ingestPayloads keeps it as ONE body)
+    expect(ingestPayloads(b, [])).toHaveLength(1)
   })
 })

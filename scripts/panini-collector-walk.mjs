@@ -262,18 +262,66 @@ export function walkDeadlineMs(capMin) {
 
 /** What an abandoned (hung) walk posts: incomplete, nothing read, the reason named. */
 export function hungWalkResult(deadlineMs) {
+  return failedWalkResult(`walk did not finish within ${(deadlineMs / 60_000).toFixed(1)} min — abandoned (a browser call hung); posted as an incomplete read, nothing retired`)
+}
+
+/** The result of a walk that produced nothing usable: no holdings, state unknown, the reason in `error`. */
+export function failedWalkResult(error) {
   return {
     holdings: [],
     total: null,
     unopenedPacks: null,
     profileState: "unknown",
     answers: 0,
-    error: `walk did not finish within ${(deadlineMs / 60_000).toFixed(1)} min — abandoned (a browser call hung); posted as an incomplete read, nothing retired`,
+    error,
     sampleKeys: null,
     source: null,
     foreign: 0,
     names: new Map(),
   }
+}
+
+/**
+ * 2026-11-27: a walk that THROWS. walkProfile's body is try/finally with no catch, so before this a
+ * throw for one username escaped the per-walk loop, main() rejected, the process exited 2 — and the
+ * rest of the batch never ran, with NO run row anywhere (joesplosion: two batches, 3:52 and 5:20 PM PT,
+ * each ended at that username with nothing recorded). Now the throw is this walk's error, posted as an
+ * incomplete read (nothing retires), and the batch moves on. The message keeps the first stack frame
+ * so the cause is readable in pipeline_runs without the box's log.
+ */
+export function thrownWalkResult(e) {
+  const msg = e instanceof Error ? e.message : String(e)
+  const frame = e instanceof Error && typeof e.stack === "string" ? (e.stack.split("\n").find((l) => /^\s+at /.test(l)) || "").trim() : ""
+  return failedWalkResult(`walk threw: ${String(msg).split("\n")[0].slice(0, 300)}${frame ? ` (${frame.slice(0, 200)})` : ""}; posted as an incomplete read, nothing retired`)
+}
+
+/** The ingest body a walk that never returned posts (watchdog / fatal exit): nothing retires. */
+export function abortedWalkBody(nickname, walkStartedAt, reason) {
+  return {
+    op: "ingest",
+    username: nickname,
+    walk_started_at: walkStartedAt,
+    complete: false,
+    profile_state: "unknown",
+    reported_total: null,
+    unopened_packs: null,
+    error: reason,
+    extra: { answers: 0, source: null, ignored_foreign_answers: 0 },
+    holdings: [],
+  }
+}
+
+/** The walk in flight, so the watchdog and the fatal handler can name it in a run row before exiting. */
+let inFlight = null
+
+/** Post the in-flight walk's run row, bounded, before the process exits. Never throws. */
+async function postAborted(reason) {
+  const w = inFlight
+  if (!w) return
+  inFlight = null
+  try {
+    await withDeadline(post(w.url, w.token, abortedWalkBody(w.nickname, w.walkStartedAt, reason)), 12_000)
+  } catch {}
 }
 
 /**
@@ -757,7 +805,14 @@ async function main() {
       log(`walking ${nickname}`)
       const capMin = process.env.PANINI_COLLECTOR_WALK_MAX_MIN
       const deadlineMs = walkDeadlineMs(capMin)
-      const walked = await withDeadline(walkProfile(ctx, nickname, { maxPages, log, capMin }), deadlineMs)
+      if (!dry) inFlight = { url, token, nickname, walkStartedAt }
+      let walked
+      try {
+        walked = await withDeadline(walkProfile(ctx, nickname, { maxPages, log, capMin }), deadlineMs)
+      } catch (e) {
+        log(`  ${nickname}: walk threw — ${e instanceof Error ? e.stack : e} — recording it and moving on`)
+        walked = thrownWalkResult(e)
+      }
       if (walked === TIMED_OUT) log(`  ${nickname}: walk did not finish within ${(deadlineMs / 60_000).toFixed(1)} min — abandoning it and moving on`)
       const res = walked === TIMED_OUT ? hungWalkResult(deadlineMs) : walked
       const complete = isComplete(res.holdings.length, res.total, res.error)
@@ -801,6 +856,7 @@ async function main() {
       } else {
         line.sample = res.holdings.slice(0, 3)
       }
+      inFlight = null
       for (const [k, n] of res.names ?? []) allNames.set(k, (allNames.get(k) || 0) + n)
       if (!complete) anyFailed = true
       summary.push(line)
@@ -829,10 +885,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const hardMin = Number(process.env.PANINI_COLLECTOR_HARD_MIN || 30)
   setTimeout(() => {
     console.error(`[panini-collector-walk] WATCHDOG: still running after ${hardMin} min (PANINI_COLLECTOR_HARD_MIN) — a read hung; exiting 3`)
-    process.exit(3)
+    // 2026-11-27: name the walk that hung in a run row first (bounded), so a hang is visible off the box.
+    setTimeout(() => process.exit(3), 15_000).unref()
+    postAborted(`WATCHDOG: the process was still running after ${hardMin} min (PANINI_COLLECTOR_HARD_MIN) during this walk — exited 3; nothing retired`).finally(() => process.exit(3))
   }, hardMin * 60_000).unref()
-  main().then(() => process.exit(process.exitCode ?? 0), (e) => {
+  main().then(() => process.exit(process.exitCode ?? 0), async (e) => {
     console.error("[panini-collector-walk] fatal:", e instanceof Error ? e.stack : e)
+    await postAborted(`fatal: ${thrownWalkResult(e).error}`)
     process.exit(2)
   })
 }
