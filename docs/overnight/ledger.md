@@ -13,6 +13,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 8:10 AM PT — 📝 DOCS — overnight handoff items 1 and 4 were already closed (re-carried in error)
+- **Item 1, held DELETE of 384 Top Shot same-tx twins:** applied 11-26 5:26 PM PT as `20261127012648` (384 rows / $1,841.67 archived; file committed; ledger "384 same-tx twins … Closed"). Re-derived live 11-28: 0 twin pairs remain.
+- **Item 4, pg_net 401 on flowscan:** attributed 11-27 2:31 PM PT to the retired-spork probe session (disposition in inbox `2026-11-27T2213Z`); no code calls flowscan; the alert has aged out (absent from `rpc_ops_snapshot()` 11-28 8:05 AM PT).
+- ESPN inbox `2026-11-28T0713Z` gains its disposition (fixed by `20261128154406`). Items 2 and 3 of the 11-28 handoff shipped this morning (ledger entries above).
+- **Revert:** docs only.
+
 ### 2026-11-28 · 8:05 AM PT — 🗄 APPLIED `20261128154406` — ESPN box-score drain: a 404'd game is "not found", not a failed run
 - **What:** `nba_espn_drain()` (md5-asserted in-place splice of the live body; the committed 20261128050912 copy had drifted from live). A box-score request ESPN answers HTTP 404 is marked `{ok:false, not_found:true, status:404}` and counted as `boxscore_not_found`, not as a run error. Every other failure still fails the run, and a run with ≥ 3 box-score 404s and no box score landed still fails (`every_boxscore_404`). Pre-splice body archived in `flowty_archive.audit_20261128_nba_espn_drain_body`.
 - **Why:** the 11-27 9:06 PM PT run went `ok=false` on three 404s while writing 1,041 rows across 36 games (inbox `2026-11-28T0713Z`). The three were May playoff games marked `final` with no scores — never-played "if necessary" games. The live dispatcher re-asks a no-stats game of the last 3 days every 55 min, so one postponed game would have failed a run hourly for 3 days.
