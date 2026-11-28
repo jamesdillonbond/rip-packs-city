@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 6:20 PM PT — 🗄 APPLIED `20261128021720` + pg_cron 958 — ask Atlas for unnamed Flow whales' usernames
+
+- **What:** 66 of 404 Flow whales had no username and had never been asked about, so Whale Watch showed them as shortened wallets. `run_big_spender_usernames()` uses the `run_sold_pack_opener_names()` pattern: one Atlas batch of up to 25, only when `member_wallet_username_requests` is idle, collected by job 650, then copied in. pg_cron **958** `4-54/10 * * * *`. The first manual run asked 25. anon EXECUTE is false.
+- **Revert:** `select cron.unschedule('rpc-big-spender-usernames'); drop function public.run_big_spender_usernames();` then `git revert` this commit.
+
 ### 2026-11-27 · 6:20 PM PT — 🗄 SCHEDULED (dashboard SQL editor) — Top Collector Leaderboard daily refresh, pg_cron 955/956/957
 
 - **What:** Trevor: "Keep going. Use chrome if you need to". The MCP approval check had refused `cron.schedule` twice, so the three `cron_heavy` jobs went in through the Supabase SQL editor in his Chrome: 955 `rpc-entity-top-fans-panini` (2:15 AM PT), 956 `…-topshot-candy` (2:45 AM PT), 957 `…-rest` (2:56 AM PT; All Day, Golazos, UFC, Pinnacle). Verified from `cron.job` (commands read back) and `has_function_privilege('cron_heavy', refresh_entity_top_fans) = true`. Recorded as `supabase/migrations/20261128021500_audit_20261127_entity_top_fans_cron.sql`, which is not in `schema_migrations` (parity only checks the other direction). A collection whose Dune census has landed is skipped by the refresh itself (20261128020000).
