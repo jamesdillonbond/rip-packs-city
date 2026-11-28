@@ -29,6 +29,7 @@ import TeamSets, { type SetRow } from "@/components/entity/TeamSets"
 import TeamSqueeze, { type SqueezeRow } from "@/components/entity/TeamSqueeze"
 import { Suspense } from "react"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import TopFansSection from "@/components/entity/TopFansSection"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
@@ -353,6 +354,12 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
           <TeamActivity collectionUrlSlug={collection} rows={activity} ok={activityRes.ok} />
         </Section>
       )}
+
+      {/* ── Top Fans (2026-11-27): top collectors of this team by count, FMV and special
+          serials, from get_entity_top_fans — the same read the franchise hub uses. Streamed. */}
+      <Suspense fallback={null}>
+        <TopFansSection targets={[{ collection: coll, kind: "team", key: slug }]} subject={detail.team_name} />
+      </Suspense>
 
       {/* ── Sets featuring the team ──────────────────────────────────────────
           ⚠ THE GATE USED TO BE `teamSets.length > 0` ALONE, and that made it

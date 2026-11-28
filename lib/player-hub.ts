@@ -55,6 +55,8 @@ export interface PlayerHub {
 }
 
 export interface PlayerHubDetail {
+  /** players.id in THIS collection (get_player_detail) — keys the Top Fans read. */
+  id?: string | null
   name?: string | null
   team?: string | null
   edition_count?: number | null

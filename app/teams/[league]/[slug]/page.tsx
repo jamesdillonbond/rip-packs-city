@@ -20,7 +20,7 @@
 
 import PaniniPlayerChecklist from "@/components/panini/PaniniPlayerChecklist"
 import type { Metadata } from "next"
-import { cache, type ReactNode } from "react"
+import { Suspense, cache, type ReactNode } from "react"
 import Link from "next/link"
 import { notFound, permanentRedirect } from "next/navigation"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
@@ -48,6 +48,8 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import TeamHero from "@/components/entity/TeamHero"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
+import TopFansSection from "@/components/entity/TopFansSection"
+import { franchiseHubTopFansTargets } from "@/lib/entity/top-fans-targets"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -168,6 +170,12 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
           </div>
         )}
       </Section>
+
+      {/* Top Fans (2026-11-27): one table per collection that carries the team, chips to switch —
+          the same get_entity_top_fans read each per-collection team page shows. Streamed. */}
+      <Suspense fallback={null}>
+        <TopFansSection targets={franchiseHubTopFansTargets(hub, panels, panini)} subject={hub.team_name} />
+      </Suspense>
     </div>
   )
 }

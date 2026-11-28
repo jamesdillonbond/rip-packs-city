@@ -19,7 +19,7 @@
 // to that collection's player page (307 — the next mint can make it a hub).
 
 import type { Metadata } from "next"
-import { cache, type ReactNode } from "react"
+import { Suspense, cache, type ReactNode } from "react"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { NOT_FOUND_METADATA, playerHubMetadata, playerHubJsonLd } from "@/lib/seo"
@@ -43,6 +43,8 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import PlayerFollowButton from "@/components/entity/PlayerFollowButton"
 import { playerPagePath } from "@/lib/player-route"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import TopFansSection from "@/components/entity/TopFansSection"
+import { playerHubTopFansTargets } from "@/lib/entity/top-fans-targets"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -201,6 +203,17 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
           </div>
         </Section>
       ))}
+
+      {/* Top Fans (2026-11-27): per sport group — two athletes who share a name never share a table. */}
+      {groups.map((g) => {
+        const ids = new Set(g.entries.map((e) => e.collection_id))
+        const targets = playerHubTopFansTargets(panels.filter((p) => ids.has(p.collection.id)))
+        return targets.length === 0 ? null : (
+          <Suspense key={`fans-${g.sport}`} fallback={null}>
+            <TopFansSection targets={targets} subject={hub.name} title={manyPeople ? `Top Fans · ${g.label}` : "Top Fans"} />
+          </Suspense>
+        )
+      })}
     </div>
   )
 }

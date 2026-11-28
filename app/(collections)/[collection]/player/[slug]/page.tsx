@@ -47,6 +47,7 @@ import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/
 import { fetchRookieCutLines, type RookieCutLines } from "@/lib/topshot/rookie-cut-lines"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import TopFansSection from "@/components/entity/TopFansSection"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
@@ -839,6 +840,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
           <PinnacleTopCollectorsSection characterName={detail.name} />
         </Suspense>
       )}
+
+      {/* ── Top Fans (2026-11-27): every collection, keyed by THIS collection's player id (Pinnacle:
+          the character name), from get_entity_top_fans — the same read the player hub uses. */}
+      <Suspense fallback={null}>
+        <TopFansSection targets={[{ collection: coll, kind: "player", key: detail.id, name: detail.name }]} subject={detail.name} />
+      </Suspense>
 
       {/* ── Season stats (ESPN, through the league-id crosswalk) ─────────── */}
       <Suspense fallback={null}>
