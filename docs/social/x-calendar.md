@@ -27,6 +27,8 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 | Sat | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
 | Sun | The RPC Weekly Pack Drop Report | `pack-calendar` | `/insights/drops` (its preview card is the live week) | Every drop open now or starting in the next 7 days on Top Shot, All Day, Pinnacle, Golazos and Panini, plus every Candy MLB drop announcement: price, and when it drops or its pre-orders / draw requests close, in PT. Priciest first. **Every drop is named** — a long week becomes a numbered thread |
 
+Ideas not yet on the calendar: `post-ideas.md`.
+
 Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers → trade-in.
 
 **Bid vs Floor (offer-spread) quotes only a bid seen open in the last 6 h** (Trevor, 11-27: the draft quoted Ace Bailey's /99 Rookie Debut at a $91 top offer; Top Shot showed $68 — that bid was cancelled 11-10 and had stood on the board since). The board itself now lists a Top Shot bid only while it was seen open in the last 24 h (`offer_seen_at`, audit_20261127); `x-draft.mjs` keeps rows seen within 6 h, gives each `offer_seen_pt`, and skips the slot when none is. Quote it "as of <offer_seen_pt>" and check the edition on Top Shot before posting. Each row also carries its Top Shot badges (`top_rows[].badges`, from `/api/entity/edition-badges`); name a quoted row's badge (Trevor, 11-27: the SGA row was his Top Shot Debut).

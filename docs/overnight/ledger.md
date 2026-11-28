@@ -13,7 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
-### 2026-11-27 · 4:35 PM PT — 📝 DOCS — X draft: the 2026 rookie year-end cut lines (`docs/social/posts/2026-11-27/cut-lines-draft.md`)
+### 2026-11-27 · 4:30 PM PT — 📝 DOCS — social post ideas list (`docs/social/post-ideas.md`), first entry the rookie cut lines
+
+Trevor: keep ideas in a list for the coming calendar revamp. Also corrected the time on the 4:22 PM entry below. Revert: delete the file. No code or DB change.
+
+### 2026-11-27 · 4:22 PM PT — 📝 DOCS — X draft: the 2026 rookie year-end cut lines (`docs/social/posts/2026-11-27/cut-lines-draft.md`)
 
 A post draft for Trevor built on the cut-lines strip shipped earlier today. It is not on the X calendar yet. Revert: delete the file. No code or DB change.
 

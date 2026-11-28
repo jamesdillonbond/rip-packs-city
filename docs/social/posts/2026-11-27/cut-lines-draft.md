@@ -1,8 +1,8 @@
 # 2026-11-27 (Fri) — draft: what the 2026 rookie year-end lines cost today
 
-**Draft only. Trevor posts.** A new post idea, not a calendar slot yet: the Friday rotation is unchanged until Trevor picks a slot for it.
+**Draft only. Trevor posts.** Not on the calendar: kept in `docs/social/post-ideas.md` for the calendar revamp (Trevor, 11-27).
 
-The numbers come from the "Year-end cut lines today" strip that went live on every 2026 rookie's Top Shot player page on 11-27 (`lib/topshot/rookie-cut-lines.ts`). Read live 11-27 at about 4:30 PM PT:
+The numbers come from the "Year-end cut lines today" strip that went live on every 2026 rookie's Top Shot player page on 11-27 (`lib/topshot/rookie-cut-lines.ts`). Read live 11-27 at about 4:15 PM PT:
 
 ```sql
 select p.player_name, t.* from topshot_2026_rookie_players p,
