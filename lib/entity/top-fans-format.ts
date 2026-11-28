@@ -27,7 +27,7 @@ export interface TopFansData {
    * null = the reader predates the flag (migration audit_20261127_top_collector_census not applied yet);
    * the page then falls back to TOP_COLLECTORS_FULL_CENSUS.
    */
-  census_complete: boolean | null
+  census_complete?: boolean | null
   /** Owners seen holding this entity; null when it spans several labels (an owner may be under each). */
   holders: number | null
   items: number

@@ -24,6 +24,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 ### 2026-11-27 · 5:55 PM PT — Top Collector census pipeline (Dune, every holder) — code + saved Dune queries; DB migration NOT applied
 
 - Trevor: wait for the 12/14 Dune credit reset; keep building. Saved public Dune queries 9205180 / 9205183 / 9205184 / 9205185 (Top Shot, All Day, Golazos, Pinnacle; never executed — no credits). `dune-proxy` gains `POST /upload_csv` (census map tables only) + those ids in its allowlist (deploys via workers-deploy.yml). New route `/api/cron/top-collector-census-dune`, weekly workflow `top-collector-census.yml` (first fire Mon 12/15). The page now ranks only when the reader says `census_complete` (fallback: Panini, Candy).
+- 6:05 PM PT follow-up: `census_complete` made optional (another session's component fixtures predate it; CI tsc/build red on 166df5b) and `component-top-fans-section` re-pinned — the loader now reads and drops a non-census ranking server-side instead of skipping the read.
 - ⚠ Migration `audit_20261127_top_collector_census` timed out on its Supabase approval question — not applied, not committed. Until it is, the route fails at its first RPC (logged ok=false) and pages behave exactly as at 5:10 PM PT.
 - **Revert:** `git revert` "Top Collector census pipeline" (by message); redeploy dune-proxy; archive the four Dune queries.
 
