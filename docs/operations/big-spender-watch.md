@@ -56,6 +56,7 @@ Refer to wallets by `username` in anything written for Trevor. 393 of 573 had on
 
 - **Panini six-figure prints are largely circular.** spinotron, redwolf66sports, MrFourToEight, RaspySlabs, Adlcards and others trade the same cards with each other at $100k–$210k. They dominate any dollar ranking; read `reciprocal_flag` before calling any of it demand.
 - The ledger re-ranks the open window, so a sale can drop out of a month's top 25 when bigger ones arrive; its buyer stays tracked.
+- **Wallet keys go through `big_spender_key()`** (2026-11-27, `20261128024418`). Some `pinnacle_sales` rows store a Flow address without `0x`; before the fix 23 Pinnacle whales were tracked under that bare key and labelled Solana. Any new source added to the three functions must wrap its buyer and seller in `big_spender_key()`. Never lower-case a Solana key; the helper leaves base58 untouched.
 - `get_whale_watch_7d` is a different, older instrument: a rolling 7-day volume read over Flow sales only, with nothing persisted. This watch does not replace it.
 
 ## First fill (2026-11-27 ~3:30 PM PT)
