@@ -13,6 +13,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 4:40 PM PT — 🗄 APPLIED `20261128000240` — Top Fans on every team and player page and both hubs
+
+- Trevor: top fans per team / player, on the collection pages AND the aggregated hubs (collection chips there), ranked by Moment/Pin/Card count, FMV or special serials (a 1/1 that is #1 and perfect counts once).
+- DB: `entity_top_fans` (+ `_totals`, `_runs`), `refresh_entity_top_fans(collection_id)` (SECDEF, one transaction, logs pipeline `entity-top-fans`), reader `get_entity_top_fans` (service_role). Filled once for all 7 collections 4:00–4:12 PM PT (Panini 216 s — needs `cron_heavy`'s 600 s). Spot-checked: Blazers top fan's 2,453 Moments / 25 specials (incl. two 1/1s once each) match a direct query.
+- App: `TopFansSection` / `TopFansTable` on `/<collection>/team|player|character/<slug>`, `/teams/<league>/<slug>`, `/players/<slug>` (one table per sport group). Doc: `docs/features/top-fans.md`.
+- ⚠ **Daily schedule NOT applied** — the `cron.schedule` migration was refused by this session's approval check; SQL is in the feature doc. Until applied, the tables are dated 11-27.
+- **Revert:** `DROP FUNCTION public.get_entity_top_fans(uuid,text,text,text,integer); DROP FUNCTION public.refresh_entity_top_fans(uuid); DROP TABLE public.entity_top_fans, public.entity_top_fans_totals, public.entity_top_fans_runs;` + `git revert` the "Top Fans on every team and player page" commit (by message).
+
 ### 2026-11-27 · 4:05 PM PT — 🗄 APPLIED `20261127234801` + route/page/OG — public Whale Watch board (/insights/whales)
 
 - **What:** Trevor: "a whale watcher page" → "this page can be user-facing". New public board `/insights/whales` + `/api/public/insights/whales` + `/api/og/insights/whales`, reading ONE precomputed row `whale_watch_board` (service role) written hourly by `refresh_whale_watch_board()` on pg_cron **954** (`27 * * * *`, ~16 s; created with `cron.schedule`). It shows 7d / 30d biggest spenders, buys ≥ $250 in the last 7 days, and the 30 days' biggest buys. Buys only; trades between reciprocal pairs are left out. Cadence watch `whale_watch_board` (180 / 360 min). Registered in the board registry, sitemap (111 → 112), llms.txt, e2e smoke, OG render sweep and the /insights hub; the hub tile for /insights/top-sales is now titled "Top Sales". Nothing is granted to anon or authenticated.
