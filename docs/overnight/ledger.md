@@ -13,6 +13,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-28 · 8:25 AM PT — 📝 DOCS — Candy holders MV refresh measured (not a trend; stays closed per focus.md); ESPN drain fix verified live
+- Disposition on inbox `2026-11-28T1611Z`: jobid 920 times out ~once a day at varying hours (18–120 s spread over 4 days), the MV has 0 dead tuples, and a quiet-window EXPLAIN reads 50.6 s (48.3 s disk; 217k wmc heap fetches). focus.md:16's re-open trigger (a quiet-window timeout) is not met. The filing's 999 non-finding is re-attributed to this session's watchlist insert.
+- `20261128154406` verified in production: the 8:21 AM PT `nba-espn-projections` run is `ok` and reports `boxscore_not_found: 0`.
+- **Revert:** docs only.
+
 ### 2026-11-28 · 8:07 AM PT — 🗄 DATA (monitoring state) + 📝 DOCS — board alarms re-measured after the trophies MV joined the watchlist; refresh cost corrected
 - **What:** `public_board_liveness_sweep(1000)` then `rpc_thp_leg_board_liveness()` by hand at 8:06 AM PT. Adding `mv_insights_trophies` to `public_board_liveness_watchlist` (`20261128153925`) left it with no measured state, so the probe read 47 of 48 boards → **999** on `public_board_slow_count` and `public_board_empty_count` (8:05:19 AM PT, from my own leg run). The 1-second sweep measured the MV first (**92 ms**, 8,521 rows) plus 9 least-recently-probed boards; the leg then read **slow 0 / empty 0** (8:06:17 AM PT). Lesson added to `docs/reference/database.md` beside the probe note.
 - **Correction to the 7:39 AM PT entry:** its "refresh 515 ms" was a warm read right after the build. The first scheduled refresh (pg_cron 960, 8:06 AM PT) took **18.2 s** (27 s job); hourly background cost, inside the 120 s cap.
