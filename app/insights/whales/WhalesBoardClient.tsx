@@ -9,13 +9,18 @@
 // Honesty: a FAILED read renders as a failure ("couldn't load"), never as "no
 // whales"; an OK read with no rows says so in words. People are named by their
 // marketplace username; a buyer with none shows a shortened wallet marked "…".
+// A name links to that collection's wallet page (rel=nofollow, as Top Fans does).
+// The collection chips switch the leaderboard to one collection's own top 10, so
+// Panini's six-figure prints don't drown every other collection.
 
 import { useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import {
   whaleName,
+  whaleHref,
   whaleCollectionLabel,
+  WHALE_COLLECTION_ORDER,
   type WhaleWatchBoard,
   type WhaleWindow,
   type WhaleMove,
@@ -73,7 +78,10 @@ type Props = {
 export default function WhalesBoardClient({ initialBoard, initialFailed = false }: Props) {
   const board = initialBoard
   const [win, setWin] = useState<WhaleWindow>("7d")
-  const leaders = board.leaders[win] ?? []
+  const [coll, setColl] = useState<string>("all")
+  const collChips = WHALE_COLLECTION_ORDER.filter((c) => board.by_collection[c])
+  const leaders = coll === "all" ? board.leaders[win] ?? [] : board.by_collection[coll]?.[win] ?? []
+  const collWord = coll === "all" ? "" : ` on ${whaleCollectionLabel(coll)}`
 
   return (
     <main style={{ minHeight: "100vh", background: "var(--rpc-surface)", color: "#fafafa", padding: "28px 16px 64px" }}>
@@ -136,8 +144,23 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
                   ))}
                 </div>
               </div>
+              {collChips.length > 0 && (
+                <div role="group" aria-label="Collection" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {["all", ...collChips].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-pressed={c === coll}
+                      onClick={() => setColl(c)}
+                      style={chip(c === coll)}
+                    >
+                      {c === "all" ? "All collections" : whaleCollectionLabel(c)}
+                    </button>
+                  ))}
+                </div>
+              )}
               {leaders.length === 0 ? (
-                <p style={{ color: dim, margin: 0 }}>No tracked whale bought anything in the last {win === "7d" ? "7" : "30"} days.</p>
+                <p style={{ color: dim, margin: 0 }}>No tracked whale bought anything{collWord} in the last {win === "7d" ? "7" : "30"} days.</p>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
@@ -148,7 +171,7 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
                         <th scope="col" style={{ ...th, textAlign: "right" }}>Spent</th>
                         <th scope="col" style={{ ...th, textAlign: "right" }}>Buys</th>
                         <th scope="col" style={{ ...th, textAlign: "right" }}>Biggest buy</th>
-                        <th scope="col" style={th}>Collections</th>
+                        {coll === "all" && <th scope="col" style={th}>Collections</th>}
                         <th scope="col" style={th}>Last buy</th>
                       </tr>
                     </thead>
@@ -156,14 +179,18 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
                       {leaders.map((l) => (
                         <tr key={`${win}-${l.rank}`} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                           <td style={{ ...td, ...mono, color: dim }}>{l.rank}</td>
-                          <td style={{ ...td, fontWeight: 700 }}>{whaleName(l)}</td>
+                          <td style={{ ...td, fontWeight: 700 }}>
+                            <WhaleLink name={whaleName(l)} href={whaleHref(coll === "all" ? l.top_collection : coll, l.key)} />
+                          </td>
                           <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmtMoney(l.spent_usd)}</td>
                           <td style={{ ...td, textAlign: "right" }}>
                             {fmtInt(l.buys)}
                             {l.pack_buys > 0 ? <span style={{ color: dim }}> ({fmtInt(l.pack_buys)} packs)</span> : null}
                           </td>
                           <td style={{ ...td, textAlign: "right" }}>{fmtMoney(l.biggest_usd)}</td>
-                          <td style={{ ...td, color: "rgba(255,255,255,0.8)" }}>{l.collections.map(whaleCollectionLabel).join(", ")}</td>
+                          {coll === "all" && (
+                            <td style={{ ...td, color: "rgba(255,255,255,0.8)" }}>{l.collections.map(whaleCollectionLabel).join(", ")}</td>
+                          )}
                           <td style={{ ...td, ...mono, color: dim }}>{fmtDay(l.last_at)}</td>
                         </tr>
                       ))}
@@ -216,6 +243,29 @@ export default function WhalesBoardClient({ initialBoard, initialFailed = false 
 const th: React.CSSProperties = { padding: "8px 8px", fontWeight: 400, whiteSpace: "nowrap" }
 const td: React.CSSProperties = { padding: "10px 8px", verticalAlign: "top" }
 
+function chip(on: boolean): React.CSSProperties {
+  return {
+    padding: "5px 10px",
+    minHeight: 32,
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.15)",
+    background: on ? "rgba(255,255,255,0.12)" : "transparent",
+    color: on ? "#fff" : "rgba(255,255,255,0.75)",
+    fontFamily: "var(--font-mono)",
+    fontSize: 12,
+    cursor: "pointer",
+  }
+}
+
+function WhaleLink({ name, href }: { name: string; href: string | null }) {
+  if (!href) return <>{name}</>
+  return (
+    <Link href={href} rel="nofollow" prefetch={false} style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.3)", textUnderlineOffset: 3 }}>
+      {name}
+    </Link>
+  )
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={card}>
@@ -237,7 +287,9 @@ function MoveList({ id, title, subtitle, rows, empty }: { id: string; title: str
           {rows.map((m, i) => (
             <li key={`${m.at}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderTop: i ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700 }}>{whaleName(m)}</div>
+                <div style={{ fontWeight: 700 }}>
+                  <WhaleLink name={whaleName(m)} href={whaleHref(m.collection, m.key)} />
+                </div>
                 <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, overflowWrap: "anywhere" }}>
                   {m.item ?? (m.kind === "pack" ? "Pack" : "—")}
                 </div>

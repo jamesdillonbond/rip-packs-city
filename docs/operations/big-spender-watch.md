@@ -6,6 +6,8 @@ Trevor, 2026-11-27: *"We should start tracking any wallet that has hit any of ou
 
 The board snapshot is precomputed because reading the activity live costs ~32 s over 30 days. `refresh_whale_watch_board()` (pg_cron **954** `rpc-whale-watch-board`, hourly at :27, ~16 s; migration `20261127234801`) writes 25 leaders for each of 7d and 30d, whale buys ≥ $250 in the last 7 days, and the 30 days' 15 biggest buys. It counts **buys only** and leaves out trades between a reciprocal pair (two wallets that have each bought a top sale from the other). Public names: the username, or a shortened wallet marked "…" (`whaleName`). The internal `reciprocal_flag` is never shown.
 
+Follow-up `20261128013007` (same evening, "Keep going"): every leader and move carries `key` (the wallet key or Panini username) and every leader carries `top_collection`, so a name links to that collection's wallet page via `whaleHref()` → Top Fans' `topFanHref()` (`rel=nofollow`). `by_collection` holds each collection's own top 10 for 7d / 30d. The page shows them as collection chips, so Panini's six-figure prints don't drown Top Shot. A collection with no whale buys in 30 days (Golazos and UFC on 11-27) gets no chip. Refresh time stayed ~9–16 s.
+
 ## What counts as a top sale
 
 One of a collection's **25 highest sales in its Pacific-time calendar month**, **$100 minimum**. Items (Moments / Cards / Pins) and packs are ranked separately. Rank rather than a dollar bar because "big" differs by an order of magnitude between collections. 90-day p99.9 on 2026-11-27: Top Shot ~$305, All Day ~$100, Panini ~$1,234, Candy ~$1,380.

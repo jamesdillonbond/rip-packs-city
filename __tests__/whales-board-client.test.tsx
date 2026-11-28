@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup, fireEvent, within } from "@testing-library/react"
 
 // /insights/whales client (2026-11-27). Pins the three states the board must keep
 // apart: a FAILED read says it failed (never "no whales"), an OK read with no rows
@@ -20,19 +20,26 @@ const BOARD: WhaleWatchBoard = {
   new_tracked_7d: 10,
   leaders: {
     "7d": [
-      { rank: 1, username: "cmnkb8", chain: "flow", wallet: null, buys: 34, pack_buys: 3, spent_usd: 10427.48, biggest_usd: 2199, collections: ["nba_top_shot"], last_at: "2026-11-27T15:50:00Z" },
-      { rank: 2, username: null, chain: "solana", wallet: "BxtiN3EJMjQzAbCdEfGh9", buys: 104, pack_buys: 0, spent_usd: 3539.94, biggest_usd: 313, collections: ["candy_mlb"], last_at: "2026-11-27T10:00:00Z" },
+      { rank: 1, username: "cmnkb8", chain: "flow", wallet: null, buys: 34, pack_buys: 3, spent_usd: 10427.48, biggest_usd: 2199, collections: ["nba_top_shot"], top_collection: "nba_top_shot", key: "0x8e655887a360cc3f", last_at: "2026-11-27T15:50:00Z" },
+      { rank: 2, username: null, chain: "solana", wallet: "BxtiN3EJMjQzAbCdEfGh9", buys: 104, pack_buys: 0, spent_usd: 3539.94, biggest_usd: 313, collections: ["candy_mlb"], top_collection: "candy_mlb", key: "BxtiN3EJMjQzAbCdEfGh9", last_at: "2026-11-27T10:00:00Z" },
     ],
     "30d": [
-      { rank: 1, username: "spinotron", chain: "panini", wallet: null, buys: 30, pack_buys: 0, spent_usd: 90000, biggest_usd: 57500, collections: ["panini_blockchain"], last_at: "2026-11-26T10:00:00Z" },
+      { rank: 1, username: "spinotron", chain: "panini", wallet: null, buys: 30, pack_buys: 0, spent_usd: 90000, biggest_usd: 57500, collections: ["panini_blockchain"], top_collection: "panini_blockchain", key: "spinotron", last_at: "2026-11-26T10:00:00Z" },
     ],
   },
+  by_collection: {
+    nba_top_shot: {
+      "7d": [{ rank: 1, username: "cle_287", chain: "flow", wallet: null, buys: 77, pack_buys: 0, spent_usd: 3199.3, biggest_usd: 1200, collections: ["nba_top_shot"], top_collection: "nba_top_shot", key: "0xabcdef0123456789", last_at: "2026-11-27T15:00:00Z" }],
+      "30d": [],
+    },
+    panini_blockchain: { "7d": [], "30d": [] },
+  },
   moves: [
-    { at: "2026-11-27T15:50:00Z", collection: "nba_top_shot", kind: "pack", item: "Rookie Debut Case", price_usd: 2020, username: "cmnkb8", chain: "flow", wallet: null, edition_id: null },
-    { at: "2026-11-27T12:00:00Z", collection: "candy_mlb", kind: "pack", item: null, price_usd: 300, username: null, chain: "solana", wallet: "BxtiN3EJMjQzAbCdEfGh9", edition_id: null },
+    { at: "2026-11-27T15:50:00Z", collection: "nba_top_shot", kind: "pack", item: "Rookie Debut Case", price_usd: 2020, username: "cmnkb8", chain: "flow", wallet: null, key: "0x8e655887a360cc3f", edition_id: null },
+    { at: "2026-11-27T12:00:00Z", collection: "candy_mlb", kind: "pack", item: null, price_usd: 300, username: null, chain: "solana", wallet: "BxtiN3EJMjQzAbCdEfGh9", key: null, edition_id: null },
   ],
   biggest_30d: [
-    { at: "2026-11-20T10:00:00Z", collection: "panini_blockchain", kind: "item", item: "Lamine Yamal · Base Prizms Black", price_usd: 57500, username: "spinotron", chain: "panini", wallet: null, edition_id: null },
+    { at: "2026-11-20T10:00:00Z", collection: "panini_blockchain", kind: "item", item: "Lamine Yamal · Base Prizms Black", price_usd: 57500, username: "spinotron", chain: "panini", wallet: null, key: "spinotron", edition_id: null },
   ],
 }
 
@@ -53,6 +60,28 @@ describe("WhalesBoardClient", () => {
     expect(text).not.toContain("BxtiN3EJMjQzAbCdEfGh9")
     // A pack with no resolved name still reads as a pack, not a blank.
     expect(text).toContain("Pack")
+  })
+
+  it("names link to the right collection's wallet page; a row with no key stays plain text", () => {
+    const { container } = render(<WhalesBoardClient initialBoard={BOARD} initialFetchedAt={BOARD.computed_at} />)
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "")
+    expect(hrefs.some((h) => h.includes("/nba-top-shot/collection") && h.includes("0x8e655887a360cc3f"))).toBe(true)
+    // Solana keys keep their case in the link.
+    expect(hrefs.some((h) => h.includes("/candy-mlb/collection") && h.includes("BxtiN3EJMjQzAbCdEfGh9"))).toBe(true)
+    expect(Array.from(container.querySelectorAll("a")).every((a) => a.getAttribute("rel") === "nofollow" || !a.getAttribute("href")?.includes("/collection"))).toBe(true)
+  })
+
+  it("a collection chip shows that collection's own leaders, and says so when it has none", () => {
+    const { container, getByRole } = render(<WhalesBoardClient initialBoard={BOARD} initialFetchedAt={BOARD.computed_at} />)
+    const group = getByRole("group", { name: "Collection" })
+    fireEvent.click(within(group).getByRole("button", { name: "Top Shot" }))
+    const text = container.textContent ?? ""
+    expect(text).toContain("cle_287")
+    expect(text).not.toContain("Collections")
+    fireEvent.click(within(group).getByRole("button", { name: "Panini" }))
+    expect(container.textContent).toContain("No tracked whale bought anything on Panini in the last 7 days.")
+    fireEvent.click(within(group).getByRole("button", { name: "All collections" }))
+    expect(container.textContent).toContain("Collections")
   })
 
   it("the 30-day tab swaps in the 30-day leaders", () => {

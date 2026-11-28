@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase", () => {
 })
 
 import { GET } from "@/app/api/public/insights/whales/route"
-import { shapeWhaleBoard, whaleName, fetchWhaleWatchBoard } from "@/lib/whale-watch-board"
+import { shapeWhaleBoard, whaleName, whaleHref, fetchWhaleWatchBoard } from "@/lib/whale-watch-board"
 import { supabaseAdmin } from "@/lib/supabase"
 
 const req = (u = "https://t/api/public/insights/whales") => ({ url: u, nextUrl: new URL(u) }) as any
@@ -90,6 +90,29 @@ describe("lib/whale-watch-board", () => {
     expect(b.leaders["30d"]).toEqual([])
     expect(b.moves).toEqual([])
     expect(b.computed_at).toBeNull()
+  })
+
+  it("an older snapshot without by_collection / key / top_collection shapes to empty and null", () => {
+    const b = shapeWhaleBoard(RAW, null)
+    expect(b.by_collection).toEqual({})
+    expect(b.leaders["7d"][0].key).toBeNull()
+    expect(b.leaders["7d"][0].top_collection).toBeNull()
+  })
+
+  it("by_collection is shaped per collection and window", () => {
+    const b = shapeWhaleBoard({ ...RAW, by_collection: { nba_top_shot: { "7d": RAW.leaders["7d"], "30d": "bad" } } }, null)
+    expect(b.by_collection.nba_top_shot["7d"][0].username).toBe("cmnkb8")
+    expect(b.by_collection.nba_top_shot["30d"]).toEqual([])
+  })
+
+  it("whaleHref routes Panini to ?username= and everything else to ?wallet=, keeping a Solana key's case", () => {
+    expect(whaleHref("panini_blockchain", "spinotron")).toBe("/panini-blockchain/collection?username=spinotron")
+    expect(whaleHref("nba_top_shot", "0x8e655887a360cc3f")).toBe("/nba-top-shot/collection?wallet=0x8e655887a360cc3f")
+    expect(whaleHref("candy_mlb", "BxtiN3EJMjQzAbCdEfGh9")).toBe("/candy-mlb/collection?wallet=BxtiN3EJMjQzAbCdEfGh9")
+    expect(whaleHref("ufc_strike", "0x1")).toBe("/ufc/collection?wallet=0x1")
+    expect(whaleHref(null, "x")).toBeNull()
+    expect(whaleHref("nba_top_shot", null)).toBeNull()
+    expect(whaleHref("not_a_collection", "x")).toBeNull()
   })
 
   it("whaleName prefers the username", () => {
