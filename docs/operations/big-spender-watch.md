@@ -8,6 +8,8 @@ The board snapshot is precomputed because reading the activity live costs ~32 s 
 
 Follow-up `20261128013007` (same evening, "Keep going"): every leader and move carries `key` (the wallet key or Panini username) and every leader carries `top_collection`, so a name links to that collection's wallet page via `whaleHref()` → Top Fans' `topFanHref()` (`rel=nofollow`). `by_collection` holds each collection's own top 10 for 7d / 30d. The page shows them as collection chips, so Panini's six-figure prints don't drown Top Shot. A collection with no whale buys in 30 days (Golazos and UFC on 11-27) gets no chip. Refresh time stayed ~9–16 s.
 
+Follow-up `20261128015710`: every move carries `link_key`, so the bought item links to its page through `whaleItemHref()`. That is the edition page (`editionRouteHref`, which sends Pinnacle to `/pinnacle/moment/<render id>`), or for a pack its detail page `/<collection>/pack/dist/<dist id>` (never the simulator). Candy packs have no page and stay plain text. One live sample of each kind returned 200 with its real title on 2026-11-27. /insights/top-sales now links to Whale Watch from its "What this board is" note.
+
 ## What counts as a top sale
 
 One of a collection's **25 highest sales in its Pacific-time calendar month**, **$100 minimum**. Items (Moments / Cards / Pins) and packs are ranked separately. Rank rather than a dollar bar because "big" differs by an order of magnitude between collections. 90-day p99.9 on 2026-11-27: Top Shot ~$305, All Day ~$100, Panini ~$1,234, Candy ~$1,380.

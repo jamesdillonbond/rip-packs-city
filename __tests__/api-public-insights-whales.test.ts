@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase", () => {
 })
 
 import { GET } from "@/app/api/public/insights/whales/route"
-import { shapeWhaleBoard, whaleName, whaleHref, fetchWhaleWatchBoard } from "@/lib/whale-watch-board"
+import { shapeWhaleBoard, whaleName, whaleHref, whaleItemHref, fetchWhaleWatchBoard } from "@/lib/whale-watch-board"
 import { supabaseAdmin } from "@/lib/supabase"
 
 const req = (u = "https://t/api/public/insights/whales") => ({ url: u, nextUrl: new URL(u) }) as any
@@ -113,6 +113,16 @@ describe("lib/whale-watch-board", () => {
     expect(whaleHref(null, "x")).toBeNull()
     expect(whaleHref("nba_top_shot", null)).toBeNull()
     expect(whaleHref("not_a_collection", "x")).toBeNull()
+  })
+
+  it("whaleItemHref links editions, Pinnacle pins and pack detail pages; no key → no link", () => {
+    expect(whaleItemHref({ collection: "nba_top_shot", kind: "item", link_key: "160:5584" })).toBe("/nba-top-shot/edition/160%3A5584")
+    expect(whaleItemHref({ collection: "disney_pinnacle", kind: "item", link_key: "OEV2-FROZ-OLAF-S5" })).toBe("/pinnacle/moment/OEV2-FROZ-OLAF-S5")
+    expect(whaleItemHref({ collection: "panini_blockchain", kind: "item", link_key: "packcard-1605_293026_7958740_56" })).toBe("/panini-blockchain/edition/packcard-1605_293026_7958740_56")
+    // A pack opens its detail page, never the simulator (Trevor's rule, 2026-11-12).
+    expect(whaleItemHref({ collection: "nba_top_shot", kind: "pack", link_key: "1820" })).toBe("/nba-top-shot/pack/dist/1820")
+    expect(whaleItemHref({ collection: "candy_mlb", kind: "pack", link_key: null })).toBeNull()
+    expect(whaleItemHref({ collection: "nope", kind: "item", link_key: "x" })).toBeNull()
   })
 
   it("whaleName prefers the username", () => {

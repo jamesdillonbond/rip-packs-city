@@ -747,6 +747,10 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
             Prices are the actual on-chain sale, not an estimate. Click any row
             for the moment&apos;s full detail — FMV, owner, and history.
           </p>
+          <p>
+            Want the people behind these sales? <Link href="/insights/whales">Whale Watch</Link> ranks
+            the collectors who buy the biggest sales by what they&apos;ve spent this week and this month.
+          </p>
         </div>
 
         <div className="rpc-ts-share">

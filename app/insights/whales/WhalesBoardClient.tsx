@@ -19,6 +19,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import {
   whaleName,
   whaleHref,
+  whaleItemHref,
   whaleCollectionLabel,
   WHALE_COLLECTION_ORDER,
   type WhaleWatchBoard,
@@ -267,6 +268,15 @@ function WhaleLink({ name, href }: { name: string; href: string | null }) {
   )
 }
 
+function ItemLink({ label, href }: { label: string; href: string | null }) {
+  if (!href) return <>{label}</>
+  return (
+    <Link href={href} prefetch={false} style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "rgba(255,255,255,0.25)", textUnderlineOffset: 3 }}>
+      {label}
+    </Link>
+  )
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={card}>
@@ -292,7 +302,7 @@ function MoveList({ id, title, subtitle, rows, empty }: { id: string; title: str
                   <WhaleLink name={whaleName(m)} href={whaleHref(m.collection, m.key)} />
                 </div>
                 <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, overflowWrap: "anywhere" }}>
-                  {m.item ?? (m.kind === "pack" ? "Pack" : "—")}
+                  <ItemLink label={m.item ?? (m.kind === "pack" ? "Pack" : "—")} href={whaleItemHref(m)} />
                 </div>
                 <div style={{ ...mono, color: dim }}>
                   {whaleCollectionLabel(m.collection)} · {fmtDay(m.at)}

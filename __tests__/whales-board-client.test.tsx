@@ -35,11 +35,11 @@ const BOARD: WhaleWatchBoard = {
     panini_blockchain: { "7d": [], "30d": [] },
   },
   moves: [
-    { at: "2026-11-27T15:50:00Z", collection: "nba_top_shot", kind: "pack", item: "Rookie Debut Case", price_usd: 2020, username: "cmnkb8", chain: "flow", wallet: null, key: "0x8e655887a360cc3f", edition_id: null },
-    { at: "2026-11-27T12:00:00Z", collection: "candy_mlb", kind: "pack", item: null, price_usd: 300, username: null, chain: "solana", wallet: "BxtiN3EJMjQzAbCdEfGh9", key: null, edition_id: null },
+    { at: "2026-11-27T15:50:00Z", collection: "nba_top_shot", kind: "pack", item: "Rookie Debut Case", price_usd: 2020, username: "cmnkb8", chain: "flow", wallet: null, key: "0x8e655887a360cc3f", edition_id: null, link_key: "1820" },
+    { at: "2026-11-27T12:00:00Z", collection: "candy_mlb", kind: "pack", item: null, price_usd: 300, username: null, chain: "solana", wallet: "BxtiN3EJMjQzAbCdEfGh9", key: null, edition_id: null, link_key: null },
   ],
   biggest_30d: [
-    { at: "2026-11-20T10:00:00Z", collection: "panini_blockchain", kind: "item", item: "Lamine Yamal · Base Prizms Black", price_usd: 57500, username: "spinotron", chain: "panini", wallet: null, key: "spinotron", edition_id: null },
+    { at: "2026-11-20T10:00:00Z", collection: "panini_blockchain", kind: "item", item: "Lamine Yamal · Base Prizms Black", price_usd: 57500, username: "spinotron", chain: "panini", wallet: null, key: "spinotron", edition_id: null, link_key: "packcard-1828_348521_9088483_2" },
   ],
 }
 
@@ -68,6 +68,10 @@ describe("WhalesBoardClient", () => {
     expect(hrefs.some((h) => h.includes("/nba-top-shot/collection") && h.includes("0x8e655887a360cc3f"))).toBe(true)
     // Solana keys keep their case in the link.
     expect(hrefs.some((h) => h.includes("/candy-mlb/collection") && h.includes("BxtiN3EJMjQzAbCdEfGh9"))).toBe(true)
+    // Items link to their page: a pack to its detail page, a Panini card to its edition.
+    expect(hrefs).toContain("/nba-top-shot/pack/dist/1820")
+    expect(hrefs).toContain("/panini-blockchain/edition/packcard-1828_348521_9088483_2")
+    expect(hrefs.some((h) => h.includes("simulator"))).toBe(false)
     expect(Array.from(container.querySelectorAll("a")).every((a) => a.getAttribute("rel") === "nofollow" || !a.getAttribute("href")?.includes("/collection"))).toBe(true)
   })
 

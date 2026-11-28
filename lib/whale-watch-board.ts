@@ -23,6 +23,7 @@
 // forth inside a pair do not read as spend.
 
 import { fromDbSlug } from "@/lib/collections"
+import { editionRouteHref } from "@/lib/entity-href"
 import { topFanHref } from "@/lib/entity/top-fans-format"
 
 export type WhaleWindow = "7d" | "30d"
@@ -59,6 +60,8 @@ export interface WhaleMove {
   /** Wallet key / Panini username, for the link. Null on an older snapshot. */
   key: string | null
   edition_id: string | null
+  /** Key of the bought item's page (edition external id, Pinnacle render id, pack dist id). Null = no page. */
+  link_key: string | null
 }
 
 export interface WhaleWatchBoard {
@@ -122,6 +125,7 @@ export function shapeWhaleBoard(raw: any, computedAt: string | null): WhaleWatch
           chain: r.chain === "solana" || r.chain === "panini" ? r.chain : "flow",
           wallet: typeof r.wallet === "string" && r.wallet ? r.wallet : null,
           key: typeof r.key === "string" && r.key ? r.key : null,
+          link_key: typeof r.link_key === "string" && r.link_key ? r.link_key : null,
           edition_id: typeof r.edition_id === "string" && r.edition_id ? r.edition_id : null,
         }))
       : []
@@ -205,4 +209,19 @@ export function whaleHref(dbSlug: string | null, key: string | null): string | n
   if (!dbSlug || !key) return null
   const urlSlug = fromDbSlug(dbSlug)
   return urlSlug ? topFanHref(urlSlug, key) : null
+}
+
+/**
+ * Where a bought item links (2026-11-27, migration 20261128015710): its edition page —
+ * Pinnacle routes to /pinnacle/moment/<render id> through editionRouteHref — or, for a
+ * pack, its pack detail page (/<collection>/pack/dist/<dist id>; Trevor's rule: a pack
+ * opens its detail page, never the simulator). Null when the item has no page (Candy
+ * packs) or the snapshot predates link_key — then the label renders as plain text.
+ */
+export function whaleItemHref(m: Pick<WhaleMove, "collection" | "kind" | "link_key">): string | null {
+  if (!m.link_key) return null
+  const urlSlug = fromDbSlug(m.collection)
+  if (!urlSlug) return null
+  if (m.kind === "pack") return `/${urlSlug}/pack/dist/${encodeURIComponent(m.link_key)}`
+  return editionRouteHref(urlSlug, m.link_key)
 }
