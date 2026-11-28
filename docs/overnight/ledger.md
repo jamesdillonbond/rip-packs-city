@@ -13,6 +13,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
 
+### 2026-11-27 · 9:15 PM PT — 📝 DOCS — Candy MLB: the OpenSea and STALE price gaps measured; no correction shipped (decision recorded)
+- **What:** `docs/strategy/collections/candy-mlb.md` records why neither gap gets a model change. OpenSea's lower ratio is item mix (comics there sell at a $7.97 median vs $1.06 on Magic Eden; same-kind accuracy is identical on both venues). For STALE editions the published price already beats every simple alternative (41.5 % within ±25 % vs floor 24.4 %, last sale 22.6 %), and a walk-forward market-drift multiplier makes it worse (41.5 → 36.4 %, MdAPE 34.9 → 37.3 %).
+- **Revert:** revert this commit (docs only; no code or DB change).
+
 ### 2026-11-27 · 9:00 PM PT — 🧰 SCRIPT — Panini collector walk: a walk that throws no longer ends the batch; watchdog/fatal exits record the walk in flight
 - **What:** `scripts/panini-collector-walk.mjs` — a throw inside one walk is caught per walk and posted as that walk's incomplete read (`walk threw: <message> (<first frame>)`, no holdings, nothing retired), and the batch moves on. The HARD watchdog and the fatal handler now post the same kind of run row for the walk in flight (bounded 12 s) before exiting. Tests in `__tests__/panini-collector-walk.test.ts`.
 - **Why:** `joesplosion` ended two batches (3:52 and 5:20 PM PT) with a heartbeat and NO run row, and nothing after it walked. `walkProfile` is try/finally with no catch, so a throw ended the process (exit 2) — and both a throw and a watchdog kill wrote nothing off the box. Its earlier walks (through 9:31 AM) were clean; the cause is not determinable from here without the box's log, so the next occurrence now names itself.
